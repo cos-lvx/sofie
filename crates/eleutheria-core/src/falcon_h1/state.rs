@@ -15,11 +15,11 @@ pub struct LayerState {
     pub conv_state: Tensor,
 
     /// KV cache - klíče pro attention. Roste s každým tokenem.
-    /// Shape: [seq_len, n_kv_heads, head_dim]
+    /// Shape: [batch, n_kv_heads, seq_len, head_dim]
     pub k_cache: Tensor,
 
     /// KV cache - hodnoty pro attention.
-    /// Shape: [seq_len, n_kv_heads, head_dim]
+    /// Shape: [batch, n_kv_heads, seq_len, head_dim]
     pub v_cache: Tensor,
 }
 
@@ -50,12 +50,12 @@ impl LayerState {
             )?,
             // KV cache začíná prázdná (0 tokenů)
             k_cache: Tensor::zeros(
-                (0, n_kv_heads, kv_head_dim),
+                (1, n_kv_heads, 0, kv_head_dim),
                 DType::F32,
                 device,
             )?,
             v_cache: Tensor::zeros(
-                (0, n_kv_heads, kv_head_dim),
+                (1, n_kv_heads, 0, kv_head_dim),
                 DType::F32,
                 device,
             )?,

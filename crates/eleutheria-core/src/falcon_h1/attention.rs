@@ -72,6 +72,8 @@ pub struct Attention {
     q_proj: Linear,
     k_proj: Linear,
     v_proj: Linear,
+    /// Výstupní projekce: n_q_heads * head_dim → hidden_size (1536 → 3072)
+    o_proj: Linear,
     rope: RotaryEmbedding,
     n_q_heads: usize,
     n_kv_heads: usize,
@@ -96,6 +98,7 @@ impl Attention {
         let q_proj = linear_no_bias(hidden, n_q * hd, vb.pp("q_proj"))?;
         let k_proj = linear_no_bias(hidden, n_kv * hd, vb.pp("k_proj"))?;
         let v_proj = linear_no_bias(hidden, n_kv * hd, vb.pp("v_proj"))?;
+        let o_proj = linear_no_bias(n_q * hd, hidden, vb.pp("o_proj"))?;
 
         // RoPE: předpočítáme pro 4096 pozic, rozšíříme pokud bude potřeba
         let rope = RotaryEmbedding::new(hd, config.rope_theta, 4096, device)?;
@@ -104,6 +107,7 @@ impl Attention {
             q_proj,
             k_proj,
             v_proj,
+            o_proj,
             rope,
             n_q_heads: n_q,
             n_kv_heads: n_kv,
@@ -141,12 +145,12 @@ impl Attention {
 
         // === 3. Aktualizace KV cache ===
         // Připojíme nové K, V k existujícímu cache
-        let k = if state.k_cache.dim(0)? == 0 || state.k_cache.dims()[state.k_cache.dims().len() - 2] == 0 {
+        let k = if state.k_cache.dim(2)? == 0 {  // seq dim je index 2 v [b, n_kv, seq, hd]
             k
         } else {
             Tensor::cat(&[&state.k_cache, &k], 2)?  // cat přes seq dim
         };
-        let v = if state.v_cache.dim(0)? == 0 || state.v_cache.dims()[state.v_cache.dims().len() - 2] == 0 {
+        let v = if state.v_cache.dim(2)? == 0 {
             v
         } else {
             Tensor::cat(&[&state.v_cache, &v], 2)?
@@ -176,12 +180,16 @@ impl Attention {
             let output = attn_weights.matmul(&v)?;
             // [b, n_q, s, hd] → [b, s, n_q, hd] → [b, s, n_q * hd]
             let output = output.transpose(1, 2)?.reshape((batch, seq_len, self.n_q_heads * self.head_dim))?;
+            // Projekce zpět na hidden_size
+            let output = self.o_proj.forward(&output)?;
             Ok(output)
         } else {
             // Generování: seq_len=1, maska není potřeba
             let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
             let output = attn_weights.matmul(&v)?;
             let output = output.transpose(1, 2)?.reshape((batch, 1, self.n_q_heads * self.head_dim))?;
+            // Projekce zpět na hidden_size
+            let output = self.o_proj.forward(&output)?;
             Ok(output)
         }
 
