@@ -111,7 +111,7 @@ impl Sofie {
             } else {
                 // Temperature sampling
                 let scaled = (logits_vec / temperature)?;
-                let probs = candle_nn::ops::softmax_last_dim(&scaled.unsqueeze(0))?
+                let probs = candle_nn::ops::softmax_last_dim(&scaled.unsqueeze(0)?)?
                     .squeeze(0)?;
                 sample_from_probs(&probs)?
             };
