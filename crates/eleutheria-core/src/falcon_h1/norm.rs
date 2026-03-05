@@ -21,6 +21,9 @@ impl RmsNorm {
 
 impl Module for RmsNorm {
     fn forward(&self, x: &Tensor) -> Result<Tensor> {
+        let orig_dtype = x.dtype();
+        let x = x.to_dtype(DType::F32)?;
+        let weight = self.weight.to_dtype(DType::F32)?;
         // x shape: [batch, seq_len, hidden_size]
         // 1. x² po prvcích
         let x_sq = x.sqr()?;
@@ -29,7 +32,7 @@ impl Module for RmsNorm {
         // 3. 1/sqrt(mean + eps)
         let scale = (mean_sq + self.eps)?.sqrt()?.recip()?;
         // 4. normalizuj a vynásob naučenou váhou
-        x.broadcast_mul(&scale)?.broadcast_mul(&self.weight)
+        x.broadcast_mul(&scale)?.broadcast_mul(&weight)?.to_dtype(orig_dtype)
     }
 }
 
@@ -60,29 +63,34 @@ impl RmsNormGated {
     /// x: SSM výstup, gate: gate projekce (obě [batch, seq, d_ssm])
     pub fn forward(&self, x: &Tensor, gate: &Tensor) -> Result<Tensor> {
         if self.norm_before_gate {
-            // Varianta A: norm(x * silu(gate))
-            let gated = x.broadcast_mul(&silu(gate)?)?;
-            self.rms_norm(&gated)
-        } else {
-            // Varianta B (Falcon-H1): rms_norm(x) * silu(gate)
+            // norm_before_gate=true: normalize FIRST, then gate
             let normed = self.rms_norm(x)?;
             normed.broadcast_mul(&silu(gate)?)
+        } else {
+            // norm_before_gate=false (Falcon-H1): gate FIRST, then normalize
+            let gated = x.broadcast_mul(&silu(gate)?)?;
+            self.rms_norm(&gated)
         }
     }
 
     fn rms_norm(&self, x: &Tensor) -> Result<Tensor> {
+        let orig_dtype = x.dtype();
+        let x = x.to_dtype(DType::F32)?;
+        let weight = self.weight.to_dtype(DType::F32)?;
         let x_sq = x.sqr()?;
         let mean_sq = x_sq.mean_keepdim(D::Minus1)?;
         let scale = (mean_sq + self.eps)?.sqrt()?.recip()?;
-        x.broadcast_mul(&scale)?.broadcast_mul(&self.weight)
+        x.broadcast_mul(&scale)?.broadcast_mul(&weight)?.to_dtype(orig_dtype)
     }
 }
 
 /// Silu aktivace: silu(x) = x * sigmoid(x)
 /// Smooth gate — propouští kladné, tlumí záporné.
 fn silu(x: &Tensor) -> Result<Tensor> {
+    let orig_dtype = x.dtype();
+    let x = x.to_dtype(DType::F32)?;
     let sigmoid = x.neg()?.exp()?.affine(1.0, 1.0)?.recip()?;
-    x.broadcast_mul(&sigmoid)
+    x.broadcast_mul(&sigmoid)?.to_dtype(orig_dtype)
 }
 
 

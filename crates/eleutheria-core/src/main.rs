@@ -1,13 +1,18 @@
-//! Eleutheria CLI . testovací rozhraní pro Sofii
+//! Eleutheria CLI — Sofie's local mind.
 use anyhow::Result;
 use clap::Parser;
-use eleutheria_core::{Sofie, ModelSpec};
+use eleutheria_core::{GenerateControl, Sofie};
+use std::io::{self, Write};
+use std::path::PathBuf;
 
-
-/// Eleuitheria - Sofie's local mind
+/// Eleutheria — lokální inference engine pro Falcon-H1.
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
 struct Args {
+    /// Model: "1.5b", "7b", nebo přímá cesta k adresáři
+    #[arg(short, long, default_value = "1.5b")]
+    model: String,
+
     /// Prompt pro generování
     #[arg(short, long)]
     prompt: String,
@@ -23,40 +28,36 @@ struct Args {
     /// Použít CUDA (GPU)
     #[arg(long)]
     cuda: bool,
-
-    /// Který model použít (130m, 1.4b)
-    #[arg(short, long, default_value = "130m")]
-    model: String,
 }
 
 fn main() -> Result<()> {
-    // Inicializace logování
     tracing_subscriber::fmt::init();
 
-    // Parsování argumentů
     let args = Args::parse();
 
-    // Výběr modelu
-
-    let spec = match args.model.as_str() {
-        "130m" => ModelSpec::mamba_130m(),
-        "1.4b" => ModelSpec::mamba_1_4b(),
-        other => {
-            eprintln!("Neznámý model: {}. Použik '130m' nebo '1.4b'", other);
-            std::process::exit(1);
-        }
+    println!("Eleutheria se probouzí...");
+    let model_dir = match args.model.as_str() {
+        "1.5b" => PathBuf::from("/home/lvx/Models/falcon-h1-1.5b-instruct"),
+        "7b" => PathBuf::from("/home/lvx/Models/falcon-h1-7b-instruct"),
+        other => PathBuf::from(other),
     };
 
-    // Načtení Sofie
-    println!("Eleuitheria se probouzí...\n");
-    let mut sofie = Sofie::load(spec, args.cuda)?;
+    println!("Model: {} ({})", args.model, model_dir.display());
+    println!("Device: {}\n", if args.cuda { "CUDA" } else { "CPU" });
 
-    // Generování
+    let sofie = Sofie::load(&model_dir, args.cuda)?;
+
     println!("Prompt: {}\n", args.prompt);
-    let output = sofie.generate(&args.prompt, args.max_tokens, args.temperature)?;
+    print!("Sofie říká:\n");
+    io::stdout().flush()?;
 
-    println!("Sofie říká:\n{}", output);
+    sofie.generate_streaming(&args.prompt, args.max_tokens, args.temperature, |_, text| {
+        print!("{}", text);
+        io::stdout().flush().unwrap();
+        GenerateControl::Continue
+    })?;
+
+    println!();
 
     Ok(())
-
 }

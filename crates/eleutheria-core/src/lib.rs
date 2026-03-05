@@ -13,12 +13,20 @@ use falcon_h1::config::FalconH1Config;
 use falcon_h1::model::FalconH1Model;
 use falcon_h1::state::ModelState;
 
+/// Řízení streaming generace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenerateControl {
+    Continue,
+    Stop,
+}
+
 /// Sofie — lokální inference engine.
 pub struct Sofie {
     model: FalconH1Model,
     tokenizer: Tokenizer,
     config: FalconH1Config,
     device: Device,
+    dtype: DType,
 }
 
 impl Sofie {
@@ -53,26 +61,33 @@ impl Sofie {
         shard_paths.sort();
         tracing::info!("Načítám {} shardů", shard_paths.len());
 
+        // GPU: BF16 (nativní formát vah, CUDA to podporuje)
+        // CPU: F32 (candle CPU neumí BF16 matmul)
+        let dtype = if use_cuda { DType::BF16 } else { DType::F32 };
+        tracing::info!("DType: {:?}", dtype);
+
         let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&shard_paths, DType::F32, &device)?
+            VarBuilder::from_mmaped_safetensors(&shard_paths, dtype, &device)?
         };
 
         // 5. Model
         let model = FalconH1Model::load(&config, vb, &device)?;
         tracing::info!("Model načten");
 
-        Ok(Self { model, tokenizer, config, device })
+        Ok(Self { model, tokenizer, config, device, dtype })
     }
 }
 
 impl Sofie {
-    /// Vygeneruje text na základě promptu.
-    /// Vrací kompletní výstup (prompt + generovaný text).
-    pub fn generate(
+    /// Generuje text se streaming callbackem.
+    /// `on_token` dostává (token_id, nový_text) a vrací GenerateControl.
+    /// Dekódování přes diff celého bufferu — korektní i pro multi-byte UTF-8 a BPE artefakty.
+    pub fn generate_streaming(
         &self,
         prompt: &str,
         max_tokens: usize,
         temperature: f64,
+        mut on_token: impl FnMut(u32, &str) -> GenerateControl,
     ) -> Result<String> {
         // 1. Tokenizace
         let encoding = self.tokenizer
@@ -81,60 +96,82 @@ impl Sofie {
         let prompt_ids: Vec<u32> = encoding.get_ids().to_vec();
         tracing::info!("Prompt: {} tokenů", prompt_ids.len());
 
-        // 2. Stav modelu — prázdný, 44 layerů
-        let mut state = ModelState::new(&self.config, &self.device)?;
+        // 2. Stav modelu
+        let mut state = ModelState::new(&self.config, self.dtype, &self.device)?;
 
-        // 3. Prefill — prompt token po tokenu
-        //    (mixer.rs je rekurentní, zpracovává seq_len=1)
-        let mut logits = None;
-        for (i, &token_id) in prompt_ids.iter().enumerate() {
-            let input = Tensor::new(&[token_id], &self.device)?.unsqueeze(0)?; // [1, 1]
-            logits = Some(self.model.forward(&input, i, &mut state)?);
-        }
+        // 3. Parallel prefill — celý prompt jedním průchodem
+        let prompt_len = prompt_ids.len();
+        tracing::info!("Parallel prefill: {} tokenů", prompt_len);
 
-        let mut logits = logits.ok_or_else(|| anyhow!("Prázdný prompt"))?;
+        let prompt_tensor = Tensor::new(prompt_ids.as_slice(), &self.device)?
+            .unsqueeze(0)?;
+        let prefill_logits = self.model.forward(&prompt_tensor, 0, &mut state)?;
 
-        // 4. Generování — token po tokenu
+        let mut logits = prefill_logits.narrow(1, prompt_len - 1, 1)?;
+
+        // 4. Generování se streamingem
         let mut generated: Vec<u32> = Vec::new();
-        let eos_token = self.tokenizer.token_to_id("</s>")
-            .or_else(|| self.tokenizer.token_to_id("<|endoftext|>"))
-            .unwrap_or(u32::MAX);
+        let mut emitted_len: usize = 0;
+        let eos_primary = self.config.eos_token_id.unwrap_or(11);
+        let eos_im_end: u32 = 228;
+        tracing::info!("EOS tokens: {} (primary), {} (im_end)", eos_primary, eos_im_end);
 
         for _ in 0..max_tokens {
-            // logits: [1, 1, vocab_size] → [vocab_size]
             let logits_vec = logits.squeeze(0)?.squeeze(0)?;
 
-            // Sampling
+            // Sampling v F32 — BF16 nepodporuje skalární aritmetiku v Candle
+            let logits_f32 = logits_vec.to_dtype(DType::F32)?;
+
             let next_token = if temperature <= 0.0 {
-                // Greedy: argmax
-                logits_vec.argmax(0)?.to_scalar::<u32>()?
+                logits_f32.argmax(0)?.to_scalar::<u32>()?
             } else {
-                // Temperature sampling
-                let scaled = (logits_vec / temperature)?;
+                let scaled = (logits_f32 / temperature)?;
                 let probs = candle_nn::ops::softmax_last_dim(&scaled.unsqueeze(0)?)?
                     .squeeze(0)?;
                 sample_from_probs(&probs)?
             };
 
-            if next_token == eos_token {
-                tracing::info!("EOS po {} tokenech", generated.len());
+            if next_token == eos_primary || next_token == eos_im_end {
+                tracing::info!("EOS po {} tokenech (token id: {})", generated.len(), next_token);
                 break;
             }
 
             generated.push(next_token);
 
+            // Diff-based dekódování — korektní pro BPE artefakty i multi-byte UTF-8
+            let full_text = self.tokenizer
+                .decode(&generated, true)
+                .map_err(|e| anyhow!("Decode error: {}", e))?;
+            let new_text = &full_text[emitted_len..];
+            if !new_text.is_empty() {
+                if on_token(next_token, new_text) == GenerateControl::Stop {
+                    break;
+                }
+                emitted_len = full_text.len();
+            }
+
             // Další krok
-            let pos = prompt_ids.len() + generated.len() - 1;
+            let pos = prompt_len + generated.len() - 1;
             let input = Tensor::new(&[next_token], &self.device)?.unsqueeze(0)?;
             logits = self.model.forward(&input, pos, &mut state)?;
         }
 
-        // 5. Dekódování
+        // 5. Finální dekódování celého výstupu
         let output = self.tokenizer
             .decode(&generated, true)
             .map_err(|e| anyhow!("Decode error: {}", e))?;
 
         Ok(output)
+    }
+
+    /// Vygeneruje text bez streamingu (wrapper přes generate_streaming).
+    pub fn generate(
+        &self,
+        prompt: &str,
+        max_tokens: usize,
+        temperature: f64,
+    ) -> Result<String> {
+        self.generate_streaming(prompt, max_tokens, temperature, |_, _| GenerateControl::Continue)
     }
 }
 

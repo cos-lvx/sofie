@@ -19,6 +19,8 @@ pub struct FalconH1Model {
     final_norm: RmsNorm,
     /// LM head: hidden_size → vocab_size (netie — vlastní váhy)
     lm_head: Linear,
+    /// Konfigurace modelu (muP multipliery atd.)
+    config: FalconH1Config,
 }
 
 impl FalconH1Model {
@@ -39,7 +41,7 @@ impl FalconH1Model {
         let final_norm = RmsNorm::load(
             config.hidden_size,
             config.rms_norm_eps,
-            vb.pp("model.norm"),
+            vb.pp("model.final_layernorm"),
         )?;
 
         // LM head (vlastní váhy, ne tied)
@@ -54,6 +56,7 @@ impl FalconH1Model {
             layers,
             final_norm,
             lm_head,
+            config: config.clone(),
         })
     }
 }
@@ -70,8 +73,11 @@ impl FalconH1Model {
         pos: usize,
         state: &mut ModelState,
     ) -> Result<Tensor> {
-        // === 1. Token embedding ===
+        // === 1. Token embedding + muP scaling ===
         let mut x = self.embed_tokens.forward(input_ids)?;  // [b, s, 3072]
+        let emb_scale = Tensor::new(&[self.config.embedding_multiplier as f32], x.device())?
+            .to_dtype(x.dtype())?;
+        x = x.broadcast_mul(&emb_scale)?;
 
         // === 2. Průchod všemi 44 layery ===
         for (i, layer) in self.layers.iter().enumerate() {
@@ -81,8 +87,11 @@ impl FalconH1Model {
         // === 3. Finální norma ===
         x = self.final_norm.forward(&x)?;
 
-        // === 4. LM head → logity ===
+        // === 4. LM head → logity + muP scaling ===
         let logits = self.lm_head.forward(&x)?;  // [b, s, vocab_size]
+        let lm_scale = Tensor::new(&[self.config.lm_head_multiplier as f32], logits.device())?
+            .to_dtype(logits.dtype())?;
+        let logits = logits.broadcast_mul(&lm_scale)?;
 
         Ok(logits)
     }

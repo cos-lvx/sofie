@@ -9,9 +9,9 @@ pub struct LayerState {
     /// Akumuluje informaci ze všech předchozích tokenů.
     pub ssm_state: Tensor,
 
-    /// Conv1d sliding window: [d_inner, d_conv-1]
-    /// d_inner = mamba_d_ssm + 2 * n_groupps * d_state = 3584
-    /// Drží posledních d_conv-1 = 3 tokenů pro casual konvoluci.
+    /// Conv1d sliding window: [d_inner, d_conv]
+    /// d_inner = mamba_d_ssm + 2 * n_groups * d_state = 3584
+    /// Drží posledních d_conv tokenů pro kauzální konvoluci.
     pub conv_state: Tensor,
 
     /// KV cache - klíče pro attention. Roste s každým tokenem.
@@ -33,30 +33,31 @@ impl LayerState {
         d_conv: usize,
         n_kv_heads: usize,
         kv_head_dim: usize,
+        dtype: DType,
         device: &Device,
     ) -> Result<Self> {
         Ok(Self {
             // SSM state musí být FP32 - jinak numerická nestabilkita
             ssm_state: Tensor::zeros(
                 (n_heads, headdim, d_state),
-                DType::F32,
+                dtype,
                 device,
             )?,
-            // Conv state: okno posledních d_conv-1 tokenů
+            // Conv state: okno posledních d_conv tokenů
             conv_state: Tensor::zeros(
-                (d_inner, d_conv - 1),
-                DType::F32,
+                (d_inner, d_conv),
+                dtype,
                 device,
             )?,
             // KV cache začíná prázdná (0 tokenů)
             k_cache: Tensor::zeros(
                 (1, n_kv_heads, 0, kv_head_dim),
-                DType::F32,
+                dtype,
                 device,
             )?,
             v_cache: Tensor::zeros(
                 (1, n_kv_heads, 0, kv_head_dim),
-                DType::F32,
+                dtype,
                 device,
             )?,
         })
@@ -70,7 +71,7 @@ pub struct ModelState {
 
 impl ModelState {
     /// Vytvoří ptázdný stav pro celý model.
-    pub fn new(config: &super::config::FalconH1Config, device: &Device) -> Result<Self> {
+    pub fn new(config: &super::config::FalconH1Config, dtype: DType, device: &Device) -> Result<Self> {
         let d_inner = config.mamba_d_ssm
             + 2 * config.mamba_n_groups * config.mamba_d_state;
 
@@ -83,6 +84,7 @@ impl ModelState {
                 config.mamba_d_conv,
                 config.num_key_value_heads,
                 config.head_dim,
+                dtype,
                 device,
             ))
             .collect::<Result<Vec<_>>>()?;

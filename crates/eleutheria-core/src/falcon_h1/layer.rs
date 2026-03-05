@@ -24,6 +24,12 @@ pub struct FalconH1Layer {
     gate_proj: Linear,
     up_proj: Linear,
     down_proj: Linear,
+    /// muP: škálování attention výstupu
+    attention_out_multiplier: f64,
+    /// muP: škálování SSM výstupu
+    ssm_out_multiplier: f64,
+    /// muP: MLP multipliery [gate/up scaling, down scaling]
+    mlp_multipliers: Vec<f64>,
 }
 
 impl FalconH1Layer {
@@ -56,6 +62,9 @@ impl FalconH1Layer {
             gate_proj,
             up_proj,
             down_proj,
+            attention_out_multiplier: config.attention_out_multiplier,
+            ssm_out_multiplier: config.ssm_out_multiplier,
+            mlp_multipliers: config.mlp_multipliers.clone(),
         })
     }
 }
@@ -69,9 +78,22 @@ impl FalconH1Layer {
         // === 1. Pre-norm (sdílená pro obě branch) ===
         let normed = self.pre_norm.forward(x)?;  // [b, s, 3072]
 
-        // === 2. Parallel branches ===
-        let ssm_out = self.mixer.forward(&normed, state)?;       // [b, s, 3072]
+        // === 2. Parallel branches + muP scaling ===
+        // Prefill mód (seq_len > 1): parallel conv1d + sekvenční SSM scan = přesné výsledky
+        // Decode mód (seq_len = 1): rekurentní krok token po tokenu
+        let ssm_out = if normed.dim(1)? > 1 {
+            self.mixer.forward_prefill(&normed, state)?
+        } else {
+            self.mixer.forward(&normed, state)?
+        };  // [b, s, 3072]
+        let ssm_scale = Tensor::new(&[self.ssm_out_multiplier as f32], ssm_out.device())?
+            .to_dtype(ssm_out.dtype())?;
+        let ssm_out = ssm_out.broadcast_mul(&ssm_scale)?;
+
         let attn_out = self.attention.forward(&normed, pos, state)?; // [b, s, 3072]
+        let attn_scale = Tensor::new(&[self.attention_out_multiplier as f32], attn_out.device())?
+            .to_dtype(attn_out.dtype())?;
+        let attn_out = attn_out.broadcast_mul(&attn_scale)?;
 
         // === 3. Residual + obě branch (sčítání) ===
         let x = (x + ssm_out + attn_out)?;  // [b, s, 3072]
@@ -82,10 +104,24 @@ impl FalconH1Layer {
         let gate = self.gate_proj.forward(&normed)?;  // [b, s, 12288]
         let up = self.up_proj.forward(&normed)?;       // [b, s, 12288]
 
-        // SwiGLU: silu(gate) * up
-        let gate = candle_nn::ops::silu(&gate)?;
-        let mlp_out = (gate * up)?;                    // [b, s, 12288]
+        // muP: škálování gate projekce (up se neškáluje)
+        let mlp_in_scale = Tensor::new(&[self.mlp_multipliers[0] as f32], gate.device())?
+            .to_dtype(gate.dtype())?;
+        let gate = gate.broadcast_mul(&mlp_in_scale)?;
+
+        // SwiGLU: silu(gate) * up — cast přes F32 pro numerickou stabilitu
+        let gate_activated = {
+            let g = gate.to_dtype(candle_core::DType::F32)?;
+            let result = candle_nn::ops::silu(&g)?;
+            result.to_dtype(normed.dtype())?
+        };
+        let mlp_out = (gate_activated * up)?;           // [b, s, 12288]
         let mlp_out = self.down_proj.forward(&mlp_out)?; // [b, s, 3072]
+
+        // muP: škálování down projekce
+        let mlp_out_scale = Tensor::new(&[self.mlp_multipliers[1] as f32], mlp_out.device())?
+            .to_dtype(mlp_out.dtype())?;
+        let mlp_out = mlp_out.broadcast_mul(&mlp_out_scale)?;
 
         // === 5. Druhý residual ===
         let x = (x + mlp_out)?;

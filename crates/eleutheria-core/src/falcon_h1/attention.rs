@@ -2,7 +2,7 @@
 //! 12 Q hlav, 2 KV hlav (GQA ratio 6:1), RoPE s theta=10^11.
 
 
-use candle_core::{DType, Device, IndexOp, Result, Tensor, D};
+use candle_core::{Device, IndexOp, Result, Tensor, D};
 use candle_nn::{linear_no_bias, Linear, Module, VarBuilder};
 
 use super::state::LayerState;
@@ -50,6 +50,10 @@ impl RotaryEmbedding {
         let cos = self.cos_cache.i(pos..pos + seq_len)?; // [seq_len, half]
         let sin = self.sin_cache.i(pos..pos + seq_len)?;
 
+        // Cast na dtype vstupního tensoru (cos/sin cache je F32, vstup může být BF16)
+        let cos = cos.to_dtype(x.dtype())?;
+        let sin = sin.to_dtype(x.dtype())?;
+
         // Reshape pro broadcasting: [1, 1, seq_len, half]
         let cos = cos.unsqueeze(0)?.unsqueeze(0)?;
         let sin = sin.unsqueeze(0)?.unsqueeze(0)?;
@@ -82,6 +86,7 @@ pub struct Attention {
     gqa_ratio: usize,
     /// muP key scaling (nahrazuje standardní 1/sqrt(d))
     key_multiplier: f64,
+    // muP: attention_in_multiplier (1.0) — noop, neimplementováno
 }
 
 impl Attention {
@@ -168,13 +173,16 @@ impl Attention {
         // === 5. Attention skóre ===
         // Q @ K^T s muP škálováním
         let attn_weights = q.matmul(&k.transpose(2, 3)?)?;
-        let attn_weights = (attn_weights * self.key_multiplier)?;
+        let scale = Tensor::new(&[self.key_multiplier as f32], attn_weights.device())?
+            .to_dtype(attn_weights.dtype())?;
+        let attn_weights = attn_weights.broadcast_mul(&scale)?;
 
         // Kauzální maska: zakáže přístup k budoucím tokenům
         let full_seq = attn_weights.dim(D::Minus1)?;
         if seq_len > 1 {
             // Prefill: potřebujeme trojúhelníkovou masku
-            let mask = Self::causal_mask(seq_len, full_seq, x.device())?;
+            let mask = Self::causal_mask(seq_len, full_seq, x.device())?
+                .to_dtype(attn_weights.dtype())?;
             let attn_weights = attn_weights.broadcast_add(&mask)?;
             let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
             let output = attn_weights.matmul(&v)?;

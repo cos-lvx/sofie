@@ -101,6 +101,10 @@ pub struct FalconH1Config {
     /// RMSNorm  epsilon.
     pub rms_norm_eps: f64,
 
+    /// EOS token ID z config.json. Falcon-H1 = 11.
+    #[serde(default)]
+    pub eos_token_id: Option<u32>,
+
     /// RoPE theta (frekvence pro rotační pozicové embeddingry). 10^11.
     pub rope_theta: f64,
 
