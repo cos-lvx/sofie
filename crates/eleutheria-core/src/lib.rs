@@ -2,6 +2,7 @@
 //! Custom Candle inference pro Falcon-H1-7B-Instruct.
 
 pub mod falcon_h1;
+pub mod prompt;
 
 use anyhow::{anyhow, Result};
 use candle_core::{Device, DType, Tensor};
