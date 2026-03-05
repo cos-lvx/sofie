@@ -28,6 +28,10 @@ struct Args {
     /// Použít CUDA (GPU)
     #[arg(long)]
     cuda: bool,
+
+    /// Cesta k persona TOML souboru
+    #[arg(long, default_value = "persona/sofie.toml")]
+    persona: String,
 }
 
 fn main() -> Result<()> {
@@ -45,13 +49,21 @@ fn main() -> Result<()> {
     println!("Model: {} ({})", args.model, model_dir.display());
     println!("Device: {}\n", if args.cuda { "CUDA" } else { "CPU" });
 
-    let sofie = Sofie::load(&model_dir, args.cuda)?;
+    let persona_path = PathBuf::from(&args.persona);
+    let persona_opt = if persona_path.exists() {
+        Some(persona_path.as_path())
+    } else {
+        tracing::warn!("Persona soubor nenalezen: {}", args.persona);
+        None
+    };
+
+    let sofie = Sofie::load(&model_dir, args.cuda, persona_opt)?;
 
     println!("Prompt: {}\n", args.prompt);
     print!("Sofie říká:\n");
     io::stdout().flush()?;
 
-    sofie.generate_streaming(&args.prompt, args.max_tokens, args.temperature, |_, text| {
+    sofie.chat_streaming(&args.prompt, args.max_tokens, args.temperature, |_, text| {
         print!("{}", text);
         io::stdout().flush().unwrap();
         GenerateControl::Continue

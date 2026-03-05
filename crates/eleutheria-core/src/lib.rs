@@ -14,6 +14,9 @@ use falcon_h1::config::FalconH1Config;
 use falcon_h1::model::FalconH1Model;
 use falcon_h1::state::ModelState;
 
+use prompt::pipeline::PromptPipeline;
+use prompt::types::{PersonaConfig, PromptContext};
+
 /// Řízení streaming generace.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GenerateControl {
@@ -28,12 +31,15 @@ pub struct Sofie {
     config: FalconH1Config,
     device: Device,
     dtype: DType,
+    pipeline: PromptPipeline,
+    persona: Option<PersonaConfig>,
 }
 
 impl Sofie {
     /// Načte Falcon-H1 z lokálního adresáře.
     /// model_dir: cesta k adresáři s config.json, tokenizer.json, *.safetensors
-    pub fn load(model_dir: &Path, use_cuda: bool) -> Result<Self> {
+    /// persona_path: optional cesta k TOML persona souboru
+    pub fn load(model_dir: &Path, use_cuda: bool, persona_path: Option<&Path>) -> Result<Self> {
         // 1. Device
         let device = if use_cuda {
             Device::new_cuda(0)?
@@ -75,11 +81,79 @@ impl Sofie {
         let model = FalconH1Model::load(&config, vb, &device)?;
         tracing::info!("Model načten");
 
-        Ok(Self { model, tokenizer, config, device, dtype })
+        // 6. Persona
+        let persona = match persona_path {
+            Some(path) => {
+                let p = PersonaConfig::from_file(path)?;
+                tracing::info!("Persona načtena: {}", p.name);
+                Some(p)
+            }
+            None => None,
+        };
+
+        // 7. Pipeline
+        use prompt::stages::classifier::InputClassifier;
+        use prompt::stages::persona::PersonaInjection;
+        use prompt::stages::template::TemplateExpansion;
+        use prompt::stages::conversation::ConversationContextStage;
+        use prompt::stages::memory::MemoryInjectionStage;
+        use prompt::stages::quality::QualityGateStage;
+        use prompt::stages::chatml::ChatMLAssembly;
+
+        let mut pipeline = PromptPipeline::new();
+        pipeline.add_stage(Box::new(InputClassifier));
+        pipeline.add_stage(Box::new(PersonaInjection));
+        pipeline.add_stage(Box::new(TemplateExpansion));
+        pipeline.add_stage(Box::new(ConversationContextStage));
+        pipeline.add_stage(Box::new(MemoryInjectionStage));
+        pipeline.add_stage(Box::new(QualityGateStage));
+        pipeline.add_stage(Box::new(ChatMLAssembly));
+        tracing::info!("Pipeline: 7 stages");
+
+        Ok(Self { model, tokenizer, config, device, dtype, pipeline, persona })
     }
 }
 
 impl Sofie {
+    /// High-level chat API — projde prompt pipeline, pak generuje.
+    pub fn chat_streaming(
+        &self,
+        user_message: &str,
+        max_tokens: usize,
+        temperature: f64,
+        on_token: impl FnMut(u32, &str) -> GenerateControl,
+    ) -> Result<String> {
+        // 1. PromptContext
+        let mut ctx = PromptContext::new(user_message);
+        ctx.persona = self.persona.clone();
+
+        // 2. Pipeline
+        self.pipeline.run(&mut ctx)?;
+
+        // 3. Assembled prompt
+        let prompt = ctx.assembled_prompt
+            .ok_or_else(|| anyhow!("Pipeline nevyprodukovala assembled_prompt"))?;
+
+        tracing::info!(
+            "Assembled prompt ({} chars):\n{}",
+            prompt.len(),
+            &prompt[..prompt.len().min(200)]
+        );
+
+        // 4. Generuj přes low-level API
+        self.generate_streaming(&prompt, max_tokens, temperature, on_token)
+    }
+
+    /// High-level chat bez streamingu.
+    pub fn chat(
+        &self,
+        user_message: &str,
+        max_tokens: usize,
+        temperature: f64,
+    ) -> Result<String> {
+        self.chat_streaming(user_message, max_tokens, temperature, |_, _| GenerateControl::Continue)
+    }
+
     /// Generuje text se streaming callbackem.
     /// `on_token` dostává (token_id, nový_text) a vrací GenerateControl.
     /// Dekódování přes diff celého bufferu — korektní i pro multi-byte UTF-8 a BPE artefakty.
