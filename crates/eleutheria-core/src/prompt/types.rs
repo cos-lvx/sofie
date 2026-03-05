@@ -1,4 +1,8 @@
 use std::collections::HashMap;
+use std::path::Path;
+
+use anyhow::Result;
+use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatRole {
@@ -23,13 +27,21 @@ pub enum InputIntent {
 }
 
 /// Konfigurace persony — načítaná z TOML souboru.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PersonaConfig {
     pub name: String,
     pub role: String,
     pub instructions: Vec<String>,
     pub constraints: Vec<String>,
     pub voice: String,
+}
+
+impl PersonaConfig {
+    pub fn from_file(path: &Path) -> Result<Self> {
+        let content = std::fs::read_to_string(path)?;
+        let config: PersonaConfig = toml::from_str(&content)?;
+        Ok(config)
+    }
 }
 
 /// Sdílený kontext procházející prompt pipeline.
