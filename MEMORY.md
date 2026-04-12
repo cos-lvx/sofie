@@ -36,6 +36,12 @@ CLI `--persona` argument. Placeholder stages připraveny pro budoucí fáze.
 Vytvořeny živé dokumenty: CLAUDE.md, CHANGELOG.md, ROADMAP.md, MEMORY.md, PLAN.md,
 KNOWN-ISSUES.md, SOLUTIONS.md, BUGS.md. Nastavena spolupráce podle vzoru Tessera/Vesna.
 
+## 2026-04-12 | v0.3.4 — Automatic Checkpointing + Resume
+
+Auto-save session do `~/.eleutheria/last_session.safetensors` při ukončení REPL.
+`--resume` flag načte poslední session. Priorita: `--load-state` > `--resume` > nová.
+`/save` bez argumentu ukládá do default path. StreamingLLM odsunut — předčasný s 128K.
+
 ## 2026-04-12 | v0.3.3 — Token Budget Monitoring
 
 Context tracking v SofieSession — `context_limit`, `context_usage()`, `remaining_tokens()`,

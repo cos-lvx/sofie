@@ -36,10 +36,11 @@ Implementace po krocích:
 - [x] `/info` zobrazuje kontext usage a KV cache odhad
 - [x] `max_position_embeddings` v FalconH1Config
 
-### v0.3.4 — State checkpointing
-- [ ] Automatické uložení state na hranicích konverzace
-- [ ] Obnovení session z checkpointu (`--resume`)
-- [ ] StreamingLLM pro attention KV cache (attention sinks + sliding window)
+### v0.3.4 — Automatic checkpointing + resume ✅
+- [x] Auto-save session do `~/.eleutheria/last_session.safetensors` při ukončení
+- [x] `--resume` flag pro pokračování v poslední session
+- [x] `/save` bez argumentu → default path
+- [ ] ~~StreamingLLM~~ — odsunuto, předčasné s 128K kontextem
 
 ### v0.3.5 — Benchmark retence
 - [ ] Měření informační retence v SSM state Falcon-H1-7B

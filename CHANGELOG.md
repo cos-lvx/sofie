@@ -7,6 +7,21 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.3.4] — 2026-04-12
+
+### Přidáno
+- Auto-save session při ukončení REPL do `~/.eleutheria/last_session.safetensors`
+- `--resume` flag — pokračování v poslední session
+- `/save` bez argumentu ukládá do default session path
+- `ensure_session_dir()` — automatické vytvoření `~/.eleutheria/`
+
+### Změněno
+- Priorita načtení: `--load-state` > `--resume` > nová session
+- StreamingLLM (attention sinks) odsunut z v0.3.4 do budoucí fáze —
+  s 128K kontextem je předčasná optimalizace
+
+---
+
 ## [0.3.3] — 2026-04-12
 
 ### Přidáno

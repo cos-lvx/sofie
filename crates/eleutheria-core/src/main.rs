@@ -48,6 +48,10 @@ struct Args {
     /// Inspekce checkpointu — vypiš metadata a skonči
     #[arg(long)]
     inspect_state: Option<PathBuf>,
+
+    /// Pokračuj v poslední session (~/.eleutheria/last_session.safetensors)
+    #[arg(long)]
+    resume: bool,
 }
 
 fn parse_state_filter(s: &str) -> StateFilter {
@@ -60,6 +64,23 @@ fn parse_state_filter(s: &str) -> StateFilter {
             StateFilter::full()
         }
     }
+}
+
+/// Cesta k automaticky ukládané session.
+fn default_session_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    PathBuf::from(home)
+        .join(".eleutheria")
+        .join("last_session.safetensors")
+}
+
+/// Zajisti existenci adresáře pro session.
+fn ensure_session_dir() -> Result<PathBuf> {
+    let path = default_session_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    Ok(path)
 }
 
 fn main() -> Result<()> {
@@ -146,14 +167,25 @@ fn run_single_shot(sofie: &Sofie, args: &Args, prompt: &str) -> Result<()> {
 
 /// REPL mód — interaktivní konverzace se Sofií.
 fn run_repl(sofie: &Sofie, args: &Args) -> Result<()> {
-    let mut session: SofieSession = match &args.load_state {
-        Some(path) => {
-            println!("Načítám session z: {}", path.display());
-            let s = sofie.resume_session(path)?;
+    // Resoluce zdroje session: --load-state > --resume > nová session
+    let mut session: SofieSession = if let Some(path) = &args.load_state {
+        println!("Načítám session z: {}", path.display());
+        let s = sofie.resume_session(path)?;
+        println!("  pozice: {} tokenů", s.position());
+        s
+    } else if args.resume {
+        let path = default_session_path();
+        if path.exists() {
+            println!("Pokračuji v poslední session: {}", path.display());
+            let s = sofie.resume_session(&path)?;
             println!("  pozice: {} tokenů", s.position());
             s
+        } else {
+            println!("Žádná předchozí session nenalezena, startuji novou.");
+            sofie.new_session()?
         }
-        None => sofie.new_session()?,
+    } else {
+        sofie.new_session()?
     };
 
     println!("Sofie je připravena. (q = konec, /save = uložit, /info = session info)\n");
@@ -162,14 +194,12 @@ fn run_repl(sofie: &Sofie, args: &Args) -> Result<()> {
     let mut reader = stdin.lock();
 
     loop {
-        // Prompt
         print!("> ");
         io::stdout().flush()?;
 
         let mut line = String::new();
         let bytes = reader.read_line(&mut line)?;
         if bytes == 0 {
-            // EOF
             break;
         }
 
@@ -184,9 +214,9 @@ fn run_repl(sofie: &Sofie, args: &Args) -> Result<()> {
             _ if input.starts_with("/save") => {
                 let path = input.strip_prefix("/save").unwrap().trim();
                 let path = if path.is_empty() {
-                    "/tmp/eleutheria_session.safetensors"
+                    default_session_path().to_string_lossy().into_owned()
                 } else {
-                    path
+                    path.to_string()
                 };
                 let filter = parse_state_filter(&args.state_filter);
                 match sofie.save_state(session.state(), session.position(), path.as_ref(), filter) {
@@ -250,18 +280,32 @@ fn run_repl(sofie: &Sofie, args: &Args) -> Result<()> {
                 GenerateControl::Continue
             },
         )?;
-        let _ = response; // výstup je už streamovaný
+        let _ = response;
 
         println!("\n");
     }
 
-    // Nabídni uložení při odchodu
+    // Auto-save při ukončení
     if session.turn_count() > 0 {
-        println!(
-            "\nSession ukončena ({} turnů, {} tokenů).",
-            session.turn_count(),
-            session.position()
-        );
+        match ensure_session_dir() {
+            Ok(path) => {
+                match sofie.save_state(
+                    session.state(),
+                    session.position(),
+                    &path,
+                    StateFilter::full(),
+                ) {
+                    Ok(()) => println!(
+                        "\nSession uložena: {} ({} turnů, {} tokenů)",
+                        path.display(),
+                        session.turn_count(),
+                        session.position()
+                    ),
+                    Err(e) => eprintln!("\nChyba při auto-save: {e}"),
+                }
+            }
+            Err(e) => eprintln!("\nNelze vytvořit session adresář: {e}"),
+        }
     }
 
     Ok(())
