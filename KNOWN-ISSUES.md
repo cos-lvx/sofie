@@ -29,6 +29,14 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
 - **Kontext:** Plná klasifikace vyžaduje buď heuristiky nebo druhý model pass
 - **Řešení:** Heuristická klasifikace v0.4.0, případně ML-based později
 
+### KI-004 — CUDA 13.2 workaround v .cargo/config.toml
+
+- **Fáze:** 1
+- **Dopad:** Nízký — pouze build na Arch Linux
+- **Kontext:** `cudarc` 0.18.2 nepodporuje CUDA 13.2. Workaround přes
+  `CUDARC_CUDA_VERSION=13010`. Odebrat až cudarc přidá 13.2 podporu.
+- **Řešení:** Sledovat cudarc releases, případně aktualizovat Candle (viz SOL-008)
+
 ---
 
 ## Vyřešené

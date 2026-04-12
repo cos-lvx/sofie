@@ -1,0 +1,5 @@
+# Arch Linux CUDA 13.2 workaround — cudarc 0.18.2 podporuje max 13.1.
+# CUDA 13.2 je zpětně kompatibilní, jen build script nezná verzi.
+# Viz SOL-008.
+[env]
+CUDARC_CUDA_VERSION = "13010"
