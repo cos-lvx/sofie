@@ -3,6 +3,7 @@
 
 pub mod falcon_h1;
 pub mod prompt;
+pub mod session;
 
 use anyhow::{Result, anyhow};
 use candle_core::{DType, Device, Tensor};
@@ -14,6 +15,7 @@ pub use falcon_h1::checkpoint::{StateCheckpoint, StateFilter};
 use falcon_h1::config::FalconH1Config;
 use falcon_h1::model::FalconH1Model;
 use falcon_h1::state::ModelState;
+pub use session::SofieSession;
 
 use prompt::pipeline::PromptPipeline;
 use prompt::types::{PersonaConfig, PromptContext};
@@ -23,6 +25,13 @@ use prompt::types::{PersonaConfig, PromptContext};
 pub enum GenerateControl {
     Continue,
     Stop,
+}
+
+/// Výsledek generování — text + stav pro případný checkpoint.
+pub struct GenerateResult {
+    pub text: String,
+    pub state: ModelState,
+    pub position: usize,
 }
 
 /// Sofie — lokální inference engine.
@@ -38,10 +47,7 @@ pub struct Sofie {
 
 impl Sofie {
     /// Načte Falcon-H1 z lokálního adresáře.
-    /// model_dir: cesta k adresáři s config.json, tokenizer.json, *.safetensors
-    /// persona_path: optional cesta k TOML persona souboru
     pub fn load(model_dir: &Path, use_cuda: bool, persona_path: Option<&Path>) -> Result<Self> {
-        // 1. Device
         let device = if use_cuda {
             Device::new_cuda(0)?
         } else {
@@ -49,7 +55,6 @@ impl Sofie {
         };
         tracing::info!("Device: {:?}", device);
 
-        // 2. Config
         let config_path = model_dir.join("config.json");
         let config: FalconH1Config = serde_json::from_slice(&std::fs::read(&config_path)?)?;
         tracing::info!(
@@ -58,13 +63,11 @@ impl Sofie {
             config.vocab_size
         );
 
-        // 3. Tokenizer
         let tokenizer_path = model_dir.join("tokenizer.json");
         let tokenizer =
             Tokenizer::from_file(&tokenizer_path).map_err(|e| anyhow!("Tokenizer error: {}", e))?;
         tracing::info!("Tokenizer: {} tokenů", tokenizer.get_vocab_size(true));
 
-        // 4. Váhy — najdi všechny safetensors shardy
         let mut shard_paths: Vec<std::path::PathBuf> = std::fs::read_dir(model_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
@@ -73,18 +76,14 @@ impl Sofie {
         shard_paths.sort();
         tracing::info!("Načítám {} shardů", shard_paths.len());
 
-        // GPU: BF16 (nativní formát vah, CUDA to podporuje)
-        // CPU: F32 (candle CPU neumí BF16 matmul)
         let dtype = if use_cuda { DType::BF16 } else { DType::F32 };
         tracing::info!("DType: {:?}", dtype);
 
         let vb = unsafe { VarBuilder::from_mmaped_safetensors(&shard_paths, dtype, &device)? };
 
-        // 5. Model
         let model = FalconH1Model::load(&config, vb, &device)?;
         tracing::info!("Model načten");
 
-        // 6. Persona
         let persona = match persona_path {
             Some(path) => {
                 let p = PersonaConfig::from_file(path)?;
@@ -94,7 +93,6 @@ impl Sofie {
             None => None,
         };
 
-        // 7. Pipeline
         use prompt::stages::chatml::ChatMLAssembly;
         use prompt::stages::classifier::InputClassifier;
         use prompt::stages::conversation::ConversationContextStage;
@@ -125,117 +123,129 @@ impl Sofie {
     }
 }
 
-/// Výsledek generování — text + stav pro případný checkpoint.
-pub struct GenerateResult {
-    pub text: String,
-    pub state: ModelState,
-    pub position: usize,
-}
+// ---------------------------------------------------------------------------
+// Session API — multi-turn konverzace s inkrementálním prefillem
+// ---------------------------------------------------------------------------
 
 impl Sofie {
-    /// High-level chat API — projde prompt pipeline, pak generuje.
-    pub fn chat_streaming(
+    /// Vytvoří novou session (prázdný stav).
+    pub fn new_session(&self) -> Result<SofieSession> {
+        let state = ModelState::new(&self.config, self.dtype, &self.device)?;
+        Ok(SofieSession::new(state))
+    }
+
+    /// Vytvoří session z checkpointu.
+    pub fn resume_session(&self, path: &Path) -> Result<SofieSession> {
+        let (state, pos) = self.load_state(path)?;
+        Ok(SofieSession::from_checkpoint(state, pos))
+    }
+
+    /// Pošle zprávu v rámci session — inkrementální prefill.
+    ///
+    /// Turn 1: plný pipeline (system + persona + user + assistant_start).
+    /// Turn 2+: delta (im_end + user turn + assistant_start) — jen nové tokeny.
+    pub fn send_message(
         &self,
-        user_message: &str,
+        session: &mut SofieSession,
+        message: &str,
         max_tokens: usize,
         temperature: f64,
         on_token: impl FnMut(u32, &str) -> GenerateControl,
-    ) -> Result<GenerateResult> {
-        // 1. PromptContext
-        let mut ctx = PromptContext::new(user_message);
-        ctx.persona = self.persona.clone();
+    ) -> Result<String> {
+        let (tokens, base_pos) = if !session.initialized {
+            // Turn 1: plný pipeline
+            let mut ctx = PromptContext::new(message);
+            ctx.persona = self.persona.clone();
+            self.pipeline.run(&mut ctx)?;
+            let prompt = ctx
+                .assembled_prompt
+                .ok_or_else(|| anyhow!("Pipeline nevyprodukovala assembled_prompt"))?;
 
-        // 2. Pipeline
-        self.pipeline.run(&mut ctx)?;
+            tracing::info!(
+                "Turn 1 — full pipeline ({} chars):\n{}",
+                prompt.len(),
+                &prompt[..prompt.len().min(200)]
+            );
 
-        // 3. Assembled prompt
-        let prompt = ctx
-            .assembled_prompt
-            .ok_or_else(|| anyhow!("Pipeline nevyprodukovala assembled_prompt"))?;
+            let encoding = self
+                .tokenizer
+                .encode(prompt.as_str(), true)
+                .map_err(|e| anyhow!("Tokenizer error: {}", e))?;
+            session.initialized = true;
+            (encoding.get_ids().to_vec(), 0usize)
+        } else {
+            // Turn 2+: delta — jen nové tokeny
+            let delta = format!(
+                "<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+                message
+            );
 
-        tracing::info!(
-            "Assembled prompt ({} chars):\n{}",
-            prompt.len(),
-            &prompt[..prompt.len().min(200)]
-        );
+            tracing::info!(
+                "Turn {} — delta ({} chars)",
+                session.turn_count() + 1,
+                delta.len()
+            );
 
-        // 4. Generuj přes low-level API
-        self.generate_streaming(&prompt, max_tokens, temperature, None, on_token)
-    }
-
-    /// High-level chat bez streamingu.
-    pub fn chat(
-        &self,
-        user_message: &str,
-        max_tokens: usize,
-        temperature: f64,
-    ) -> Result<GenerateResult> {
-        self.chat_streaming(user_message, max_tokens, temperature, |_, _| {
-            GenerateControl::Continue
-        })
-    }
-
-    /// Generuje text se streaming callbackem.
-    /// `on_token` dostává (token_id, nový_text) a vrací GenerateControl.
-    /// `initial_state` — volitelný pre-loaded state (z checkpointu).
-    ///   Pokud None, vytvoří se čerstvý stav (nuly).
-    ///   Tuple: (ModelState, pozice) — pozice = počet tokenů už zpracovaných ve stavu.
-    pub fn generate_streaming(
-        &self,
-        prompt: &str,
-        max_tokens: usize,
-        temperature: f64,
-        initial_state: Option<(ModelState, usize)>,
-        mut on_token: impl FnMut(u32, &str) -> GenerateControl,
-    ) -> Result<GenerateResult> {
-        // 1. Tokenizace
-        let encoding = self
-            .tokenizer
-            .encode(prompt, true)
-            .map_err(|e| anyhow!("Tokenizer error: {}", e))?;
-        let prompt_ids: Vec<u32> = encoding.get_ids().to_vec();
-        tracing::info!("Prompt: {} tokenů", prompt_ids.len());
-
-        // 2. Stav modelu — buď z checkpointu, nebo čerstvý
-        let (mut state, base_pos) = match initial_state {
-            Some((s, p)) => {
-                tracing::info!("Načten state z checkpointu (pozice {})", p);
-                (s, p)
-            }
-            None => {
-                let s = ModelState::new(&self.config, self.dtype, &self.device)?;
-                (s, 0)
-            }
+            // false = bez BOS tokenu (jsme uprostřed sekvence)
+            let encoding = self
+                .tokenizer
+                .encode(delta.as_str(), false)
+                .map_err(|e| anyhow!("Tokenizer error: {}", e))?;
+            (encoding.get_ids().to_vec(), session.position)
         };
 
-        // 3. Parallel prefill — celý prompt jedním průchodem
-        let prompt_len = prompt_ids.len();
-        tracing::info!(
-            "Parallel prefill: {} tokenů (base_pos={})",
-            prompt_len,
-            base_pos
-        );
+        let prompt_len = tokens.len();
+        tracing::info!("Prefill: {} tokenů (base_pos={})", prompt_len, base_pos);
 
-        let prompt_tensor = Tensor::new(prompt_ids.as_slice(), &self.device)?.unsqueeze(0)?;
-        let prefill_logits = self.model.forward(&prompt_tensor, base_pos, &mut state)?;
+        // Prefill
+        let prompt_tensor = Tensor::new(tokens.as_slice(), &self.device)?.unsqueeze(0)?;
+        let prefill_logits = self
+            .model
+            .forward(&prompt_tensor, base_pos, &mut session.state)?;
+        let initial_logits = prefill_logits.narrow(1, prompt_len - 1, 1)?;
 
-        let mut logits = prefill_logits.narrow(1, prompt_len - 1, 1)?;
+        // Generate
+        let (response, generated_count) = self.generate_from_logits(
+            initial_logits,
+            &mut session.state,
+            base_pos + prompt_len,
+            max_tokens,
+            temperature,
+            on_token,
+        )?;
 
-        // 4. Generování se streamingem
+        // Aktualizuj session
+        let new_position = base_pos + prompt_len + generated_count;
+        session.record_turn(message, &response, new_position);
+
+        Ok(response)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Privátní — generate loop (sdílený mezi send_message a generate_streaming)
+// ---------------------------------------------------------------------------
+
+impl Sofie {
+    /// Generuj tokeny ze startovních logitů.
+    /// Vrací (text, počet_generovaných_tokenů).
+    fn generate_from_logits(
+        &self,
+        initial_logits: Tensor,
+        state: &mut ModelState,
+        start_pos: usize,
+        max_tokens: usize,
+        temperature: f64,
+        mut on_token: impl FnMut(u32, &str) -> GenerateControl,
+    ) -> Result<(String, usize)> {
+        let mut logits = initial_logits;
         let mut generated: Vec<u32> = Vec::new();
         let mut emitted_len: usize = 0;
         let eos_primary = self.config.eos_token_id.unwrap_or(11);
         let eos_im_end: u32 = 228;
-        tracing::info!(
-            "EOS tokens: {} (primary), {} (im_end)",
-            eos_primary,
-            eos_im_end
-        );
 
         for _ in 0..max_tokens {
             let logits_vec = logits.squeeze(0)?.squeeze(0)?;
-
-            // Sampling v F32 — BF16 nepodporuje skalární aritmetiku v Candle
             let logits_f32 = logits_vec.to_dtype(DType::F32)?;
 
             let next_token = if temperature <= 0.0 {
@@ -257,7 +267,6 @@ impl Sofie {
 
             generated.push(next_token);
 
-            // Diff-based dekódování — korektní pro BPE artefakty i multi-byte UTF-8
             let full_text = self
                 .tokenizer
                 .decode(&generated, true)
@@ -270,19 +279,109 @@ impl Sofie {
                 emitted_len = full_text.len();
             }
 
-            // Další krok
-            let pos = base_pos + prompt_len + generated.len() - 1;
+            let pos = start_pos + generated.len() - 1;
             let input = Tensor::new(&[next_token], &self.device)?.unsqueeze(0)?;
-            logits = self.model.forward(&input, pos, &mut state)?;
+            logits = self.model.forward(&input, pos, state)?;
         }
 
-        // 5. Finální dekódování celého výstupu
         let output = self
             .tokenizer
             .decode(&generated, true)
             .map_err(|e| anyhow!("Decode error: {}", e))?;
 
-        let final_pos = base_pos + prompt_len + generated.len();
+        Ok((output, generated.len()))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Single-shot API (zpětná kompatibilita)
+// ---------------------------------------------------------------------------
+
+impl Sofie {
+    /// High-level chat API — projde prompt pipeline, pak generuje.
+    pub fn chat_streaming(
+        &self,
+        user_message: &str,
+        max_tokens: usize,
+        temperature: f64,
+        on_token: impl FnMut(u32, &str) -> GenerateControl,
+    ) -> Result<GenerateResult> {
+        let mut ctx = PromptContext::new(user_message);
+        ctx.persona = self.persona.clone();
+        self.pipeline.run(&mut ctx)?;
+        let prompt = ctx
+            .assembled_prompt
+            .ok_or_else(|| anyhow!("Pipeline nevyprodukovala assembled_prompt"))?;
+
+        tracing::info!(
+            "Assembled prompt ({} chars):\n{}",
+            prompt.len(),
+            &prompt[..prompt.len().min(200)]
+        );
+
+        self.generate_streaming(&prompt, max_tokens, temperature, None, on_token)
+    }
+
+    /// High-level chat bez streamingu.
+    pub fn chat(
+        &self,
+        user_message: &str,
+        max_tokens: usize,
+        temperature: f64,
+    ) -> Result<GenerateResult> {
+        self.chat_streaming(user_message, max_tokens, temperature, |_, _| {
+            GenerateControl::Continue
+        })
+    }
+
+    /// Generuje text se streaming callbackem (single-shot).
+    pub fn generate_streaming(
+        &self,
+        prompt: &str,
+        max_tokens: usize,
+        temperature: f64,
+        initial_state: Option<(ModelState, usize)>,
+        on_token: impl FnMut(u32, &str) -> GenerateControl,
+    ) -> Result<GenerateResult> {
+        let encoding = self
+            .tokenizer
+            .encode(prompt, true)
+            .map_err(|e| anyhow!("Tokenizer error: {}", e))?;
+        let prompt_ids: Vec<u32> = encoding.get_ids().to_vec();
+        tracing::info!("Prompt: {} tokenů", prompt_ids.len());
+
+        let (mut state, base_pos) = match initial_state {
+            Some((s, p)) => {
+                tracing::info!("Načten state z checkpointu (pozice {})", p);
+                (s, p)
+            }
+            None => {
+                let s = ModelState::new(&self.config, self.dtype, &self.device)?;
+                (s, 0)
+            }
+        };
+
+        let prompt_len = prompt_ids.len();
+        tracing::info!(
+            "Parallel prefill: {} tokenů (base_pos={})",
+            prompt_len,
+            base_pos
+        );
+
+        let prompt_tensor = Tensor::new(prompt_ids.as_slice(), &self.device)?.unsqueeze(0)?;
+        let prefill_logits = self.model.forward(&prompt_tensor, base_pos, &mut state)?;
+        let initial_logits = prefill_logits.narrow(1, prompt_len - 1, 1)?;
+
+        let (output, generated_count) = self.generate_from_logits(
+            initial_logits,
+            &mut state,
+            base_pos + prompt_len,
+            max_tokens,
+            temperature,
+            on_token,
+        )?;
+
+        let final_pos = base_pos + prompt_len + generated_count;
 
         Ok(GenerateResult {
             text: output,
@@ -291,7 +390,7 @@ impl Sofie {
         })
     }
 
-    /// Vygeneruje text bez streamingu (wrapper přes generate_streaming).
+    /// Vygeneruje text bez streamingu.
     pub fn generate(
         &self,
         prompt: &str,
@@ -325,7 +424,7 @@ impl Sofie {
         Ok(())
     }
 
-    /// Načte stav modelu z disku a přesune na správný device/dtype.
+    /// Načte stav modelu z disku.
     pub fn load_state(&self, path: &Path) -> Result<(ModelState, usize)> {
         let checkpoint = StateCheckpoint::load(path)?;
         checkpoint.validate_config(&self.config)?;
@@ -334,7 +433,7 @@ impl Sofie {
         Ok(result)
     }
 
-    /// Vrací konfiguraci modelu — pro inspekci a validaci.
+    /// Vrací konfiguraci modelu.
     pub fn config(&self) -> &FalconH1Config {
         &self.config
     }
@@ -350,7 +449,6 @@ fn sample_from_probs(probs: &Tensor) -> Result<u32> {
             return Ok(i as u32);
         }
     }
-    // Fallback: poslední token
     Ok((probs_vec.len() - 1) as u32)
 }
 

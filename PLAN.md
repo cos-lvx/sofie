@@ -24,11 +24,11 @@ Implementace po krocích:
 - [x] 6 unit testů (round-trip, selektivní save/load, metadata, config validace)
 - [x] CLI: `--save-state`, `--load-state`, `--state-filter`, `--inspect-state`
 
-### v0.3.2 — Multi-turn REPL
-- [ ] Interaktivní smyčka v CLI (ne single-shot)
-- [ ] `SofieState` struct — živý stav oddělený od ModelState
-  (conversation history, metadata, timestamps)
-- [ ] State přetrvává mezi zprávami v rámci session
+### v0.3.2 — Multi-turn REPL ✅
+- [x] `SofieSession` — živý stav s inkrementálním prefillem (přístup B)
+- [x] Session API: `new_session()`, `resume_session()`, `send_message()`
+- [x] REPL mód v CLI (bez `--prompt`), příkazy `/save`, `/info`, `q`
+- [x] `generate_from_logits()` — extrahovaný sdílený generate loop
 
 ### v0.3.3 — ConversationContext stage
 - [ ] Reálná logika místo placeholder — injekce předchozích zpráv

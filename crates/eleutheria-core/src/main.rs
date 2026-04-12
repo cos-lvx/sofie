@@ -1,8 +1,8 @@
 //! Eleutheria CLI — Sofie's local mind.
 use anyhow::Result;
 use clap::Parser;
-use eleutheria_core::{GenerateControl, Sofie, StateCheckpoint, StateFilter};
-use std::io::{self, Write};
+use eleutheria_core::{GenerateControl, Sofie, SofieSession, StateCheckpoint, StateFilter};
+use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
 /// Eleutheria — lokální inference engine pro Falcon-H1.
@@ -13,7 +13,7 @@ struct Args {
     #[arg(short, long, default_value = "1.5b")]
     model: String,
 
-    /// Prompt pro generování
+    /// Prompt pro single-shot generování (bez --prompt = REPL mód)
     #[arg(short, long)]
     prompt: Option<String>,
 
@@ -33,11 +33,11 @@ struct Args {
     #[arg(long, default_value = "persona/sofie.toml")]
     persona: String,
 
-    /// Načíst state z checkpointu před generováním
+    /// Načíst state z checkpointu
     #[arg(long)]
     load_state: Option<PathBuf>,
 
-    /// Uložit state po generování
+    /// Uložit state po generování (single-shot mód)
     #[arg(long)]
     save_state: Option<PathBuf>,
 
@@ -64,22 +64,16 @@ fn parse_state_filter(s: &str) -> StateFilter {
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-
     let args = Args::parse();
 
-    // Režim inspekce — nevyžaduje prompt ani model
+    // Režim inspekce
     if let Some(path) = &args.inspect_state {
         let meta = StateCheckpoint::inspect(path)?;
         print!("{meta}");
         return Ok(());
     }
 
-    // Prompt je povinný pro generování
-    let prompt = args
-        .prompt
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("--prompt je povinný pro generování"))?;
-
+    // Načti model
     println!("Eleutheria se probouzí...");
     let model_dir = match args.model.as_str() {
         "1.5b" => PathBuf::from("/home/lvx/Models/falcon-h1-1.5b-instruct"),
@@ -100,7 +94,14 @@ fn main() -> Result<()> {
 
     let sofie = Sofie::load(&model_dir, args.cuda, persona_opt)?;
 
-    // Načtení state z checkpointu
+    match &args.prompt {
+        Some(prompt) => run_single_shot(&sofie, &args, prompt),
+        None => run_repl(&sofie, &args),
+    }
+}
+
+/// Single-shot mód — jeden prompt, jedna odpověď.
+fn run_single_shot(sofie: &Sofie, args: &Args, prompt: &str) -> Result<()> {
     let initial_state = match &args.load_state {
         Some(path) => {
             println!("Načítám state z: {}", path.display());
@@ -129,7 +130,6 @@ fn main() -> Result<()> {
 
     println!();
 
-    // Uložení state
     if let Some(path) = &args.save_state {
         let filter = parse_state_filter(&args.state_filter);
         sofie.save_state(&result.state, result.position, path, filter)?;
@@ -142,4 +142,127 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// REPL mód — interaktivní konverzace se Sofií.
+fn run_repl(sofie: &Sofie, args: &Args) -> Result<()> {
+    let mut session: SofieSession = match &args.load_state {
+        Some(path) => {
+            println!("Načítám session z: {}", path.display());
+            let s = sofie.resume_session(path)?;
+            println!("  pozice: {} tokenů", s.position());
+            s
+        }
+        None => sofie.new_session()?,
+    };
+
+    println!("Sofie je připravena. (q = konec, /save = uložit, /info = session info)\n");
+
+    let stdin = io::stdin();
+    let mut reader = stdin.lock();
+
+    loop {
+        // Prompt
+        print!("> ");
+        io::stdout().flush()?;
+
+        let mut line = String::new();
+        let bytes = reader.read_line(&mut line)?;
+        if bytes == 0 {
+            // EOF
+            break;
+        }
+
+        let input = line.trim();
+        if input.is_empty() {
+            continue;
+        }
+
+        // Příkazy
+        match input {
+            "q" | "quit" | "exit" => break,
+            _ if input.starts_with("/save") => {
+                let path = input.strip_prefix("/save").unwrap().trim();
+                let path = if path.is_empty() {
+                    "/tmp/eleutheria_session.safetensors"
+                } else {
+                    path
+                };
+                let filter = parse_state_filter(&args.state_filter);
+                match sofie.save_state(session.state(), session.position(), path.as_ref(), filter) {
+                    Ok(()) => println!(
+                        "State uložen: {} (filtr: {}, pozice: {})\n",
+                        path,
+                        filter.label(),
+                        session.position()
+                    ),
+                    Err(e) => eprintln!("Chyba při ukládání: {e}\n"),
+                }
+                continue;
+            }
+            "/info" => {
+                println!(
+                    "Session: {} turnů, {} tokenů, běží od {}",
+                    session.turn_count(),
+                    session.position(),
+                    session.started_at().format("%H:%M:%S")
+                );
+                for (i, pair) in session.history().chunks(2).enumerate() {
+                    if pair.len() == 2 {
+                        println!(
+                            "  turn {}: \"{}\" → {} znaků odpovědi",
+                            i + 1,
+                            truncate(&pair[0].content, 40),
+                            pair[1].content.len()
+                        );
+                    }
+                }
+                println!();
+                continue;
+            }
+            _ if input.starts_with('/') => {
+                eprintln!("Neznámý příkaz: {input}\n");
+                continue;
+            }
+            _ => {}
+        }
+
+        // Pošli zprávu Sofii
+        println!();
+        let response = sofie.send_message(
+            &mut session,
+            input,
+            args.max_tokens,
+            args.temperature,
+            |_, text| {
+                print!("{}", text);
+                io::stdout().flush().unwrap();
+                GenerateControl::Continue
+            },
+        )?;
+        let _ = response; // výstup je už streamovaný
+
+        println!("\n");
+    }
+
+    // Nabídni uložení při odchodu
+    if session.turn_count() > 0 {
+        println!(
+            "\nSession ukončena ({} turnů, {} tokenů).",
+            session.turn_count(),
+            session.position()
+        );
+    }
+
+    Ok(())
+}
+
+/// Zkrátí text na max znaků.
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        let boundary = s.floor_char_boundary(max);
+        format!("{}...", &s[..boundary])
+    }
 }

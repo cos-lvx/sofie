@@ -7,6 +7,27 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.3.2] — 2026-04-12
+
+### Přidáno
+- `SofieSession` — živá konverzační session s inkrementálním prefillem
+  - `ModelState` přežívá mezi turny — SSM akumuluje, KV cache roste
+  - Turn 1: plný pipeline (PersonaInjection → ChatMLAssembly)
+  - Turn 2+: delta prefill — jen ChatML wrapping nové zprávy, O(nové_tokeny)
+  - Historie konverzace, počítadlo turnů, timestamp
+- `Sofie::new_session()` / `resume_session()` / `send_message()` — session API
+- REPL mód v CLI (bez `--prompt` = interaktivní konverzace)
+  - `/save [cesta]` — uložit state do checkpointu
+  - `/info` — informace o session (turny, tokeny, čas)
+  - `q` / `quit` / `exit` — ukončení
+- `generate_from_logits()` — extrahovaný generate loop (sdílený single-shot i session)
+- 3 unit testy pro SofieSession (new, record_turn, from_checkpoint)
+
+### Změněno
+- `--prompt` je nyní volitelný — bez něj se spustí REPL
+
+---
+
 ## [0.3.1] — 2026-04-12
 
 ### Přidáno

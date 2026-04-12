@@ -36,6 +36,18 @@ CLI `--persona` argument. Placeholder stages připraveny pro budoucí fáze.
 Vytvořeny živé dokumenty: CLAUDE.md, CHANGELOG.md, ROADMAP.md, MEMORY.md, PLAN.md,
 KNOWN-ISSUES.md, SOLUTIONS.md, BUGS.md. Nastavena spolupráce podle vzoru Tessera/Vesna.
 
+## 2026-04-12 | v0.3.2 — Multi-turn REPL + SofieSession
+
+Nový modul `session.rs` — `SofieSession` drží `ModelState` mezi turny. Architektonické
+rozhodnutí: přístup B (inkrementální prefill). Turn 1 prochází plným pipeline,
+Turn 2+ prefilluje jen delta (ChatML wrapping nové zprávy). SSM state akumuluje
+kontext přirozeně, KV cache roste — O(nové_tokeny) per turn místo O(všechny_tokeny).
+
+Session API na Sofie: `new_session()`, `resume_session()`, `send_message()`.
+Generate loop extrahován do `generate_from_logits()` (sdílený single-shot i session).
+
+REPL mód: bez `--prompt` se spustí interaktivní smyčka. Příkazy `/save`, `/info`, `q`.
+
 ## 2026-04-12 | v0.3.1 — SSM State Serializace
 
 Nový modul `falcon_h1/checkpoint.rs` — `StateCheckpoint` jako přenosový formát
