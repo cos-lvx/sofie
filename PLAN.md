@@ -59,8 +59,8 @@ Implementace po krocích:
 
 ## Poznámky
 
-- Implementace state serializace — ověřit safetensors API v Candle
-  pro save (ne jen load). Alternativa: vlastní binární formát
+- Safetensors save: Candle wrapper nepodporuje metadata, řešeno přímou
+  závislostí na `safetensors` crate (viz SOL-007)
 - Pro state tuning (Fáze 5) bude potřeba backprop podpora v Candle —
   ověřit stav `candle-nn` gradient computation
 - Research materiály: `~/Atlas/Nexus/70-Eleutheria/Research/`
