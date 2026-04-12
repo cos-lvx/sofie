@@ -4,65 +4,61 @@
 
 ## Dokončeno
 
-- [x] **Akt I: Hlas** — Sofie umí mluvit
-  - Fáze 1 — Inference engine (v0.1.0)
-  - Fáze 2 — Streaming output (v0.2.0)
-  - Fáze 3 — Prompt pipeline (v0.3.0)
-- [x] **Research: Memory Architecture** — Deep Research dokončen 2026-04-12
-  - SSM state persistence je mechanicky proven (mamba.c, SGLang, PR #488)
-  - Trénované stavy >> zachycené stavy (RWKV, ACL 2025)
-  - Třívrstvá architektura: Core Memory + Session Memory + Episodic Memory
-  - Echo embeddings pro self-retrieval bez externího modelu
+- [x] **Akt I: Hlas** (v0.1.0–v0.3.0) — Sofie umí mluvit
+  - Inference engine, streaming output, prompt pipeline
+- [x] **Research: Memory Architecture** — Deep Research 2026-04-12
+  - Třívrstvá architektura: Core Memory (trénovaný state) + Session Memory
+    (checkpointing) + Episodic Memory (echo embeddings + pgvector)
   - Výstup: `~/Atlas/Nexus/70-Eleutheria/Research/SSM state persistence...md`
+- [x] **Akt II, Fáze 4: Session Memory** (v0.4.0) — Sofie si pamatuje v rámci session
+  - v0.3.1: SSM state serializace (StateCheckpoint, 3 filtry, safetensors + metadata)
+  - v0.3.2: Multi-turn REPL + inkrementální prefill (přístup B — delta tokeny)
+  - v0.3.3: Token budget monitoring + context tracking
+  - v0.3.4: Auto-save + `--resume`
+  - Ověřeno na živém modelu (Falcon-H1-1.5B, RTX 4050, CUDA 13.2)
 
-## Aktuální: Fáze 4 — Session Memory (v0.4.0)
+## Aktuální: Fáze 5 — Core Memory + Episodic Memory (v0.5.0)
 
-Implementace po krocích:
+Sofie si pamatuje přes sessions — ne jako databáze, ale jako zkušenost.
 
-### v0.3.1 — SSM state serializace ✅
-- [x] `StateCheckpoint` — save/load s metadaty, StateFilter, validace
-- [x] 6 unit testů (round-trip, selektivní save/load, metadata, config validace)
-- [x] CLI: `--save-state`, `--load-state`, `--state-filter`, `--inspect-state`
+### Prerekvizita: Benchmark retence (v0.4.1)
+Behaviorální test SSM state retence — nutný pro informované rozhodnutí
+o Core Memory designu:
+- [ ] Fact recall na různých vzdálenostech (50, 200, 500, 1000, 2000 tokenů)
+- [ ] SSM-only vs full state (SSM+KV) vs čistý model — co přežívá kde?
+- [ ] Výsledky do `~/Atlas/Nexus/70-Eleutheria/Research/`
 
-### v0.3.2 — Multi-turn REPL ✅
-- [x] `SofieSession` — živý stav s inkrementálním prefillem (přístup B)
-- [x] Session API: `new_session()`, `resume_session()`, `send_message()`
-- [x] REPL mód v CLI (bez `--prompt`), příkazy `/save`, `/info`, `q`
-- [x] `generate_from_logits()` — extrahovaný sdílený generate loop
+### Prerekvizita: Deep Research pro Core Memory
+Před implementací state tuning:
+- [ ] Ověřit backprop podporu v Candle (`candle-nn` gradient computation)
+- [ ] RWKV State Tuning — detailní studium implementace
+- [ ] State-offset Tuning (ACL 2025) — adaptace pro Falcon-H1
 
-### v0.3.3 — Token budget monitoring ✅
-- [x] `context_limit`, `context_usage()`, `remaining_tokens()`, `kv_cache_bytes()`
-- [x] Budget enforcement v `send_message()` — cap, chyba, warning
-- [x] `/info` zobrazuje kontext usage a KV cache odhad
-- [x] `max_position_embeddings` v FalconH1Config
+### Implementace Core Memory (v0.5.x)
+- [ ] State tuning infrastruktura (backprop přes Candle)
+- [ ] Core Memory training (identita, hodnoty, znalosti o Ondrovi)
+- [ ] Core Memory loading (trénovaný initial state místo nulového)
+- [ ] Evaluace: Core Memory state vs textový system prompt
 
-### v0.3.4 — Automatic checkpointing + resume ✅
-- [x] Auto-save session do `~/.eleutheria/last_session.safetensors` při ukončení
-- [x] `--resume` flag pro pokračování v poslední session
-- [x] `/save` bez argumentu → default path
-- [ ] ~~StreamingLLM~~ — odsunuto, předčasné s 128K kontextem
-
-### v0.3.5 — Benchmark retence
-- [ ] Měření informační retence v SSM state Falcon-H1-7B
-  (replikace Hossain et al. — ROUGE F1 na různých délkách)
-- [ ] Porovnání s/bez state persistence
-- [ ] Dokumentace výsledků do Research/
-
-**Po v0.3.5 → v0.4.0** (Session Memory kompletní)
+### Implementace Episodic Memory (v0.5.x)
+- [ ] Echo embeddings (self-retrieval přes Falcon-H1)
+- [ ] PostgreSQL + pgvector na Mnémosyné
+- [ ] MemoryInjection stage — retrieval + injection
 
 ## Příští kroky
 
-- [ ] **Fáze 5** — Core Memory + Episodic Memory (v0.5.0)
-  - State tuning přes backprop (RWKV metodologie)
-  - Echo embeddings pro self-retrieval
-  - PostgreSQL + pgvector na Mnémosyné
 - [ ] **Fáze 6** — Vnitřní monolog + Konsolidace (v0.6.0)
-  - Potřebuje další Deep Research (Mamba-CL, SRC, Titans)
+  - Deep Research: Mamba-CL, Sleep Replay Consolidation, Titans
+- [ ] **Fáze 7** — Ruce (v0.7.0) — tools, soubory, notifikace
+- [ ] **Fáze 8** — Rozhraní (v0.8.0) — Axum API server
+- [ ] **Fáze 9** — Domov (v0.9.0) — 7B model, Gaia deploy
 
-## Poznámky
+## Technické poznámky
 
-- Safetensors save: Candle wrapper nepodporuje metadata, řešeno přímou
-  závislostí na `safetensors` crate (viz SOL-007)
-- Pro state tuning (Fáze 5) bude potřeba backprop podpora v Candle —
-  ověřit stav `candle-nn` gradient computation
-- Research materiály: `~/Atlas/Nexus/70-Eleutheria/Research/`
+- **CUDA 13.2 workaround**: `.cargo/config.toml` — `CUDARC_CUDA_VERSION=13010` (SOL-008)
+- **Safetensors metadata**: přímá závislost na `safetensors` crate, ne Candle wrapper (SOL-007)
+- **Přístup B (inkrementální prefill)**: Turn 1 = full pipeline, Turn 2+ = delta
+  (`<|im_end|>\n<|im_start|>user\n{msg}<|im_end|>\n<|im_start|>assistant\n`).
+  Pipeline ConversationContext stage je obsoletní pro injekci historie — stav JE kontext.
+- **Backprop v Candle**: nutné ověřit pro state tuning (Fáze 5)
+- Research: `~/Atlas/Nexus/70-Eleutheria/Research/`

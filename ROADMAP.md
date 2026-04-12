@@ -71,34 +71,25 @@ _Dokončeno 2026-03-05_
 
 _Sofie si pamatuje — ne jako databáze, ale jako zkušenost._
 
-### Fáze 4 — Session Memory (v0.4.0)
+### Fáze 4 — Session Memory (v0.4.0) ✅
+_Dokončeno 2026-04-12_
 
-**Princip:** SSM state JE komprimovaná paměť. Nebudeme ho ignorovat a stavět
-sliding window nad ním — budeme ho serializovat, checkpointovat, obnovovat.
+**Princip:** SSM state JE komprimovaná paměť — serializujeme ho, checkpointujeme,
+obnovujeme. Inkrementální prefill (přístup B) — model drží stav mezi turny,
+každý nový turn prefilluje jen delta tokeny.
 
-**Základ (research-backed):**
-- `mamba.c` serializuje conv_state + ssm_state na disk (proven)
-- SGLang `MambaRadixCache` spravuje SSM state + KV cache v produkci (proven)
-- Mamba PR #488 — initial state support v oficiálním repo (proven)
-- Informace v SSM state má poločas ~14 tokenů (α≈0.95), ale d_state=256
-  u Falcon-H1-7B poskytuje výrazně lepší retenci než testované modely
+- [x] SSM state serializace — `StateCheckpoint` se safetensors + metadata (v0.3.1)
+- [x] `StateFilter` — full / core_memory / ssm_only pro tři vrstvy paměti
+- [x] `SofieSession` — živý stav mezi turny, inkrementální prefill (v0.3.2)
+- [x] Multi-turn REPL v CLI — interaktivní smyčka, `/save`, `/info`
+- [x] Token budget monitoring — context_usage, remaining_tokens, kv_cache_bytes (v0.3.3)
+- [x] Budget enforcement — cap max_tokens, chyba při vyčerpání, warning >75%
+- [x] Auto-save + `--resume` — session přežívá restart procesu (v0.3.4)
+- [x] Ověřeno na živém modelu (Falcon-H1-1.5B, RTX 4050)
 
-**Implementace:**
-- [ ] SSM state serializace — save/load `ModelState` (ssm_state + conv_state
-  + KV cache) do souboru. Formát: safetensors nebo vlastní binární
-- [ ] `SofieState` struct — živý stav přetrvávající mezi zprávami, oddělený
-  od `ModelState` (conversation context, metadata, timestamp)
-- [ ] State checkpointing — automatické uložení na hranicích konverzace
-  (po každé user/assistant výměně)
-- [ ] State restore — obnovení session z checkpointu místo re-processingu
-  celé historie
-- [ ] Multi-turn REPL v CLI — interaktivní smyčka se stavem
-- [ ] ConversationContext stage — reálná logika místo placeholder
-  (injekce předchozích zpráv + token budget management)
-- [ ] StreamingLLM pro attention branch — attention sinks + sliding window
-  pro KV cache management při dlouhých konverzacích
-- [ ] Benchmark: měření informační retence v SSM state Falcon-H1-7B
-  (replikace Hossain et al. experimentu na našem modelu)
+**Odloženo do budoucích fází:**
+- StreamingLLM (attention sinks) — předčasné s 128K kontextem
+- Benchmark retence — relevantní až pro Core Memory design (v0.5.x)
 
 ### Fáze 5 — Core Memory + Episodic Memory (v0.5.0)
 
@@ -112,6 +103,10 @@ stav, ne zachycený prompt. Episodic Memory přes echo embeddings z Falcon-H1 sa
 - Echo embeddings — opakování vstupu, embedding z druhého průchodu,
   5%+ zlepšení bez tréninku (proven)
 - Trénované stavy >> zachycené stavy (RWKV empirický nález)
+
+**Prerekvizity (přesunuté z v0.3.5):**
+- [ ] Benchmark retence — behaviorální test (fact recall na různých vzdálenostech)
+  + SSM-only vs full state porovnání. Informuje design Core Memory.
 
 **Implementace:**
 - [ ] State tuning infrastruktura — backpropagation přes Candle pro

@@ -36,6 +36,28 @@ CLI `--persona` argument. Placeholder stages připraveny pro budoucí fáze.
 Vytvořeny živé dokumenty: CLAUDE.md, CHANGELOG.md, ROADMAP.md, MEMORY.md, PLAN.md,
 KNOWN-ISSUES.md, SOLUTIONS.md, BUGS.md. Nastavena spolupráce podle vzoru Tessera/Vesna.
 
+## 2026-04-12 | v0.4.0 — Session Memory milestone uzavřen
+
+Fáze 4 (Session Memory) kompletní. Čtyři implementační cykly v jedné session:
+- v0.3.1: StateCheckpoint (safetensors + metadata, 3 filtry)
+- v0.3.2: SofieSession + inkrementální prefill (přístup B — delta tokeny)
+- v0.3.3: Token budget monitoring + context tracking
+- v0.3.4: Auto-save + --resume
+
+Klíčová architektonická rozhodnutí:
+- Přístup B (inkrementální prefill) místo A (re-prefill celé konverzace)
+- ConversationContext stage v pipeline je obsoletní pro injekci historie —
+  s přístupem B je session state = kontext
+- Benchmark retence odsunut do v0.5.x — relevantní až pro Core Memory design
+- StreamingLLM odsunut — předčasný s 128K kontextem
+
+Ověřeno na živém modelu (Falcon-H1-1.5B, RTX 4050, CUDA 13.2). Model si
+pamatuje kontext přes turny. Inkrementální prefill funguje (16 tokenů delta
+místo 223 full re-prefill).
+
+Příští fáze: v0.5.0 — Core Memory (trénovaný SSM state) + Episodic Memory.
+Prerekvizita: benchmark retence + Deep Research pro state tuning v Candle.
+
 ## 2026-04-12 | v0.3.4 — Automatic Checkpointing + Resume
 
 Auto-save session do `~/.eleutheria/last_session.safetensors` při ukončení REPL.
