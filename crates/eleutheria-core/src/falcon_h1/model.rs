@@ -45,11 +45,8 @@ impl FalconH1Model {
         )?;
 
         // LM head (vlastní váhy, ne tied)
-        let lm_head = candle_nn::linear_no_bias(
-            config.hidden_size,
-            config.vocab_size,
-            vb.pp("lm_head"),
-        )?;
+        let lm_head =
+            candle_nn::linear_no_bias(config.hidden_size, config.vocab_size, vb.pp("lm_head"))?;
 
         Ok(Self {
             embed_tokens,
@@ -74,7 +71,7 @@ impl FalconH1Model {
         state: &mut ModelState,
     ) -> Result<Tensor> {
         // === 1. Token embedding + muP scaling ===
-        let mut x = self.embed_tokens.forward(input_ids)?;  // [b, s, 3072]
+        let mut x = self.embed_tokens.forward(input_ids)?; // [b, s, 3072]
         let emb_scale = Tensor::new(&[self.config.embedding_multiplier as f32], x.device())?
             .to_dtype(x.dtype())?;
         x = x.broadcast_mul(&emb_scale)?;
@@ -88,7 +85,7 @@ impl FalconH1Model {
         x = self.final_norm.forward(&x)?;
 
         // === 4. LM head → logity + muP scaling ===
-        let logits = self.lm_head.forward(&x)?;  // [b, s, vocab_size]
+        let logits = self.lm_head.forward(&x)?; // [b, s, vocab_size]
         let lm_scale = Tensor::new(&[self.config.lm_head_multiplier as f32], logits.device())?
             .to_dtype(logits.dtype())?;
         let logits = logits.broadcast_mul(&lm_scale)?;

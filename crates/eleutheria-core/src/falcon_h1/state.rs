@@ -1,7 +1,7 @@
 //! Stavové struktury pro Falcon-H1 inference.
 //! Každý layer si drží SSM state, conv state a KV cache.
 
-use candle_core::{Device, DType, Result, Tensor};
+use candle_core::{DType, Device, Result, Tensor};
 
 /// Stav jednoho Falcon-H1 layeru mezi tokeny.
 pub struct LayerState {
@@ -26,37 +26,30 @@ pub struct LayerState {
 impl LayerState {
     /// Vytvoří prázdný stav (nuly) pro jeden layer.
     pub fn new(
-        n_heads: usize,
-        headdim: usize,
-        d_state: usize,
-        d_inner: usize,
-        d_conv: usize,
-        n_kv_heads: usize,
-        kv_head_dim: usize,
+        config: &super::config::FalconH1Config,
         dtype: DType,
         device: &Device,
     ) -> Result<Self> {
+        let d_inner = config.mamba_d_ssm + 2 * config.mamba_n_groups * config.mamba_d_state;
+
         Ok(Self {
-            // SSM state musí být FP32 - jinak numerická nestabilkita
             ssm_state: Tensor::zeros(
-                (n_heads, headdim, d_state),
+                (
+                    config.mamba_n_heads,
+                    config.mamba_d_head,
+                    config.mamba_d_state,
+                ),
                 dtype,
                 device,
             )?,
-            // Conv state: okno posledních d_conv tokenů
-            conv_state: Tensor::zeros(
-                (d_inner, d_conv),
-                dtype,
-                device,
-            )?,
-            // KV cache začíná prázdná (0 tokenů)
+            conv_state: Tensor::zeros((d_inner, config.mamba_d_conv), dtype, device)?,
             k_cache: Tensor::zeros(
-                (1, n_kv_heads, 0, kv_head_dim),
+                (1, config.num_key_value_heads, 0, config.head_dim),
                 dtype,
                 device,
             )?,
             v_cache: Tensor::zeros(
-                (1, n_kv_heads, 0, kv_head_dim),
+                (1, config.num_key_value_heads, 0, config.head_dim),
                 dtype,
                 device,
             )?,
@@ -64,29 +57,20 @@ impl LayerState {
     }
 }
 
-/// Stav celého modelu - všech 44 layerů
+/// Stav celého modelu — všech 44 layerů.
 pub struct ModelState {
     pub layers: Vec<LayerState>,
 }
 
 impl ModelState {
-    /// Vytvoří ptázdný stav pro celý model.
-    pub fn new(config: &super::config::FalconH1Config, dtype: DType, device: &Device) -> Result<Self> {
-        let d_inner = config.mamba_d_ssm
-            + 2 * config.mamba_n_groups * config.mamba_d_state;
-
+    /// Vytvoří prázdný stav pro celý model.
+    pub fn new(
+        config: &super::config::FalconH1Config,
+        dtype: DType,
+        device: &Device,
+    ) -> Result<Self> {
         let layers = (0..config.num_hidden_layers)
-            .map(|_| LayerState::new(
-                config.mamba_n_heads,
-                config.mamba_d_head,
-                config.mamba_d_state,
-                d_inner,
-                config.mamba_d_conv,
-                config.num_key_value_heads,
-                config.head_dim,
-                dtype,
-                device,
-            ))
+            .map(|_| LayerState::new(config, dtype, device))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self { layers })
     }

@@ -1,7 +1,7 @@
 //! Normalizační vrstvy pro Falcon-H1.
 //! RMSNorm (pre-layer norm) a RMSNormGated (SSM branch s gating).
 
-use candle_core::{DType, Module, Result, Tensor, D};
+use candle_core::{D, DType, Module, Result, Tensor};
 use candle_nn::VarBuilder;
 
 /// RMSNorm — Root Mean Square Layer Normalization.
@@ -32,7 +32,9 @@ impl Module for RmsNorm {
         // 3. 1/sqrt(mean + eps)
         let scale = (mean_sq + self.eps)?.sqrt()?.recip()?;
         // 4. normalizuj a vynásob naučenou váhou
-        x.broadcast_mul(&scale)?.broadcast_mul(&weight)?.to_dtype(orig_dtype)
+        x.broadcast_mul(&scale)?
+            .broadcast_mul(&weight)?
+            .to_dtype(orig_dtype)
     }
 }
 
@@ -47,14 +49,13 @@ pub struct RmsNormGated {
 }
 
 impl RmsNormGated {
-    pub fn load(
-        size: usize,
-        eps: f64,
-        norm_before_gate: bool,
-        vb: VarBuilder,
-    ) -> Result<Self> {
+    pub fn load(size: usize, eps: f64, norm_before_gate: bool, vb: VarBuilder) -> Result<Self> {
         let weight = vb.get(size, "weight")?;
-        Ok(Self { weight, eps, norm_before_gate })
+        Ok(Self {
+            weight,
+            eps,
+            norm_before_gate,
+        })
     }
 }
 
@@ -80,7 +81,9 @@ impl RmsNormGated {
         let x_sq = x.sqr()?;
         let mean_sq = x_sq.mean_keepdim(D::Minus1)?;
         let scale = (mean_sq + self.eps)?.sqrt()?.recip()?;
-        x.broadcast_mul(&scale)?.broadcast_mul(&weight)?.to_dtype(orig_dtype)
+        x.broadcast_mul(&scale)?
+            .broadcast_mul(&weight)?
+            .to_dtype(orig_dtype)
     }
 }
 
@@ -92,5 +95,3 @@ fn silu(x: &Tensor) -> Result<Tensor> {
     let sigmoid = x.neg()?.exp()?.affine(1.0, 1.0)?.recip()?;
     x.broadcast_mul(&sigmoid)?.to_dtype(orig_dtype)
 }
-
-

@@ -2,7 +2,6 @@
 /// Bude injektovat conversation_history z krátkodobé paměti.
 /// Strategie: sliding window nebo summarization (TBD v 0.4.0).
 /// Aktuálně: passthrough (conversation_history zůstává prázdná).
-
 use anyhow::Result;
 
 use crate::prompt::pipeline::PromptStage;

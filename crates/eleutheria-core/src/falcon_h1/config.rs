@@ -6,7 +6,6 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 pub struct FalconH1Config {
     // === Základní rozměry modelu ===
-
     /// Velikost slovníku (kolik tokenů model zná). V JSONu: "vocab_size"
     pub vocab_size: usize,
 
@@ -23,7 +22,6 @@ pub struct FalconH1Config {
     pub intermediate_size: usize,
 
     // === Attention ===
-
     /// Počet Q hlav v attention. V JSONu: "num_attention_heads"
     /// U Falcon-H1-7B = 12.
     pub num_attention_heads: usize,
@@ -37,7 +35,6 @@ pub struct FalconH1Config {
     pub head_dim: usize,
 
     // === SSM (Mamba-2) parametry - flat s prefixem mamba_ ===
-
     /// Rozměr SSM stavu. Každá hlava udržuje matici [headdim x d_state].
     /// U Falcon-H1-7B = 256
     pub mamba_d_state: usize,
@@ -97,7 +94,6 @@ pub struct FalconH1Config {
     pub mlp_multipliers: Vec<f64>,
 
     // === Ostatní ===
-
     /// RMSNorm  epsilon.
     pub rms_norm_eps: f64,
 
@@ -112,17 +108,14 @@ pub struct FalconH1Config {
     pub tie_word_embeddings: bool,
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_load_config() {
-        let json =  std::fs::read_to_string(
-            "/home/lvx/Models/falcon-h1-7b-instruct/config.json"
-        ).unwrap();
+        let json =
+            std::fs::read_to_string("/home/lvx/Models/falcon-h1-7b-instruct/config.json").unwrap();
         let config: FalconH1Config = serde_json::from_str(&json).unwrap();
 
         assert_eq!(config.hidden_size, 3072);

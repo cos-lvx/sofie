@@ -1,9 +1,8 @@
 //! Grouped Query Attention pro Falcon-H1.
 //! 12 Q hlav, 2 KV hlav (GQA ratio 6:1), RoPE s theta=10^11.
 
-
-use candle_core::{Device, IndexOp, Result, Tensor, D};
-use candle_nn::{linear_no_bias, Linear, Module, VarBuilder};
+use candle_core::{D, Device, IndexOp, Result, Tensor};
+use candle_nn::{Linear, Module, VarBuilder, linear_no_bias};
 
 use super::state::LayerState;
 
@@ -38,7 +37,10 @@ impl RotaryEmbedding {
         let cos_cache = angles.cos()?;
         let sin_cache = angles.sin()?;
 
-        Ok(Self { cos_cache, sin_cache })
+        Ok(Self {
+            cos_cache,
+            sin_cache,
+        })
     }
 
     /// Aplikuje rotaci na tensor [batch, n_heads, seq_len, head_dim] na dané pozici.
@@ -59,8 +61,8 @@ impl RotaryEmbedding {
         let sin = sin.unsqueeze(0)?.unsqueeze(0)?;
 
         // Rozděl x na dvě poloviny
-        let x1 = x.narrow(D::Minus1, 0, half)?;     // prvních half dimenzí
-        let x2 = x.narrow(D::Minus1, half, half)?;          // druhých half dimenzí
+        let x1 = x.narrow(D::Minus1, 0, half)?; // prvních half dimenzí
+        let x2 = x.narrow(D::Minus1, half, half)?; // druhých half dimenzí
 
         // Rotace: [x1*cos - x2*sin, x1*sin + x2*cos]
         let rotated_x1 = (x1.broadcast_mul(&cos)? - x2.broadcast_mul(&sin)?)?;
@@ -95,10 +97,10 @@ impl Attention {
         vb: VarBuilder,
         device: &Device,
     ) -> Result<Self> {
-        let hidden = config.hidden_size;        // 3072
-        let n_q = config.num_attention_heads;   // 12
-        let n_kv = config.num_key_value_heads;  // 2
-        let hd = config.head_dim;               // 128
+        let hidden = config.hidden_size; // 3072
+        let n_q = config.num_attention_heads; // 12
+        let n_kv = config.num_key_value_heads; // 2
+        let hd = config.head_dim; // 128
 
         let q_proj = linear_no_bias(hidden, n_q * hd, vb.pp("q_proj"))?;
         let k_proj = linear_no_bias(hidden, n_kv * hd, vb.pp("k_proj"))?;
@@ -117,7 +119,7 @@ impl Attention {
             n_q_heads: n_q,
             n_kv_heads: n_kv,
             head_dim: hd,
-            gqa_ratio: n_q / n_kv,  // 12/2 = 6
+            gqa_ratio: n_q / n_kv, // 12/2 = 6
             key_multiplier: config.key_multiplier,
         })
     }
@@ -132,16 +134,19 @@ impl Attention {
         let (batch, seq_len, _hidden) = x.dims3()?;
 
         // === 1. Projekce Q, K, V ===
-        let q = self.q_proj.forward(x)?;  // [b, s, n_q * hd]
-        let k = self.k_proj.forward(x)?;  // [b, s, n_kv * hd]
-        let v = self.v_proj.forward(x)?;  // [b, s, n_kv * hd]
+        let q = self.q_proj.forward(x)?; // [b, s, n_q * hd]
+        let k = self.k_proj.forward(x)?; // [b, s, n_kv * hd]
+        let v = self.v_proj.forward(x)?; // [b, s, n_kv * hd]
 
         // Reshape na hlavy: [b, s, n, hd] → [b, n, s, hd]
-        let q = q.reshape((batch, seq_len, self.n_q_heads, self.head_dim))?
+        let q = q
+            .reshape((batch, seq_len, self.n_q_heads, self.head_dim))?
             .transpose(1, 2)?;
-        let k = k.reshape((batch, seq_len, self.n_kv_heads, self.head_dim))?
+        let k = k
+            .reshape((batch, seq_len, self.n_kv_heads, self.head_dim))?
             .transpose(1, 2)?;
-        let v = v.reshape((batch, seq_len, self.n_kv_heads, self.head_dim))?
+        let v = v
+            .reshape((batch, seq_len, self.n_kv_heads, self.head_dim))?
             .transpose(1, 2)?;
 
         // === 2. RoPE na Q a K ===
@@ -150,10 +155,11 @@ impl Attention {
 
         // === 3. Aktualizace KV cache ===
         // Připojíme nové K, V k existujícímu cache
-        let k = if state.k_cache.dim(2)? == 0 {  // seq dim je index 2 v [b, n_kv, seq, hd]
+        let k = if state.k_cache.dim(2)? == 0 {
+            // seq dim je index 2 v [b, n_kv, seq, hd]
             k
         } else {
-            Tensor::cat(&[&state.k_cache, &k], 2)?  // cat přes seq dim
+            Tensor::cat(&[&state.k_cache, &k], 2)? // cat přes seq dim
         };
         let v = if state.v_cache.dim(2)? == 0 {
             v
@@ -167,7 +173,7 @@ impl Attention {
 
         // === 4. GQA expanze ===
         // Každou KV hlavu zopakujeme gqa_ratio krát (2 → 12)
-        let k = self.expand_kv(&k)?;  // [b, n_q, full_seq, hd]
+        let k = self.expand_kv(&k)?; // [b, n_q, full_seq, hd]
         let v = self.expand_kv(&v)?;
 
         // === 5. Attention skóre ===
@@ -181,13 +187,17 @@ impl Attention {
         let full_seq = attn_weights.dim(D::Minus1)?;
         if seq_len > 1 {
             // Prefill: potřebujeme trojúhelníkovou masku
-            let mask = Self::causal_mask(seq_len, full_seq, x.device())?
-                .to_dtype(attn_weights.dtype())?;
+            let mask =
+                Self::causal_mask(seq_len, full_seq, x.device())?.to_dtype(attn_weights.dtype())?;
             let attn_weights = attn_weights.broadcast_add(&mask)?;
             let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
             let output = attn_weights.matmul(&v)?;
             // [b, n_q, s, hd] → [b, s, n_q, hd] → [b, s, n_q * hd]
-            let output = output.transpose(1, 2)?.reshape((batch, seq_len, self.n_q_heads * self.head_dim))?;
+            let output = output.transpose(1, 2)?.reshape((
+                batch,
+                seq_len,
+                self.n_q_heads * self.head_dim,
+            ))?;
             // Projekce zpět na hidden_size
             let output = self.o_proj.forward(&output)?;
             Ok(output)
@@ -195,12 +205,14 @@ impl Attention {
             // Generování: seq_len=1, maska není potřeba
             let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
             let output = attn_weights.matmul(&v)?;
-            let output = output.transpose(1, 2)?.reshape((batch, 1, self.n_q_heads * self.head_dim))?;
+            let output =
+                output
+                    .transpose(1, 2)?
+                    .reshape((batch, 1, self.n_q_heads * self.head_dim))?;
             // Projekce zpět na hidden_size
             let output = self.o_proj.forward(&output)?;
             Ok(output)
         }
-
     }
 
     /// Rozšíří KV hlavy pro GQA: [b, n_kv, s, hd] → [b, n_q, s, hd]
@@ -210,9 +222,9 @@ impl Attention {
         }
         // Přidáme dimenzi pro opakování, pak flatten
         let (b, n_kv, s, hd) = x.dims4()?;
-        x.unsqueeze(2)?                              // [b, n_kv, 1, s, hd]
-            .expand((b, n_kv, self.gqa_ratio, s, hd))?  // [b, n_kv, ratio, s, hd]
-            .reshape((b, self.n_q_heads, s, hd))                // [b, n_q, s, hd]
+        x.unsqueeze(2)? // [b, n_kv, 1, s, hd]
+            .expand((b, n_kv, self.gqa_ratio, s, hd))? // [b, n_kv, ratio, s, hd]
+            .reshape((b, self.n_q_heads, s, hd)) // [b, n_q, s, hd]
     }
 
     /// Kauzální maska: -inf nad diagonálou.
@@ -223,11 +235,14 @@ impl Attention {
         let mask: Vec<f32> = (0..seq_len)
             .flat_map(|i| {
                 (0..full_len).map(move |j| {
-                    if j <= i + offset { 0.0 } else { f32::NEG_INFINITY }
+                    if j <= i + offset {
+                        0.0
+                    } else {
+                        f32::NEG_INFINITY
+                    }
                 })
             })
             .collect();
-        Tensor::new(mask.as_slice(), device)?
-            .reshape((1, 1, seq_len, full_len)) // broadcast přes batch a heads
+        Tensor::new(mask.as_slice(), device)?.reshape((1, 1, seq_len, full_len)) // broadcast přes batch a heads
     }
 }

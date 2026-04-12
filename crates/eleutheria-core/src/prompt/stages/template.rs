@@ -38,7 +38,10 @@ impl PromptStage for TemplateExpansion {
         }
         vars.insert("date".to_string(), now.format("%Y-%m-%d").to_string());
         vars.insert("time".to_string(), now.format("%H:%M").to_string());
-        vars.insert("weekday".to_string(), czech_weekday(now.weekday()).to_string());
+        vars.insert(
+            "weekday".to_string(),
+            czech_weekday(now.weekday()).to_string(),
+        );
 
         // Custom vars mají přednost
         for (k, v) in &ctx.template_vars {

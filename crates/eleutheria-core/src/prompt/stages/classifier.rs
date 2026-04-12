@@ -3,7 +3,6 @@
 /// Bude detekovat issues (chybějící kontext, nejasná formulace).
 /// Target: v0.4.0+ (potenciálně s pomocí modelu samotného pro self-reflection).
 /// Aktuálně: passthrough, nastaví intent na Freeform.
-
 use anyhow::Result;
 
 use crate::prompt::pipeline::PromptStage;

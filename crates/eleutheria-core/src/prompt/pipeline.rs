@@ -11,6 +11,12 @@ pub struct PromptPipeline {
     stages: Vec<Box<dyn PromptStage>>,
 }
 
+impl Default for PromptPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PromptPipeline {
     pub fn new() -> Self {
         Self { stages: Vec::new() }

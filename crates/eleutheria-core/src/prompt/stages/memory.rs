@@ -4,7 +4,6 @@
 /// jako samostatné context bloky.
 /// Target: v0.5.0 (Persistent Memory milestone).
 /// Aktuálně: passthrough (memory_fragments zůstává prázdný).
-
 use anyhow::Result;
 
 use crate::prompt::pipeline::PromptStage;
