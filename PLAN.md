@@ -30,10 +30,11 @@ Implementace po krocích:
 - [x] REPL mód v CLI (bez `--prompt`), příkazy `/save`, `/info`, `q`
 - [x] `generate_from_logits()` — extrahovaný sdílený generate loop
 
-### v0.3.3 — ConversationContext stage
-- [ ] Reálná logika místo placeholder — injekce předchozích zpráv
-- [ ] Token budget management (počítání tokenů, ořezávání historie)
-- [ ] InputClassifier s heuristikami (detekce otázka/instrukce/pokračování)
+### v0.3.3 — Token budget monitoring ✅
+- [x] `context_limit`, `context_usage()`, `remaining_tokens()`, `kv_cache_bytes()`
+- [x] Budget enforcement v `send_message()` — cap, chyba, warning
+- [x] `/info` zobrazuje kontext usage a KV cache odhad
+- [x] `max_position_embeddings` v FalconH1Config
 
 ### v0.3.4 — State checkpointing
 - [ ] Automatické uložení state na hranicích konverzace

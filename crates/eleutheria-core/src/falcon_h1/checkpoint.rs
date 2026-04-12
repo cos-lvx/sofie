@@ -491,6 +491,7 @@ mod tests {
             eos_token_id: Some(11),
             rope_theta: 1e11,
             tie_word_embeddings: false,
+            max_position_embeddings: 131072,
         }
     }
 

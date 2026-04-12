@@ -36,6 +36,17 @@ CLI `--persona` argument. Placeholder stages připraveny pro budoucí fáze.
 Vytvořeny živé dokumenty: CLAUDE.md, CHANGELOG.md, ROADMAP.md, MEMORY.md, PLAN.md,
 KNOWN-ISSUES.md, SOLUTIONS.md, BUGS.md. Nastavena spolupráce podle vzoru Tessera/Vesna.
 
+## 2026-04-12 | v0.3.3 — Token Budget Monitoring
+
+Context tracking v SofieSession — `context_limit`, `context_usage()`, `remaining_tokens()`,
+`kv_cache_bytes()`. Budget enforcement v `send_message()` — cap max_tokens, chyba při
+vyčerpání, warning >75%. `/info` v REPL zobrazuje kontext a KV cache odhad.
+
+Přidáno `max_position_embeddings` do FalconH1Config (1.5B: 128K, 7B: 256K).
+Přehodnocení ConversationContext stage: s přístupem B (inkrementální prefill) je
+injekce historie obsoletní — session state JE kontext. Stage přeformulována na
+token budget monitoring, ne na injekci historie.
+
 ## 2026-04-12 | v0.3.2 — Multi-turn REPL + SofieSession
 
 Nový modul `session.rs` — `SofieSession` drží `ModelState` mezi turny. Architektonické

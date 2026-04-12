@@ -7,6 +7,22 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.3.3] — 2026-04-12
+
+### Přidáno
+- Token budget monitoring v `SofieSession`
+  - `context_limit()` — max pozičních embeddingů z config (1.5B: 128K, 7B: 256K)
+  - `context_usage()` — využití kontextu jako poměr (0.0–1.0)
+  - `remaining_tokens()` — zbývající tokeny do limitu
+  - `kv_cache_bytes()` — odhad velikosti KV cache v VRAM
+- Budget enforcement v `send_message()` — cap max_tokens na zbývající kontext,
+  chyba při vyčerpání, warning při >75% využití
+- `/info` v REPL zobrazuje kontext usage, zbývající tokeny, KV cache odhad
+- `max_position_embeddings` pole v `FalconH1Config` (deserializuje se z config.json)
+- 2 nové testy: context_usage, kv_cache_bytes
+
+---
+
 ## [0.3.2] — 2026-04-12
 
 ### Přidáno

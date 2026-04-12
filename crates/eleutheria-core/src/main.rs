@@ -201,12 +201,22 @@ fn run_repl(sofie: &Sofie, args: &Args) -> Result<()> {
                 continue;
             }
             "/info" => {
+                let usage_pct = session.context_usage() * 100.0;
+                let kv_mb = session.kv_cache_bytes() as f64 / (1024.0 * 1024.0);
                 println!(
                     "Session: {} turnů, {} tokenů, běží od {}",
                     session.turn_count(),
                     session.position(),
                     session.started_at().format("%H:%M:%S")
                 );
+                println!(
+                    "  kontext: {} / {} ({:.1}%), zbývá {} tokenů",
+                    session.position(),
+                    session.context_limit(),
+                    usage_pct,
+                    session.remaining_tokens()
+                );
+                println!("  KV cache: ~{:.1} MB (odhad)", kv_mb);
                 for (i, pair) in session.history().chunks(2).enumerate() {
                     if pair.len() == 2 {
                         println!(

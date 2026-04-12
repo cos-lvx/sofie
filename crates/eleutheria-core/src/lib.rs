@@ -131,13 +131,13 @@ impl Sofie {
     /// Vytvoří novou session (prázdný stav).
     pub fn new_session(&self) -> Result<SofieSession> {
         let state = ModelState::new(&self.config, self.dtype, &self.device)?;
-        Ok(SofieSession::new(state))
+        Ok(SofieSession::new(state, &self.config))
     }
 
     /// Vytvoří session z checkpointu.
     pub fn resume_session(&self, path: &Path) -> Result<SofieSession> {
         let (state, pos) = self.load_state(path)?;
-        Ok(SofieSession::from_checkpoint(state, pos))
+        Ok(SofieSession::from_checkpoint(state, pos, &self.config))
     }
 
     /// Pošle zprávu v rámci session — inkrementální prefill.
@@ -197,6 +197,29 @@ impl Sofie {
         let prompt_len = tokens.len();
         tracing::info!("Prefill: {} tokenů (base_pos={})", prompt_len, base_pos);
 
+        // Budget enforcement
+        let remaining = session.remaining_tokens();
+        if remaining <= prompt_len {
+            return Err(anyhow!(
+                "kontext vyčerpán: zbývá {} tokenů, potřebuji minimálně {} pro prefill",
+                remaining,
+                prompt_len
+            ));
+        }
+
+        let budget_for_generation = remaining - prompt_len;
+        let effective_max_tokens = if max_tokens > budget_for_generation {
+            tracing::warn!(
+                "max_tokens ({}) přesahuje zbývající kontext ({}), omezuji na {}",
+                max_tokens,
+                budget_for_generation,
+                budget_for_generation
+            );
+            budget_for_generation
+        } else {
+            max_tokens
+        };
+
         // Prefill
         let prompt_tensor = Tensor::new(tokens.as_slice(), &self.device)?.unsqueeze(0)?;
         let prefill_logits = self
@@ -209,7 +232,7 @@ impl Sofie {
             initial_logits,
             &mut session.state,
             base_pos + prompt_len,
-            max_tokens,
+            effective_max_tokens,
             temperature,
             on_token,
         )?;
@@ -217,6 +240,17 @@ impl Sofie {
         // Aktualizuj session
         let new_position = base_pos + prompt_len + generated_count;
         session.record_turn(message, &response, new_position);
+
+        // Varování při vysokém využití kontextu
+        let usage = session.context_usage();
+        if usage > 0.75 {
+            tracing::warn!(
+                "kontext {:.1}% využit ({} / {} tokenů)",
+                usage * 100.0,
+                session.position(),
+                session.context_limit()
+            );
+        }
 
         Ok(response)
     }

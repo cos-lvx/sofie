@@ -106,6 +106,15 @@ pub struct FalconH1Config {
 
     /// Sdílí embedding a lm_head váhy? false = separátní
     pub tie_word_embeddings: bool,
+
+    /// Maximální délka kontextu (pozičních embeddingů).
+    /// Falcon-H1-1.5B = 131072, 7B = 262144.
+    #[serde(default = "default_max_position_embeddings")]
+    pub max_position_embeddings: usize,
+}
+
+fn default_max_position_embeddings() -> usize {
+    131072
 }
 
 #[cfg(test)]
