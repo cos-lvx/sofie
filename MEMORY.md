@@ -121,3 +121,41 @@ Rozhodnutí: Třívrstvá architektura paměti (Core Memory = trénovaný state,
 Session Memory = checkpointing, Episodic Memory = echo embeddings + pgvector).
 ROADMAP přepsán z feature-driven na capability-driven (Hlas → Pamatování →
 Myšlení → Tělo). Mantra: ne pragmatické řešení, ale revoluční.
+
+## 2026-04-15 | v0.4.1 — Retention Bench Harness
+
+První ze tří patchů prerekvizity pro Fázi 5 (Core Memory). Postavena infra
+pro behaviorální test SSM state retence — kolik si SSM pamatuje přes N tokenů
+vzdálenosti od seedu.
+
+Nový modul `crates/eleutheria-core/src/bench/`:
+- `probe.rs` — `RetentionProbe` + 5 vestavěných probes v angličtině
+  (relational / numeric / enumeration / preference / multi-attribute),
+  AND-substring matcher case-insensitive
+- `filler.rs` — `FillerCorpus` se 6 neutrálními EN větami, cyklicky
+  opakovatelný `FillerPlan`
+- `variant.rs` — `BenchVariant` (Full | SsmOnly | Cold); v0.4.1 jen Full
+- `harness.rs` — `RetentionBench` orchestrátor, per-probe isolation
+  (čerstvá session pro každý pokus)
+- `report.rs` — `BenchReport` s JSON + markdown výstupem (souhrn pass-rate
+  per bucket + detailní tabulka)
+
+Rozhodnutí EN místo CZ: Falcon-H1-1.5B má slabší češtinu, šum z jazyka
+by maskoval signál retence. Dokumentace a CLI output zůstávají česky.
+
+Nové low-level API: `Sofie::inject_turn(&mut session, user, assistant)` —
+prefill bez decoding, injektuje forced assistant reply. Drží stejný
+invariant jako `send_message` (stav za obsahem, `<|im_end|>` zatím
+nekonzumován).
+
+CLI subkomand `bench-retention --variant --distances --output --notes`,
+zpětně kompatibilní (bez subkomand = původní REPL/single-shot).
+
+17 nových unit testů (matcher, filler determinismus, variant parsing,
+JSON round-trip, markdown rendering). Celkem 30 testů prochází.
+
+Odloženo do v0.4.2/v0.4.3: SsmOnly + Cold varianty, pilotní běh na
+Falcon-H1-1.5B s výstupem do Nexus research.
+
+Paralelně otevřeno: Deep Research pro backprop v Candle (blocker pro state
+tuning ve Fázi 5).

@@ -1,9 +1,13 @@
 //! Eleutheria CLI — Sofie's local mind.
-use anyhow::Result;
-use clap::Parser;
+use anyhow::{Result, anyhow};
+use clap::{Args as ClapArgs, Parser, Subcommand};
+use eleutheria_core::bench::{
+    BenchVariant, RetentionBench, built_in_probes, harness::DEFAULT_DISTANCES,
+};
 use eleutheria_core::{GenerateControl, Sofie, SofieSession, StateCheckpoint, StateFilter};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 /// Eleutheria — lokální inference engine pro Falcon-H1.
 #[derive(Parser, Debug)]
@@ -52,6 +56,37 @@ struct Args {
     /// Pokračuj v poslední session (~/.eleutheria/last_session.safetensors)
     #[arg(long)]
     resume: bool,
+
+    /// Specializované podkomandy (benchmarky, nástroje)
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+/// Podkomandy Eleutherie — jednotlivé specializované módy.
+#[derive(Subcommand, Debug)]
+enum Command {
+    /// Retention benchmark — měří SSM state retenci na různých vzdálenostech.
+    BenchRetention(BenchRetentionArgs),
+}
+
+/// Argumenty pro `bench-retention` subkomand.
+#[derive(ClapArgs, Debug)]
+struct BenchRetentionArgs {
+    /// Varianta benchmarku: full | ssm_only | cold (v0.4.1 pouze `full`)
+    #[arg(long, default_value = "full")]
+    variant: String,
+
+    /// Vzdálenosti v tokenech, čárkou oddělené (default: 50,200,500,1000,2000)
+    #[arg(long)]
+    distances: Option<String>,
+
+    /// Base path pro výstup (bez přípony; doplní se `.json` a `.md`)
+    #[arg(long, default_value = "/tmp/eleutheria_retention_bench")]
+    output: String,
+
+    /// Volitelná poznámka k runu — zapíše se do `meta.notes`
+    #[arg(long)]
+    notes: Option<String>,
 }
 
 fn parse_state_filter(s: &str) -> StateFilter {
@@ -115,10 +150,74 @@ fn main() -> Result<()> {
 
     let sofie = Sofie::load(&model_dir, args.cuda, persona_opt)?;
 
-    match &args.prompt {
-        Some(prompt) => run_single_shot(&sofie, &args, prompt),
-        None => run_repl(&sofie, &args),
+    if let Some(cmd) = &args.command {
+        match cmd {
+            Command::BenchRetention(ba) => run_bench_retention(&sofie, &args, ba),
+        }
+    } else {
+        match &args.prompt {
+            Some(prompt) => run_single_shot(&sofie, &args, prompt),
+            None => run_repl(&sofie, &args),
+        }
     }
+}
+
+/// Retention benchmark — harness pro měření SSM state retence.
+fn run_bench_retention(sofie: &Sofie, args: &Args, ba: &BenchRetentionArgs) -> Result<()> {
+    let variant = BenchVariant::from_str(&ba.variant).map_err(|e| anyhow!(e))?;
+
+    let distances: Vec<usize> = match &ba.distances {
+        Some(s) => s
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.parse::<usize>()
+                    .map_err(|e| anyhow!("bad distance '{}': {}", s, e))
+            })
+            .collect::<Result<Vec<_>>>()?,
+        None => DEFAULT_DISTANCES.to_vec(),
+    };
+
+    println!(
+        "\nRetention benchmark — variant={}, distances={:?}, probes={}\n",
+        variant,
+        distances,
+        built_in_probes().len()
+    );
+
+    let report = RetentionBench::run(sofie, built_in_probes(), &distances, &[variant], |r| {
+        let mark = match r.outcome {
+            eleutheria_core::bench::ProbeOutcome::Pass => "PASS",
+            eleutheria_core::bench::ProbeOutcome::Fail => "FAIL",
+        };
+        println!(
+            "  [{}] {} @ {} (actual {}): {}",
+            mark,
+            r.probe_id,
+            r.target_distance,
+            r.actual_distance,
+            truncate(&r.response, 100)
+        );
+    })?;
+
+    let device_label = if args.cuda { "CUDA" } else { "CPU" };
+    let report = report
+        .with_model_name(&args.model)
+        .with_device(device_label);
+    let report = if let Some(n) = &ba.notes {
+        report.with_notes(n.clone())
+    } else {
+        report
+    };
+
+    let base = PathBuf::from(&ba.output);
+    let (json_path, md_path) = report.write_to(&base)?;
+    println!("\nReport zapsán:");
+    println!("  JSON:     {}", json_path.display());
+    println!("  Markdown: {}", md_path.display());
+
+    Ok(())
 }
 
 /// Single-shot mód — jeden prompt, jedna odpověď.

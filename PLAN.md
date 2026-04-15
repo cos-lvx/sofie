@@ -1,6 +1,6 @@
 # Plán — Eleutheria
 
-> Poslední aktualizace: 2026-04-12
+> Poslední aktualizace: 2026-04-15
 
 ## Dokončeno
 
@@ -21,12 +21,15 @@
 
 Sofie si pamatuje přes sessions — ne jako databáze, ale jako zkušenost.
 
-### Prerekvizita: Benchmark retence (v0.4.1)
+### Prerekvizita: Benchmark retence (v0.4.1–v0.4.3)
 Behaviorální test SSM state retence — nutný pro informované rozhodnutí
-o Core Memory designu:
-- [ ] Fact recall na různých vzdálenostech (50, 200, 500, 1000, 2000 tokenů)
-- [ ] SSM-only vs full state (SSM+KV) vs čistý model — co přežívá kde?
-- [ ] Výsledky do `~/Atlas/Nexus/70-Eleutheria/Research/`
+o Core Memory designu. Rozděleno na tři patche:
+- [x] **v0.4.1** — harness (modul `bench/`, 5 probes v EN, filler, CLI
+  subkomand `bench-retention`, `Sofie::inject_turn` low-level API, JSON + MD export)
+- [ ] **v0.4.2** — `SsmOnly` a `Cold` varianty (KV cache clearing, baseline
+  bez kontextu)
+- [ ] **v0.4.3** — pilotní běh na Falcon-H1-1.5B, výsledky do
+  `~/Atlas/Nexus/70-Eleutheria/Research/`
 
 ### Prerekvizita: Deep Research pro Core Memory
 Před implementací state tuning:

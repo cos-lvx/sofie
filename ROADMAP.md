@@ -1,6 +1,6 @@
 # Roadmap — Eleutheria
 
-> Poslední aktualizace: 2026-04-12
+> Poslední aktualizace: 2026-04-15
 
 ## Filozofie
 
@@ -104,9 +104,11 @@ stav, ne zachycený prompt. Episodic Memory přes echo embeddings z Falcon-H1 sa
   5%+ zlepšení bez tréninku (proven)
 - Trénované stavy >> zachycené stavy (RWKV empirický nález)
 
-**Prerekvizity (přesunuté z v0.3.5):**
-- [ ] Benchmark retence — behaviorální test (fact recall na různých vzdálenostech)
-  + SSM-only vs full state porovnání. Informuje design Core Memory.
+**Prerekvizity (rozdělené na v0.4.1–v0.4.3):**
+- [x] **v0.4.1** — benchmark harness (modul `bench/`, 5 probes v EN, filler,
+  CLI subkomand, `Sofie::inject_turn` API, JSON + MD report)
+- [ ] **v0.4.2** — `SsmOnly` a `Cold` varianty (KV cache clearing, baseline)
+- [ ] **v0.4.3** — pilotní běh na Falcon-H1-1.5B, výsledky do Nexus research
 
 **Implementace:**
 - [ ] State tuning infrastruktura — backpropagation přes Candle pro

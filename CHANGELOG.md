@@ -7,6 +7,43 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.4.1] — 2026-04-15
+
+### Přidáno
+- Modul `bench/` v `eleutheria-core` — harness pro retention benchmark (Fáze 5 prerekvizita)
+  - `RetentionProbe` + 5 vestavěných probes v angličtině (relational, numeric,
+    enumeration, preference, multi-attribute) s AND-substring matcherem
+  - `FillerCorpus` — 6 neutrálních EN vět pro deterministický token filler,
+    cyklicky opakovatelný plán
+  - `BenchVariant` enum — `Full` (implementováno), `SsmOnly` a `Cold`
+    odloženo do v0.4.2
+  - `RetentionBench` orchestrátor — iteruje variants × distances × probes,
+    per-probe isolation (čerstvá session pro každý pokus)
+  - `BenchReport` — JSON + markdown export (souhrn pass-rate per bucket
+    + detailní tabulka); zápis JSON a MD vedle sebe
+- `Sofie::inject_turn()` — low-level API pro prefill bez decoding.
+  Injektuje kontrolovaný (user, assistant) pár do session, posune stav,
+  negeneruje vlastní odpověď. Slouží pro benchmark replay a deterministické
+  reprodukování konverzačního stavu.
+- CLI subkomand `bench-retention` s flagy `--variant`, `--distances`,
+  `--output`, `--notes` (zpětně kompatibilní — bez subkomand běží původní
+  REPL/single-shot mód)
+- 18 nových unit testů (probe matcher, filler determinismus, variant parsing,
+  report round-trip + markdown rendering)
+
+### Zdůvodnění angličtiny v probe obsahu
+Falcon-H1-1.5B má slabší češtinu. Pro čisté měření retence stavu (ne
+jazykové kapacity) jsou fact + question + filler v angličtině. Dokumentace,
+komentáře a CLI output zůstávají česky dle projektových pravidel.
+
+### Odloženo do v0.4.2 / v0.4.3
+- `SsmOnly` varianta — vyčištění KV cache přes `StateFilter::ssm_only()`
+  před otázkou, pak re-inject do fresh ModelState
+- `Cold` varianta — otázka bez kontextu, baseline bez paměťového signálu
+- Pilotní běh na Falcon-H1-1.5B s výstupem do Nexus research adresáře
+
+---
+
 ## [0.3.4] — 2026-04-12
 
 ### Přidáno

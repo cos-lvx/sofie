@@ -1,6 +1,7 @@
 //! Eleutheria Core — Sofie's mind engine.
 //! Custom Candle inference pro Falcon-H1-7B-Instruct.
 
+pub mod bench;
 pub mod falcon_h1;
 pub mod prompt;
 pub mod session;
@@ -138,6 +139,82 @@ impl Sofie {
     pub fn resume_session(&self, path: &Path) -> Result<SofieSession> {
         let (state, pos) = self.load_state(path)?;
         Ok(SofieSession::from_checkpoint(state, pos, &self.config))
+    }
+
+    /// Injektuje řízený turn do session bez decoding — nakrmí model danými
+    /// tokeny a posune stav, ale negeneruje vlastní odpověď. Slouží pro
+    /// benchmarky a replay, kde chceme deterministické, reproducibilní
+    /// chování (např. SSM state retention).
+    ///
+    /// Zachovává stejný invariant jako `send_message`: po dokončení je
+    /// pozice session právě za posledním tokenem asistentovy (forced)
+    /// odpovědi, uzavírací `<|im_end|>` ještě nebyl konzumován — příští
+    /// delta ho připojí jako prefix.
+    pub fn inject_turn(
+        &self,
+        session: &mut SofieSession,
+        user_msg: &str,
+        assistant_msg: &str,
+    ) -> Result<()> {
+        let (tokens, base_pos) = if !session.initialized {
+            // Turn 1: plný pipeline, pak připoj forced assistant reply.
+            let mut ctx = PromptContext::new(user_msg);
+            ctx.persona = self.persona.clone();
+            self.pipeline.run(&mut ctx)?;
+            let base = ctx
+                .assembled_prompt
+                .ok_or_else(|| anyhow!("Pipeline nevyprodukovala assembled_prompt"))?;
+            // `base` končí řetězcem "<|im_start|>assistant\n" — dopiš odpověď
+            // bez trailing <|im_end|>, aby stav odpovídal invariantu send_message.
+            let full = format!("{}{}", base, assistant_msg);
+
+            tracing::info!(
+                "inject_turn 1 — full pipeline + forced reply ({} chars)",
+                full.len()
+            );
+
+            let encoding = self
+                .tokenizer
+                .encode(full.as_str(), true)
+                .map_err(|e| anyhow!("Tokenizer error: {}", e))?;
+            session.initialized = true;
+            (encoding.get_ids().to_vec(), 0usize)
+        } else {
+            // Turn 2+: delta s uzavřením předchozího turnu + forced reply.
+            let delta = format!(
+                "<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n{}",
+                user_msg, assistant_msg
+            );
+            tracing::info!(
+                "inject_turn {} — delta ({} chars)",
+                session.turn_count() + 1,
+                delta.len()
+            );
+            let encoding = self
+                .tokenizer
+                .encode(delta.as_str(), false)
+                .map_err(|e| anyhow!("Tokenizer error: {}", e))?;
+            (encoding.get_ids().to_vec(), session.position)
+        };
+
+        let prompt_len = tokens.len();
+        let remaining = session.remaining_tokens();
+        if remaining <= prompt_len {
+            return Err(anyhow!(
+                "kontext vyčerpán: zbývá {} tokenů, inject potřebuje {}",
+                remaining,
+                prompt_len
+            ));
+        }
+
+        // Prefill — update state bez decoding.
+        let prompt_tensor = Tensor::new(tokens.as_slice(), &self.device)?.unsqueeze(0)?;
+        let _ = self
+            .model
+            .forward(&prompt_tensor, base_pos, &mut session.state)?;
+
+        session.record_turn(user_msg, assistant_msg, base_pos + prompt_len);
+        Ok(())
     }
 
     /// Pošle zprávu v rámci session — inkrementální prefill.
