@@ -7,6 +7,37 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.4.2] — 2026-04-15
+
+### Přidáno
+- `Sofie::filter_session_to_ssm_only(&mut session)` — vyfiltruje session
+  na SSM-only stav: zachová Mamba-2 SSM state, zahodí KV cache + conv state,
+  resetuje pozici na 0 a označí session za neinicializovanou. Vyžaduje
+  re-init v dalším turnu (nutné, RoPE indexy v KV musí startovat od 0).
+- `BenchVariant::all()` — sliceový helper se všemi třemi variantami,
+  použito pro `--variant all` v CLI.
+- `RetentionBench` — implementace variant `SsmOnly` a `Cold`:
+  - **SsmOnly**: po fact + filler se zavolá `filter_session_to_ssm_only`,
+    pak otázka přes plnou pipeline (turn 1). Měří, kolik si SSM state
+    samostatně zachová informaci, když attention historie zmizí.
+  - **Cold**: žádný kontext, jen otázka na čerstvé session. Baseline
+    bez paměťového signálu — typicky Fail pro ne-triviální fakta.
+- CLI `--variant all` — spustí všechny tři varianty v jednom běhu;
+  výstup ve stream loggu obsahuje variant label vedle probe ID.
+
+### Změněno
+- `BenchVariant::is_implemented()` odstraněno (dřív gating pro v0.4.1)
+- `RetentionBench::run()` přijímá libovolnou kombinaci variant bez kontroly
+- Dokumentace `BenchVariant` aktualizována — všechny tři varianty jsou živé
+- Test `only_full_is_implemented_in_v041` nahrazen `all_returns_three_variants`
+
+### Odloženo do v0.4.3
+- Pilotní běh na Falcon-H1-1.5B (RTX 4050)
+- Zápis výsledků do `~/Atlas/Nexus/70-Eleutheria/Research/`
+- Aktualizace PLAN.md s empirickými nálezy → vstup pro Core Memory design
+
+---
+
 ## [0.4.1] — 2026-04-15
 
 ### Přidáno

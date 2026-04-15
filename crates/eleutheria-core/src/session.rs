@@ -72,6 +72,25 @@ impl SofieSession {
         config.num_hidden_layers * config.num_key_value_heads * config.head_dim * 2 * 2
     }
 
+    /// Nahradí stav novým a resetuje pozici. Pokud `mark_uninitialized=true`,
+    /// příští `send_message`/`inject_turn` projde plnou pipeline jako turn 1
+    /// (užitečné po vyčištění KV cache — RoPE indexy musí startovat od 0).
+    ///
+    /// `turn_count` a `history` zůstávají zachované pro audit a reporting —
+    /// změna stavu není výmaz konverzace, jen restrukturalizace paměti.
+    pub(crate) fn replace_state(
+        &mut self,
+        state: ModelState,
+        position: usize,
+        mark_uninitialized: bool,
+    ) {
+        self.state = state;
+        self.position = position;
+        if mark_uninitialized {
+            self.initialized = false;
+        }
+    }
+
     /// Zaznamená dokončený turn.
     pub(crate) fn record_turn(&mut self, user_msg: &str, assistant_msg: &str, new_position: usize) {
         self.history.push(ChatMessage {

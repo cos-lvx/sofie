@@ -159,3 +159,39 @@ Falcon-H1-1.5B s výstupem do Nexus research.
 
 Paralelně otevřeno: Deep Research pro backprop v Candle (blocker pro state
 tuning ve Fázi 5).
+
+## 2026-04-15 | v0.4.2 — SsmOnly + Cold varianty
+
+Druhý ze tří patchů Fáze 5 prerekvizity. Otevřeny zbývající dvě varianty
+retention benchmarku.
+
+Nové API: `Sofie::filter_session_to_ssm_only(&mut session)` — round-trip
+přes StateCheckpoint s `StateFilter::ssm_only()` filtrem, vytvoří čerstvý
+ModelState s SSM komponentou injektovanou (KV + conv vynulovány). Resetuje
+pozici na 0 a označí session za neinicializovanou — RoPE indexy v KV musí
+startovat od 0, takže další turn musí jít přes plnou pipeline jako turn 1.
+
+`SofieSession::replace_state(state, position, mark_uninitialized)` —
+interní `pub(crate)` helper. `turn_count` a `history` zůstávají zachované
+pro audit; změna stavu není výmaz konverzace, jen restrukturalizace paměti.
+
+Harness::run_one teď match-uje variant:
+- **Full**: standard (fact, filler, otázka přes delta turn)
+- **SsmOnly**: fact + filler, pak filter_session_to_ssm_only, pak otázka
+  přes plnou pipeline (turn 1)
+- **Cold**: žádný kontext, jen otázka na čerstvé session
+
+CLI `--variant all` přes `BenchVariant::all()` slice helper. Stream log
+obsahuje variant label vedle probe ID pro snadnou orientaci.
+
+Odstraněno: `BenchVariant::is_implemented()` (gating už zbytečný).
+Test `only_full_is_implemented_in_v041` → `all_returns_three_variants`.
+
+30 testů prochází (stejné celkové číslo, jen substituce testu).
+
+Paralelně dorazil Deep Research na backprop v Candle — verdict YELLOW:
+autograd existuje (`Var`, `GradStore`, `AdamW`, kanonický MNIST training
+loop), ale náš chunked Mamba-2 SSD scan není testovaný na backward path.
+Mitigace pro Fázi 5: použít sekvenční scan (jako mamba-minimal v Candle)
+místo chunked, alespoň pro autograd bring-up. Reference: RWKV-LM,
+furiosa-ai/ssm-state-tuning. Plný report uložen do auto-memory.

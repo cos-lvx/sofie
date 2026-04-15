@@ -548,6 +548,33 @@ impl Sofie {
     pub fn config(&self) -> &FalconH1Config {
         &self.config
     }
+
+    /// Vyfiltruje session na SSM-only stav — zachová SSM, zahodí KV cache
+    /// a conv state. Resetuje pozici na 0 a označí session za neinicializovanou,
+    /// takže příští `send_message` projde plnou pipeline jako turn 1.
+    ///
+    /// **Sémantika:** měří, kolik si Mamba-2 SSM state samostatně zachová
+    /// informaci po N tokenech, když attention historie (KV cache) zmizí.
+    /// Conv state je krátkodobé okno — pro retention testy přes stovky+
+    /// tokenů irelevantní, proto zahozený. Nutné, protože RoPE indexy v KV
+    /// musí být konzistentní — nelze nechat KV prázdnou s position > 0.
+    ///
+    /// **Použití:** retention benchmark varianta `SsmOnly` (v0.4.2+).
+    pub fn filter_session_to_ssm_only(&self, session: &mut SofieSession) -> Result<()> {
+        let checkpoint = StateCheckpoint::from_model_state(
+            &session.state,
+            session.position(),
+            &self.config,
+            StateFilter::ssm_only(),
+        )?;
+        let (new_state, _pos) =
+            checkpoint.into_model_state(&self.config, &self.device, self.dtype)?;
+        session.replace_state(new_state, 0, true);
+        tracing::info!(
+            "session vyfiltrována na ssm_only: KV cache + conv state vyhozeny, pozice resetována na 0"
+        );
+        Ok(())
+    }
 }
 
 /// Vzorkování z pravděpodobnostní distribuce.

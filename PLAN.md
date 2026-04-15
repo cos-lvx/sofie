@@ -26,8 +26,8 @@ Behaviorální test SSM state retence — nutný pro informované rozhodnutí
 o Core Memory designu. Rozděleno na tři patche:
 - [x] **v0.4.1** — harness (modul `bench/`, 5 probes v EN, filler, CLI
   subkomand `bench-retention`, `Sofie::inject_turn` low-level API, JSON + MD export)
-- [ ] **v0.4.2** — `SsmOnly` a `Cold` varianty (KV cache clearing, baseline
-  bez kontextu)
+- [x] **v0.4.2** — `SsmOnly` a `Cold` varianty (`filter_session_to_ssm_only`,
+  `BenchVariant::all()`, CLI `--variant all`)
 - [ ] **v0.4.3** — pilotní běh na Falcon-H1-1.5B, výsledky do
   `~/Atlas/Nexus/70-Eleutheria/Research/`
 

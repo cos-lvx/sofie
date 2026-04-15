@@ -72,7 +72,7 @@ enum Command {
 /// Argumenty pro `bench-retention` subkomand.
 #[derive(ClapArgs, Debug)]
 struct BenchRetentionArgs {
-    /// Varianta benchmarku: full | ssm_only | cold (v0.4.1 pouze `full`)
+    /// Varianta benchmarku: full | ssm_only | cold | all
     #[arg(long, default_value = "full")]
     variant: String,
 
@@ -164,7 +164,11 @@ fn main() -> Result<()> {
 
 /// Retention benchmark — harness pro měření SSM state retence.
 fn run_bench_retention(sofie: &Sofie, args: &Args, ba: &BenchRetentionArgs) -> Result<()> {
-    let variant = BenchVariant::from_str(&ba.variant).map_err(|e| anyhow!(e))?;
+    let variants: Vec<BenchVariant> = if ba.variant == "all" {
+        BenchVariant::all().to_vec()
+    } else {
+        vec![BenchVariant::from_str(&ba.variant).map_err(|e| anyhow!(e))?]
+    };
 
     let distances: Vec<usize> = match &ba.distances {
         Some(s) => s
@@ -179,21 +183,23 @@ fn run_bench_retention(sofie: &Sofie, args: &Args, ba: &BenchRetentionArgs) -> R
         None => DEFAULT_DISTANCES.to_vec(),
     };
 
+    let variant_labels: Vec<&str> = variants.iter().map(|v| v.label()).collect();
     println!(
-        "\nRetention benchmark — variant={}, distances={:?}, probes={}\n",
-        variant,
+        "\nRetention benchmark — variants={:?}, distances={:?}, probes={}\n",
+        variant_labels,
         distances,
         built_in_probes().len()
     );
 
-    let report = RetentionBench::run(sofie, built_in_probes(), &distances, &[variant], |r| {
+    let report = RetentionBench::run(sofie, built_in_probes(), &distances, &variants, |r| {
         let mark = match r.outcome {
             eleutheria_core::bench::ProbeOutcome::Pass => "PASS",
             eleutheria_core::bench::ProbeOutcome::Fail => "FAIL",
         };
         println!(
-            "  [{}] {} @ {} (actual {}): {}",
+            "  [{}] {} {} @ {} (actual {}): {}",
             mark,
+            r.variant,
             r.probe_id,
             r.target_distance,
             r.actual_distance,

@@ -107,7 +107,8 @@ stav, ne zachycený prompt. Episodic Memory přes echo embeddings z Falcon-H1 sa
 **Prerekvizity (rozdělené na v0.4.1–v0.4.3):**
 - [x] **v0.4.1** — benchmark harness (modul `bench/`, 5 probes v EN, filler,
   CLI subkomand, `Sofie::inject_turn` API, JSON + MD report)
-- [ ] **v0.4.2** — `SsmOnly` a `Cold` varianty (KV cache clearing, baseline)
+- [x] **v0.4.2** — `SsmOnly` a `Cold` varianty (`filter_session_to_ssm_only`,
+  `--variant all`)
 - [ ] **v0.4.3** — pilotní běh na Falcon-H1-1.5B, výsledky do Nexus research
 
 **Implementace:**

@@ -3,16 +3,15 @@
 //! `RetentionBench::run(...)` iteruje přes **varianty × vzdálenosti × probes**
 //! a pro každou kombinaci:
 //! 1. vytvoří čerstvou session (per-probe isolation — viz design v PLAN.md)
-//! 2. injektuje fact + acknowledgment (`inject_turn`)
-//! 3. injektuje filler turny dokud pozice nedosáhne cílové vzdálenosti
-//! 4. pošle otázku přes `send_message` s `temperature=0.0` (greedy)
-//! 5. vyhodnotí odpověď proti `probe.expected` (AND-substring matcher)
-//! 6. zaznamená `ProbeResult`
-//!
-//! Pro v0.4.1 je implementovaná pouze varianta `Full`. `SsmOnly` a `Cold`
-//! vrátí `anyhow!` s informací o odložení do v0.4.2.
+//! 2. dle varianty:
+//!    - `Full` — fact, filler do cílové pozice, otázka (SSM + KV cache + conv)
+//!    - `SsmOnly` — fact, filler, vyfiltrovat KV cache, otázka (jen SSM signal)
+//!    - `Cold` — žádný kontext, jen otázka (baseline bez paměti)
+//! 3. pošle otázku přes `send_message` s `temperature=0.0` (greedy)
+//! 4. vyhodnotí odpověď proti `probe.expected` (AND-substring matcher)
+//! 5. zaznamená `ProbeResult`
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 
 use crate::bench::filler::FillerCorpus;
 use crate::bench::probe::{ProbeOutcome, ProbeResult, RetentionProbe};
@@ -62,13 +61,6 @@ impl RetentionBench {
         );
 
         for variant in variants {
-            if !variant.is_implemented() {
-                return Err(anyhow!(
-                    "varianta '{}' není implementovaná v v0.4.1 — plánováno pro v0.4.2",
-                    variant
-                ));
-            }
-
             for &distance in distances {
                 for probe in probes {
                     tracing::info!(
@@ -89,7 +81,7 @@ impl RetentionBench {
         Ok(BenchReport::new(results))
     }
 
-    /// Spustí jeden pokus — čerstvá session, fact, filler, otázka, vyhodnocení.
+    /// Spustí jeden pokus — čerstvá session, dle varianty různý průběh.
     fn run_one(
         sofie: &Sofie,
         corpus: &FillerCorpus,
@@ -99,31 +91,49 @@ impl RetentionBench {
     ) -> Result<ProbeResult> {
         let mut session = sofie.new_session()?;
 
-        // 1) Fact
-        sofie.inject_turn(&mut session, probe.fact, probe.ack)?;
-        let pos_after_fact = session.position();
-
-        // 2) Filler — injektuj dokud pozice neachievuje target_distance
-        let plan = corpus.plan(target_distance);
-        for turn in &plan.turns {
-            if session.position() - pos_after_fact >= target_distance {
-                break;
+        let (actual_distance, position_before_question) = match variant {
+            BenchVariant::Cold => {
+                // Cold baseline: žádný kontext, jen otázka. Měříme náhodu trefit
+                // odpověď bez paměťového signálu (typicky Fail pro ne-triviální fakta).
+                // target_distance se ignoruje, ale zaznamená se pro konzistenci tabulky.
+                (0usize, 0usize)
             }
-            // Budget check — pokud by došel kontext, přerušíme a vyhodnotíme
-            // pokus se zbývajícími tokeny (ne fatální chyba).
-            if session.remaining_tokens() < 256 {
-                tracing::warn!(
-                    "docházející kontext během filleru (zbývá {} tokenů) — přerušuji plán",
-                    session.remaining_tokens()
-                );
-                break;
-            }
-            sofie.inject_turn(&mut session, turn.user, turn.ack)?;
-        }
-        let actual_distance = session.position().saturating_sub(pos_after_fact);
-        let position_before_question = session.position();
+            BenchVariant::Full | BenchVariant::SsmOnly => {
+                // 1) Fact
+                sofie.inject_turn(&mut session, probe.fact, probe.ack)?;
+                let pos_after_fact = session.position();
 
-        // 3) Otázka — greedy decode
+                // 2) Filler — injektuj dokud pozice neachievuje target_distance
+                let plan = corpus.plan(target_distance);
+                for turn in &plan.turns {
+                    if session.position() - pos_after_fact >= target_distance {
+                        break;
+                    }
+                    // Budget check — pokud by došel kontext, přerušíme a vyhodnotíme
+                    // pokus se zbývajícími tokeny (ne fatální chyba).
+                    if session.remaining_tokens() < 256 {
+                        tracing::warn!(
+                            "docházející kontext během filleru (zbývá {} tokenů) — přerušuji plán",
+                            session.remaining_tokens()
+                        );
+                        break;
+                    }
+                    sofie.inject_turn(&mut session, turn.user, turn.ack)?;
+                }
+                let actual = session.position().saturating_sub(pos_after_fact);
+
+                // 3) SsmOnly: vyhodit KV cache + conv state, reset pozice na 0.
+                // Pozice před otázkou je teď 0 (čerstvý turn 1 přes plnou pipeline),
+                // ale SSM state si komprimovaně drží fact + filler.
+                if variant == BenchVariant::SsmOnly {
+                    sofie.filter_session_to_ssm_only(&mut session)?;
+                }
+
+                (actual, session.position())
+            }
+        };
+
+        // 4) Otázka — greedy decode
         let mut response_buf = String::new();
         let response = sofie.send_message(
             &mut session,
@@ -142,7 +152,7 @@ impl RetentionBench {
             response
         };
 
-        // 4) Vyhodnocení
+        // 5) Vyhodnocení
         let passed = probe.matches(&final_response);
         let outcome = if passed {
             ProbeOutcome::Pass
