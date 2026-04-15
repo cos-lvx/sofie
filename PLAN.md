@@ -28,7 +28,10 @@ o Core Memory designu. Rozděleno na tři patche:
   subkomand `bench-retention`, `Sofie::inject_turn` low-level API, JSON + MD export)
 - [x] **v0.4.2** — `SsmOnly` a `Cold` varianty (`filter_session_to_ssm_only`,
   `BenchVariant::all()`, CLI `--variant all`)
-- [ ] **v0.4.3** — pilotní běh na Falcon-H1-1.5B, výsledky do
+- [x] **v0.4.3** — bugfix BUG-009 (UTF-8 safe streaming diff)
+- [x] **v0.4.4** — `--with-persona` opt-in, bench defaultně bez persony
+  (čistý model-level SSM measurement)
+- [ ] **v0.4.5** — pilotní běh na Falcon-H1-1.5B, výsledky do
   `~/Atlas/Nexus/70-Eleutheria/Research/`
 
 ### Prerekvizita: Deep Research pro Core Memory

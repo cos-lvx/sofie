@@ -210,6 +210,36 @@ Odhaleno při prvním reálném běhu, před tímto patchem nebyl v ničem
 viditelný — single-shot i REPL s normálním modelovým výstupem nikdy
 neretokenizoval na UTF-8 boundary.
 
+## 2026-04-15 | v0.4.4 — bench bez persony default
+
+Ondra položil zásadní otázku: nezkresluje nám persona výsledky retention
+benchmarku? Odpověď: ano, čtyřmi mechanismy.
+
+1. Persona je česky, probes jsou EN → jazyková inkonzistence = šum v SSM
+   komprimovaném kontextu
+2. "Mysli v krocích" instrukce prodlužuje odpovědi, klíčová slova často
+   padají mimo 80-token answer budget
+3. 1.5B model může ignorovat meta-instrukci "odpovídej v jazyce, ve kterém
+   ti bylo napsáno" → odpoví česky → AND-matcher hledající EN substrings
+   false-negative i když model fakt pamatuje
+4. ~180 tokenů persony posouvá absolute position, zkresluje měření krátkých
+   vzdáleností (50, 200 tokenů)
+
+Fix: `bench-retention --with-persona` je opt-in flag, default je vypnutý.
+Bench běží s čistým ChatML `<|im_start|>user\n{fact/filler/question}<|im_end|>`
+bez system promptu → čistý model-level SSM capacity measurement.
+
+Implementace: `matches!(args.command, Some(Command::BenchRetention(ba)) if !ba.with_persona)`
+preempt-uje načtení persony při Sofie::load. REPL a single-shot mód zůstávají
+nedotčené.
+
+Architectonická poznámka: Core Memory (Fáze 5) bude nahrazovat persona
+system prompt trénovaným initial SSM state. Bench bez persony je tedy i
+správný srovnávací baseline pro budoucí produkční cíl.
+
+Pilot matrix na Falcon-H1-1.5B čekal na tento patch — spuštění odložen
+o jeden cyklus.
+
 Paralelně dorazil Deep Research na backprop v Candle — verdict YELLOW:
 autograd existuje (`Var`, `GradStore`, `AdamW`, kanonický MNIST training
 loop), ale náš chunked Mamba-2 SSD scan není testovaný na backward path.

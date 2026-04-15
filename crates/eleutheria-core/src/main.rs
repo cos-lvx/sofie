@@ -87,6 +87,21 @@ struct BenchRetentionArgs {
     /// Volitelná poznámka k runu — zapíše se do `meta.notes`
     #[arg(long)]
     notes: Option<String>,
+
+    /// Zapnout Sofie personu i pro bench (default: vypnuto).
+    ///
+    /// Bez persony běží bench s čistým ChatML `<|im_start|>user\n…` bez
+    /// system promptu — měří **model-level SSM retenci**, ne Sofie-specific
+    /// behavior. Důvody pro default-off:
+    /// - persona je česky, probes jsou EN → jazyková inkonzistence v SSM kontextu
+    /// - persona instruuje "mysli v krocích" → delší odpovědi, klíčová slova
+    ///   často mimo 80-token budget
+    /// - model může odpovědět česky navzdory "odpovídej v jazyce, ve kterém
+    ///   ti bylo napsáno" → false negatives v matcheru (hledá EN substrings)
+    /// - ~180 tokenů persony posouvá absolute position v SSM, zkresluje
+    ///   měření krátkých vzdáleností
+    #[arg(long)]
+    with_persona: bool,
 }
 
 fn parse_state_filter(s: &str) -> StateFilter {
@@ -140,8 +155,20 @@ fn main() -> Result<()> {
     println!("Model: {} ({})", args.model, model_dir.display());
     println!("Device: {}\n", if args.cuda { "CUDA" } else { "CPU" });
 
+    // Bench defaultně běží bez persony (čistý SSM signál). Opt-in přes
+    // --with-persona. Ostatní módy (REPL, single-shot) načtou personu jako dřív.
+    let bench_suppresses_persona = matches!(
+        &args.command,
+        Some(Command::BenchRetention(ba)) if !ba.with_persona
+    );
+
     let persona_path = PathBuf::from(&args.persona);
-    let persona_opt = if persona_path.exists() {
+    let persona_opt = if bench_suppresses_persona {
+        tracing::info!(
+            "bench mód: persona vypnuta pro čistý signál (použij --with-persona pro opt-in)"
+        );
+        None
+    } else if persona_path.exists() {
         Some(persona_path.as_path())
     } else {
         tracing::warn!("Persona soubor nenalezen: {}", args.persona);

@@ -7,6 +7,35 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.4.4] — 2026-04-15
+
+### Přidáno
+- `bench-retention --with-persona` flag — defaultně **vypnutý**. Bench běží
+  bez Sofie persony pro čistý signál (měří model-level SSM retenci, ne
+  Sofie-specific behavior).
+
+### Změněno
+- **Default chování bench-retention: bez persony.** Důvody:
+  - Persona je česky, probes anglicky → jazyková inkonzistence v SSM kontextu
+    zkresluje kompresní kvalitu stavu
+  - Persona instruuje "mysli v krocích" → delší odpovědi, klíčová slova
+    často padají mimo 80-token budget pro answer
+  - Model (zvlášť 1.5B) může odpovědět česky navzdory *"odpovídej v jazyce,
+    ve kterém ti bylo napsáno"* → false negatives v AND-substring matcheru
+    (hledá EN substrings jako `lighthouse`, `7429`, `aldous`)
+  - ~180 tokenů persony posouvá absolute position v SSM a zkresluje měření
+    krátkých vzdáleností (50, 200 tokenů)
+- REPL a single-shot mód zachovávají stávající chování — persona načtená
+  dle `--persona` flagu (default `persona/sofie.toml`)
+
+### Dopad
+Pro prerekvizitu Fáze 5 (Core Memory design) potřebujeme čisté SSM capacity
+measurement, ne Sofie-wrapper behavior. Trénovaný initial state (Core Memory)
+pak naopak bude **nahrazovat** persona system prompt — takže srovnávací
+baseline bez persony odpovídá budoucímu produkčnímu cíli.
+
+---
+
 ## [0.4.3] — 2026-04-15
 
 ### Opraveno
