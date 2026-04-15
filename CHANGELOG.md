@@ -7,6 +7,29 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.4.3] — 2026-04-15
+
+### Opraveno
+- **BUG-009** — panic v streaming diff při BPE retokenizaci. V `generate_from_logits`
+  je `&full_text[emitted_len..]` byte-level slice, ale BPE tokenizer může při
+  novém tokenu re-dekódovat celý `generated` vektor jinak — `full_text` z
+  iterace N+1 nemusí být byte-prefix extension z iterace N. Při halucinaci
+  v SsmOnly variantě (model bez KV cache generuje UTF-8 multi-byte garbage)
+  `emitted_len` ukazoval doprostřed UTF-8 sekvence a Rust panikoval
+  `byte index N is out of bounds`.
+
+  Fix: resync na nejbližší nižší UTF-8 char boundary přes
+  `str::is_char_boundary`. Final decode je z úplného `generated` vektoru,
+  takže žádný data loss; streaming může v ojedinělých případech krátce
+  opakovat znaky nebo přeskočit 1–2 znaky při BPE resyncu.
+
+### Důvod patche
+Odhaleno při prvním pokusu o pilotní běh `bench-retention --variant all`
+na Falcon-H1-1.5B. Blokovalo dokončení matrixu Full × SsmOnly × Cold ×
+5 vzdáleností × 5 probes (75 pokusů).
+
+---
+
 ## [0.4.2] — 2026-04-15
 
 ### Přidáno

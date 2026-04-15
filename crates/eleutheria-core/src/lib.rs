@@ -382,7 +382,23 @@ impl Sofie {
                 .tokenizer
                 .decode(&generated, true)
                 .map_err(|e| anyhow!("Decode error: {}", e))?;
-            let new_text = &full_text[emitted_len..];
+
+            // Odolnost na BPE retokenizaci: nový `full_text` nemusí být
+            // byte-prefix extension minulého (tokenizer může re-dekódovat
+            // zpětně při novém tokenu), a `emitted_len` nemusí ležet na
+            // UTF-8 char boundary — naivní `&full_text[emitted_len..]` pak
+            // panikuje (BUG-009). Resync na nejbližší nižší char boundary.
+            let safe_start =
+                if emitted_len <= full_text.len() && full_text.is_char_boundary(emitted_len) {
+                    emitted_len
+                } else {
+                    let mut s = emitted_len.min(full_text.len());
+                    while s > 0 && !full_text.is_char_boundary(s) {
+                        s -= 1;
+                    }
+                    s
+                };
+            let new_text = &full_text[safe_start..];
             if !new_text.is_empty() {
                 if on_token(next_token, new_text) == GenerateControl::Stop {
                     break;

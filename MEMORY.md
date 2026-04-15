@@ -189,6 +189,27 @@ Test `only_full_is_implemented_in_v041` → `all_returns_three_variants`.
 
 30 testů prochází (stejné celkové číslo, jen substituce testu).
 
+## 2026-04-15 | v0.4.3 — BUG-009 streaming panic fix
+
+První pilotní spuštění `bench-retention --variant all` na 1.5B odhalilo
+panic v `generate_from_logits` během SsmOnly variantu: model bez KV cache
+halucinuje česky (`Knyž Lomího, řeberlí...`), UTF-8 multi-byte chars +
+BPE retokenizace = `&full_text[emitted_len..]` spadne na
+`byte index N is out of bounds`.
+
+Root cause: BPE tokenizer může při novém tokenu re-dekódovat celý
+`generated` vektor jinak než minule. Naivní diff-based streaming
+předpokládal prefix-monotonicity, která neplatí.
+
+Fix: resync `emitted_len` na nejbližší nižší UTF-8 char boundary přes
+`str::is_char_boundary`. V patologických případech (model halucinuje)
+se streaming může krátce desynchronizovat — final decode je vždy
+z úplného `generated` vektoru, takže žádný data loss.
+
+Odhaleno při prvním reálném běhu, před tímto patchem nebyl v ničem
+viditelný — single-shot i REPL s normálním modelovým výstupem nikdy
+neretokenizoval na UTF-8 boundary.
+
 Paralelně dorazil Deep Research na backprop v Candle — verdict YELLOW:
 autograd existuje (`Var`, `GradStore`, `AdamW`, kanonický MNIST training
 loop), ale náš chunked Mamba-2 SSD scan není testovaný na backward path.

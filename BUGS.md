@@ -14,6 +14,22 @@ _Žádné aktivní bugy._
 
 ## Vyřešené
 
+### BUG-009 — Panic v streaming diff při BPE retokenizaci ✓
+- **Nalezeno:** v0.4.2 | **Závažnost:** P1
+- **Reprodukce:** `bench-retention --variant all` na SsmOnly — model bez KV
+  cache halucinuje česky (UTF-8 multi-byte), diff streaming panikuje
+  `byte index N is out of bounds`
+- **Příčina:** `&full_text[emitted_len..]` v `generate_from_logits` je
+  byte-level slice. BPE tokenizer při novém tokenu může re-dekódovat celý
+  generated vektor jinak — `full_text` z iterace N+1 nemusí být
+  byte-prefix extension z iterace N. `emitted_len` pak ukazuje mimo
+  řetězec nebo doprostřed UTF-8 sekvence.
+- **Řešení:** Resync na nejbližší nižší UTF-8 char boundary pomocí
+  `str::is_char_boundary`. Final decode je z úplného `generated` vektoru,
+  takže žádný data loss; streaming může v ojedinělých případech krátce
+  opakovat znaky nebo přeskočit 1–2 znaky.
+- **Opraveno:** v0.4.3
+
 ### BUG-008 — BF16 temperature sampling crash ✓
 - **Nalezeno:** v0.2.0 | **Závažnost:** P1
 - **Reprodukce:** Jakýkoliv generate s temperature > 0 na CUDA
