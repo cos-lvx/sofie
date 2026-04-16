@@ -22,9 +22,14 @@ Formát: `BUG-NNN` s verzí nálezu, závažností (P1–P4), reprodukcí a stav
   v paralelním hybridu
 - **Workaround pro alpha/experimenty:** trénovat jen L23 (`--layer-idx 23`
   bez cut) nebo používat `--cut-at-layer` s úzkým rozsahem
-- **Plánované řešení:** alpha.5 — buď gradient clipping (fast mitigace),
-  F32 upcast v RMSNorm backward (root cause), nebo Deep Research pro
-  klasifikaci problému
+- **Update v0.5.0-alpha.6:** Gradient clipping (`--grad-clip 1.0`)
+  **nepomohl** — pre-clip gradient je už NaN. Research hypotéza
+  "amplifikace přes vrstvy" není úplná; skutečný root cause je
+  **op-specific NaN uvnitř `loss.backward()` samotného**. Dampening μP
+  multipliery ověřeny jako správně načtené (ne primary root cause).
+- **Plánované řešení:** alpha.7 — minimal reproduction, instrumented
+  forward pass k identifikaci konkrétního op (pravděpodobně RMSNorm
+  rsqrt backward s denormalized input, nebo softplus/exp overflow)
 
 ---
 

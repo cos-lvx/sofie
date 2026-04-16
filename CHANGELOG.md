@@ -7,6 +7,69 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.6] — 2026-04-16
+
+### Přidáno
+- `training/clip.rs` — `clip_grad_norm(grads, vars, max_norm)` helper
+  (PyTorch-style global L2 norm clipping, Candle nemá built-in)
+- `Sofie::smoke_train_core_memory_clipped(..., max_grad_norm)` +
+  `SmokeTrainResult.pre_clip_gradient_norm` field pro monitoring
+- CLI flag `--grad-clip <VALUE>` na `train-core-memory-smoke`
+- 2 unit testy pro clip_grad_norm (below/above threshold)
+- Celkem 36 testů prochází
+
+### Ověřeno — dampening μP multipliery jsou správně načtené
+Step 1 z research doporučení: zkontrolovat config.json hodnoty vs. načtené:
+- `ssm_out_multiplier = 0.11785` ✓ aplikováno v layer.rs:89–91
+- `attention_out_multiplier = 0.234375` ✓ aplikováno v layer.rs:94–96
+- `mlp_multipliers = [0.44, 0.13]` ✓ aplikováno v layer.rs:108–124
+- `lm_head_multiplier = 0.0195` ✓ aplikováno v model.rs:91
+
+Dampening **není** primary root cause — multipliery jsou korektní.
+
+### Klíčový nález: clipping nepomůže našemu konkrétnímu problému
+
+Test L22 `--cut-at-layer 23 --grad-clip 1.0`:
+```
+gradient L2 (pre-clip): NaN
+gradient L2 norm:       NaN
+```
+
+**Pre-clip gradient je už NaN**, clipping může škálovat "velký ale konečný",
+ne NaN. Naše NaN nevzniká akumulací přes amplifikaci — **vzniká uvnitř
+`loss.backward()` samotného**, v konkrétní op s numerickou dírou.
+
+Výzkumná hypotéza "Peri-LN massive activations → grad clipping pomůže"
+je **částečně validní** (backward skutečně narazí na massive activations),
+ale neplatí, že clipping je řešení. Skutečný root cause je op-specific:
+pravděpodobně RMSNorm rsqrt backward pro input s extrémním dynamic range
+(L0 hidden 10⁻¹⁴, L2 hidden 10²) nebo softplus exponenciální overflow
+v Candle implementaci.
+
+### Plán alpha.7: minimal reproduction
+
+Research step 5 — osekat model na minimum a binary-searchem najít konkrétní
+op. Strategie:
+
+1. **Zachytit intermediate norms ve forward** přes instrumented verze ops.
+   Cíl: najít první vrstvu/op, kde se objevuje denormalized nebo extrémní
+   hodnota, která v backward produkuje NaN.
+2. **Reproduce v malém test case** — 2-layer model, synthetic vstup,
+   manuálně přes operace, detekovat přesný op.
+3. **Fix**: buď F64 upcast v konkrétní op, nebo workaround v naší
+   implementaci (např. clamp rsqrt denominator).
+
+### Status Fáze 5
+
+- Autograd **technicky funguje** (L23 plný forward PASS, izolované vrstvy
+  PASS, L0 cut=2 PASS, L0 cut=2 + clip=1.0 PASS)
+- **BUG-010 stále otevřen** — pre-clip NaN v backward pro některé
+  konfigurace. Clipping nepomůže, je to op-specific issue.
+- Gradient clipping helper je **stále užitečný** pro budoucí skutečný
+  training (kde amplifikace bude reálný problém)
+
+---
+
 ## [0.5.0-alpha.5] — 2026-04-16
 
 ### Přidáno

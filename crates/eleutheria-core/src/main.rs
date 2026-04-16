@@ -135,6 +135,12 @@ struct TrainCoreMemorySmokeArgs {
     /// Navíc měří forward hidden norms po každé vrstvě.
     #[arg(long)]
     sweep: bool,
+
+    /// Gradient clipping (max L2 norm). Standardní Mamba-2 recept: 1.0.
+    /// Pokud je Peri-LN massive activations root cause NaN gradientu,
+    /// clipping ho odblokuje (research verdict z v0.5.0-alpha.5).
+    #[arg(long)]
+    grad_clip: Option<f64>,
 }
 
 fn parse_state_filter(s: &str) -> StateFilter {
@@ -235,17 +241,30 @@ fn run_train_smoke(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result<()> {
         return run_train_smoke_sweep(sofie, ta);
     }
 
-    let result = match ta.cut_at_layer {
-        None => sofie.smoke_train_core_memory(ta.seq_len, ta.layer_idx, ta.learning_rate)?,
-        Some(cut) => {
+    let result = match (ta.cut_at_layer, ta.grad_clip) {
+        (None, None) => {
+            sofie.smoke_train_core_memory(ta.seq_len, ta.layer_idx, ta.learning_rate)?
+        }
+        (Some(cut), None) => {
             sofie.smoke_train_core_memory_cut(ta.seq_len, ta.layer_idx, ta.learning_rate, cut)?
         }
+        (cut, Some(max_norm)) => sofie.smoke_train_core_memory_clipped(
+            ta.seq_len,
+            ta.layer_idx,
+            ta.learning_rate,
+            cut,
+            max_norm,
+        )?,
     };
 
     println!("Výsledky:");
     println!("  layer_idx:              {}", result.layer_idx);
     println!("  seq_len:                {}", result.seq_len);
     println!("  loss:                   {:.6}", result.loss_value);
+    println!(
+        "  gradient L2 (pre-clip): {:.6e}",
+        result.pre_clip_gradient_norm
+    );
     println!("  gradient L2 norm:       {:.6e}", result.gradient_norm);
     println!(
         "  init_state |before|:    {:.6e}",

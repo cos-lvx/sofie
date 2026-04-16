@@ -19,8 +19,10 @@
 //! - **v0.5.0:** tréning Core Memory na reálném datasetu (Sofie identity,
 //!   Bootstrap, Ondra context), validace přes re-run retention benchmarku.
 
+pub mod clip;
 pub mod core_memory;
 pub mod smoke;
 
+pub use clip::clip_grad_norm;
 pub use core_memory::CoreMemory;
 pub use smoke::SmokeTrainResult;

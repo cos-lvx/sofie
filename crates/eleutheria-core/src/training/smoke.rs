@@ -35,8 +35,11 @@ pub struct SmokeTrainResult {
     pub init_state_norm_after: f64,
     /// Delta L2 norma (init_state_after - init_state_before).
     pub init_state_delta_norm: f64,
-    /// L2 norma gradientu aplikovaného na init_state.
+    /// L2 norma gradientu aplikovaného na init_state (po případném clippingu).
     pub gradient_norm: f64,
+    /// Pre-clip L2 norma gradientu (pro monitoring). Pokud gradient nebyl
+    /// clippován, rovná se `gradient_norm`.
+    pub pre_clip_gradient_norm: f64,
     /// Hodnota loss před krokem.
     pub loss_value: f64,
     /// Wall-clock čas celého cyklu (forward + backward + step) v ms.
@@ -70,7 +73,7 @@ impl Sofie {
         layer_idx: usize,
         learning_rate: f64,
     ) -> Result<SmokeTrainResult> {
-        self.smoke_train_core_memory_impl(seq_len, layer_idx, learning_rate, None)
+        self.smoke_train_core_memory_impl(seq_len, layer_idx, learning_rate, None, None)
     }
 
     /// Varianta smoke testu, která **zastaví forward po vrstvě `cut_at_layer`**
@@ -93,7 +96,42 @@ impl Sofie {
                 layer_idx
             ));
         }
-        self.smoke_train_core_memory_impl(seq_len, layer_idx, learning_rate, Some(cut_at_layer))
+        self.smoke_train_core_memory_impl(
+            seq_len,
+            layer_idx,
+            learning_rate,
+            Some(cut_at_layer),
+            None,
+        )
+    }
+
+    /// Smoke test s **gradient clippingem** — standardní Mamba-2 recept
+    /// (`max_grad_norm=1.0`). Pokud je Peri-LN massive activations root cause
+    /// NaN gradientu v backward, clipping ho odblokuje.
+    pub fn smoke_train_core_memory_clipped(
+        &self,
+        seq_len: usize,
+        layer_idx: usize,
+        learning_rate: f64,
+        cut_at_layer: Option<usize>,
+        max_grad_norm: f64,
+    ) -> Result<SmokeTrainResult> {
+        if let Some(cut) = cut_at_layer
+            && cut < layer_idx
+        {
+            return Err(anyhow!(
+                "cut_at_layer={} musí být >= layer_idx={}",
+                cut,
+                layer_idx
+            ));
+        }
+        self.smoke_train_core_memory_impl(
+            seq_len,
+            layer_idx,
+            learning_rate,
+            cut_at_layer,
+            Some(max_grad_norm),
+        )
     }
 
     fn smoke_train_core_memory_impl(
@@ -102,6 +140,7 @@ impl Sofie {
         layer_idx: usize,
         learning_rate: f64,
         cut_at_layer: Option<usize>,
+        max_grad_norm: Option<f64>,
     ) -> Result<SmokeTrainResult> {
         let start = std::time::Instant::now();
 
@@ -154,10 +193,24 @@ impl Sofie {
         )?;
 
         // Backward store pro diagnostiku gradientu (separate call — AdamW konzumuje loss).
-        let grads = loss.backward()?;
-        let grad_tensor = grads.get(core.init_state.as_tensor()).ok_or_else(|| {
-            anyhow!("gradient pro init_state_var nebyl vytvořen — autograd neprotékl")
-        })?;
+        let mut grads = loss.backward()?;
+        let pre_clip_gradient_norm = match grads.get(core.init_state.as_tensor()) {
+            Some(g) => tensor_l2_norm(g)?,
+            None => {
+                return Err(anyhow!(
+                    "gradient pro init_state_var nebyl vytvořen — autograd neprotékl"
+                ));
+            }
+        };
+
+        // Volitelný gradient clipping (standardní Mamba-2 recept max_grad_norm=1.0).
+        if let Some(max_norm) = max_grad_norm
+            && pre_clip_gradient_norm.is_finite()
+        {
+            crate::training::clip::clip_grad_norm(&mut grads, &[&core.init_state], max_norm)?;
+        }
+
+        let grad_tensor = grads.get(core.init_state.as_tensor()).unwrap();
         let gradient_norm = tensor_l2_norm(grad_tensor)?;
 
         // NaN/Inf v gradientu NENÍ Err — vrátíme SmokeTrainResult s NaN
@@ -179,6 +232,7 @@ impl Sofie {
             init_state_norm_after,
             init_state_delta_norm,
             gradient_norm,
+            pre_clip_gradient_norm,
             loss_value,
             wall_time_ms,
             seq_len,
@@ -186,6 +240,11 @@ impl Sofie {
         })
     }
 }
+
+// ---------------------------------------------------------------------------
+// Helper — zpětně kompatibilní konstrukce SmokeTrainResult bez pre_clip (pro
+// testy a starší callers, pokud by se přidali)
+// ---------------------------------------------------------------------------
 
 /// L2 norma tensoru (sqrt sum of squares), jako f64 pro reporting.
 fn tensor_l2_norm(t: &Tensor) -> Result<f64> {
