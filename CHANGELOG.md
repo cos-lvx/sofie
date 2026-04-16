@@ -7,6 +7,51 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.7] — 2026-04-16
+
+### Přidáno
+- `training/repro.rs` — 14 micro unit testů izolujících backward chování
+  jednotlivých ops (RMSNorm, softplus, exp.neg, recip, silu, matmul)
+  na různých vstupech (normal, tiny 1e-7, extreme 1e-14, mixed range,
+  massive outliers).
+
+### Odhalené Candle autograd limity (dokumentováno přes `#[should_panic]`)
+
+1. **`recip` backward pro x ≈ 1e-10** → gradient **Inf**. Mathematically
+   `d/dx (1/x) = -1/x²` → pro velmi malé x nabývá hodnot přesahujících
+   F32 bezpečný rozsah.
+2. **`softplus(x) = log(1 + exp(x))` pro x ≥ 88** → forward `Inf` (exp
+   overflow v F32), backward `NaN`. **Pravděpodobný problém pro extreme
+   `dt + dt_bias` v SSM discretization.**
+
+### Opraveno (částečně)
+- **`mixer.rs::softplus` numericky stabilní** — nahrazena naivní implementace
+  za `relu(x) + log(1 + exp(-|x|))`, matematicky identická, numericky bounded.
+  Test `softplus_stable_matches_naive_on_safe_range` ověřuje ekvivalenci
+  v rozsahu [-15, 15] (rel. error < 1e-5). Test
+  `softplus_stable_backward_extreme_positive_finite` potvrzuje finite
+  gradient pro x=100.
+
+### Ale — softplus fix **nevyřešil BUG-010** v reálném modelu
+Po aplikaci stable softplus: smoke L22 cut=23 stále vrací NaN gradient.
+Znamená to, že realistický `dt + dt_bias` v Falcon-H1-1.5B nepřesahuje
+safe range — softplus overflow **nebyl primary root cause** v našem případě.
+
+**Stále otevřené kandidáty:**
+- `silu(x) = x * recip(1 + exp(-x))` — recip(Inf) backward pro velmi
+  záporné x
+- Attention softmax backward pro extreme logits
+- `conv1d` backward (zatím netestováno v repro.rs)
+- Residual sum `x + ssm_out + attn_out` backward akumulace s duplicate
+  compute subgraph
+
+### Plán alpha.8
+Instrumentovaný forward pass — logovat hidden norms po každé op v
+`FalconH1Layer::forward`, najít op která produkuje input s extremním
+dynamickým rozsahem, jehož backward Candle nezvládne.
+
+---
+
 ## [0.5.0-alpha.6] — 2026-04-16
 
 ### Přidáno

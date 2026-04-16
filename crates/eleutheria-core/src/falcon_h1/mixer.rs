@@ -445,9 +445,23 @@ fn silu(x: &Tensor) -> Result<Tensor> {
     x.broadcast_mul(&sigmoid)?.to_dtype(orig_dtype)
 }
 
-/// Softplus: softplus(x) = ln(1 + exp(x))
+/// Softplus: softplus(x) = ln(1 + exp(x)) — **numericky stabilní**.
+///
+/// Naivní `log(1 + exp(x))` přetéká v F32 pro `x >= 88` (exp overflow → Inf
+/// forward → NaN backward, ověřeno v `training::repro::softplus_backward_extreme_positive_produces_nan`).
+///
+/// Ekvivalentní identita: `softplus(x) = relu(x) + log(1 + exp(-|x|))`
+/// - Pro `x > 0`: `relu(x) = x`, `log(1 + exp(-x)) → 0` pro velké x (chyba < 2e-9 pro x > 20)
+/// - Pro `x < 0`: `relu(x) = 0`, `log(1 + exp(x)) ≈ exp(x)` pro velmi záporné
+/// - `exp(-|x|) ∈ (0, 1]`, nikdy nepřetéká → backward je vždy finite
+///
+/// Mathematicky identické pro všechna x, numericky bounded ve forward i backward.
 fn softplus(x: &Tensor) -> Result<Tensor> {
     let orig_dtype = x.dtype();
     let x = x.to_dtype(DType::F32)?;
-    x.exp()?.affine(1.0, 1.0)?.log()?.to_dtype(orig_dtype)
+    let zero = Tensor::zeros_like(&x)?;
+    let relu_x = x.maximum(&zero)?;
+    let abs_x = x.abs()?;
+    let log1p_exp_neg_abs = abs_x.neg()?.exp()?.affine(1.0, 1.0)?.log()?;
+    (relu_x + log1p_exp_neg_abs)?.to_dtype(orig_dtype)
 }

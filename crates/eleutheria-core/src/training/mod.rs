@@ -21,6 +21,7 @@
 
 pub mod clip;
 pub mod core_memory;
+pub mod repro;
 pub mod smoke;
 
 pub use clip::clip_grad_norm;
