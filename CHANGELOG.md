@@ -7,6 +7,28 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.3] — 2026-04-16
+
+### Opraveno (druhý pokus)
+- Alpha.2 s `mean(logits)` stále dával **NaN gradient** na CPU smoke testu.
+  Forward byl OK (loss finite), backward exploduje v některé op — pravděpodobně
+  `rsqrt` v RMSNorm (derivace `-1/(2·y^1.5)` pro malé y).
+- **Loss změněna na single-element** — `logits[0, 0, 0]` (one scalar):
+  - Gradient = 1 na jeden logit, 0 jinde
+  - Backward prochází **jedinou lineární cestou** přes lm_head → hidden →
+    24 vrstev → init_state (ne přes 262 tisíc cest jako u `mean`)
+  - Minimální fan-in, maximální čistota signálu pro autograd flow test
+
+### Co to znamená
+- Pokud alpha.3 PASS → problém byl fan-in × numerická díra nějaké op; pro
+  reálný training v alpha.4 použijeme cross-entropy přímo (má elegantnější
+  backward než mean nebo sqr.mean)
+- Pokud alpha.3 stále NaN → problém je v konkrétní op backward v Candle,
+  budeme muset binary-searchem najít kde (postupně deaktivovat komponenty:
+  attention branch, SSM branch, MLP, RMSNorm)
+
+---
+
 ## [0.5.0-alpha.2] — 2026-04-16
 
 ### Opraveno
