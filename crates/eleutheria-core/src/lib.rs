@@ -600,6 +600,20 @@ impl Sofie {
         Ok(self.model.forward(input_ids, base_pos, state)?)
     }
 
+    /// Forward jen do vrstvy `up_to_layer` (včetně) — vrací hidden stream
+    /// před final_norm a lm_head. Pro diagnostiku autograd flow.
+    pub fn model_forward_up_to_layer(
+        &self,
+        input_ids: &Tensor,
+        base_pos: usize,
+        state: &mut ModelState,
+        up_to_layer: usize,
+    ) -> Result<Tensor> {
+        Ok(self
+            .model
+            .forward_up_to_layer(input_ids, base_pos, state, up_to_layer)?)
+    }
+
     /// Vyfiltruje session na SSM-only stav — zachová SSM, zahodí KV cache
     /// a conv state. Resetuje pozici na 0 a označí session za neinicializovanou,
     /// takže příští `send_message` projde plnou pipeline jako turn 1.

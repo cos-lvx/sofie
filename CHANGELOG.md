@@ -7,6 +7,61 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.4] — 2026-04-16
+
+### Přidáno
+- `FalconH1Model::forward_up_to_layer(input, pos, state, up_to_layer)` —
+  forward zastaví po vrstvě `up_to_layer` (včetně), vrací hidden stream
+  před `final_norm` + `lm_head`.
+- `Sofie::smoke_train_core_memory_cut(seq_len, layer_idx, lr, cut_at_layer)`
+  + CLI flag `--cut-at-layer` — diagnostická varianta smoke testu.
+  Loss na hidden z konkrétní vrstvy → izoluje backward path na úsek
+  `[layer_idx ..= cut_at_layer]`.
+
+### Diagnostické nálezy z binary search (v0.5.0-alpha.4 pilot)
+
+**Dva druhy backward v Falcon-H1 se chovají odlišně:**
+
+1. **Intra-layer** (`hidden_out → init_state` přes SSM scan) — **stabilní**,
+   gradient 2–3 pro L20–L23. Pro L0 underflow na ~10⁻¹⁶ (SSM příspěvek
+   k hidden je v L0 marginalizován attention/MLP větvemi).
+2. **Inter-layer** (`hidden_out → hidden_in` přes layer forward Jacobian) —
+   **sporadická numerická nestabilita**, gradient exploduje do NaN/Inf.
+
+**Mapování (seq_len=1, lr=1e-3):**
+
+| Layer | cut=self | cut=self+1 | cut=self+2 | cut=self+3 |
+|-------|----------|------------|------------|------------|
+| L0    | 10⁻¹⁶ ⚠   | 10⁻⁹ ⚠     | 0.106 ✓    | NaN ✗      |
+| L20   | 0.87 ✓   | NaN ✗      | —          | —          |
+| L21   | 2.70 ✓   | NaN ✗      | —          | —          |
+| L22   | 2.84 ✓   | NaN ✗      | —          | —          |
+| L23   | — (je poslední) | — | — | —      |
+
+**Klíčové pozorování:** plný forward (cut=None) PASS **jen pro L23** (gradient
+9.72). Pro L0–L22 full forward selhává — amplifikace přes vyšší vrstvy +
+final_norm je silnější než tlumení přes `lm_head_multiplier=0.0195`.
+
+**Hypotézy příčin:**
+- Pozdější decoder vrstvy mají bohatší hidden aktivace, jejich backward
+  přes RMSNorm (rsqrt derivace `-1/(2y^1.5)`) amplifikuje více
+- Alternativa: softplus/exp v SSM discretization má numerickou díru
+- Alternativa: paralelní hybrid (attention + SSM sum) má konstruktivní
+  interferenci gradientu přes residual
+
+### Co tohle znamená pro Fázi 5
+
+Autograd **technicky funguje** (L23 PASS, izolované vrstvy PASS). Ale
+pro **skutečný training přes všech 24 vrstev** potřebujeme:
+- **Gradient clipping** — nejjednodušší mitigace (alpha.5)
+- Nebo **F32 upcast v RMSNorm backward path** — řeší root cause v norm.rs
+- Nebo **Deep Research**: je to známý Candle bug, nebo specifická Falcon-H1
+  charakteristika (paralelní hybrid)?
+
+Pilot data jsou dost silná pro design rozhodnutí ve v0.5.0-alpha.5.
+
+---
+
 ## [0.5.0-alpha.3] — 2026-04-16
 
 ### Opraveno (druhý pokus)

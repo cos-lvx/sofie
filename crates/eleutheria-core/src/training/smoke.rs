@@ -70,6 +70,39 @@ impl Sofie {
         layer_idx: usize,
         learning_rate: f64,
     ) -> Result<SmokeTrainResult> {
+        self.smoke_train_core_memory_impl(seq_len, layer_idx, learning_rate, None)
+    }
+
+    /// Varianta smoke testu, která **zastaví forward po vrstvě `cut_at_layer`**
+    /// a loss počítá z hidden stream místo z logits. Umožňuje izolovat backward
+    /// path na `[layer_idx ..= cut_at_layer]` vrstev, užitečné pro hledání
+    /// konkrétní op, která v backward produkuje NaN/Inf.
+    ///
+    /// `cut_at_layer` musí být ≥ `layer_idx` (jinak gradient nedoteče k init_state).
+    pub fn smoke_train_core_memory_cut(
+        &self,
+        seq_len: usize,
+        layer_idx: usize,
+        learning_rate: f64,
+        cut_at_layer: usize,
+    ) -> Result<SmokeTrainResult> {
+        if cut_at_layer < layer_idx {
+            return Err(anyhow!(
+                "cut_at_layer={} musí být >= layer_idx={}",
+                cut_at_layer,
+                layer_idx
+            ));
+        }
+        self.smoke_train_core_memory_impl(seq_len, layer_idx, learning_rate, Some(cut_at_layer))
+    }
+
+    fn smoke_train_core_memory_impl(
+        &self,
+        seq_len: usize,
+        layer_idx: usize,
+        learning_rate: f64,
+        cut_at_layer: Option<usize>,
+    ) -> Result<SmokeTrainResult> {
         let start = std::time::Instant::now();
 
         // 1) Vytvoř trainable Core Memory s malou náhodnou inicializací.
@@ -89,17 +122,16 @@ impl Sofie {
         // L2 norma před krokem (scalar, F32).
         let init_state_norm_before = tensor_l2_norm(core.init_state.as_tensor())?;
 
-        // 4) Forward pass — `FalconH1Model::forward` vrací logits [batch, seq, vocab].
-        let logits = self.model_forward(&input_tensor, 0, &mut state)?;
+        // 4) Forward pass — plný (logits) nebo cut (hidden).
+        let activation = match cut_at_layer {
+            None => self.model_forward(&input_tensor, 0, &mut state)?,
+            Some(cut) => self.model_forward_up_to_layer(&input_tensor, 0, &mut state, cut)?,
+        };
 
-        // 5) Dummy loss = jeden konkrétní logit (pozice [0, 0, 0]).
-        //    Alpha.2 používala `mean(logits)` — gradient 1/n ≈ 4e-6 protékal
-        //    skrz VŠECH 262 tisíc cest přes model, akumulovaly se do NaN
-        //    v některé op's backward (pravděpodobně rsqrt v RMSNorm).
-        //    Single-element loss má gradient = 1 na jeden logit, 0 jinde —
-        //    minimální fan-in, čistý signál pro smoke test.
-        let logits_f32 = logits.to_dtype(candle_core::DType::F32)?;
-        let loss = logits_f32
+        // 5) Dummy loss — jeden element aktivace (pozice [0, 0, 0]).
+        //    Gradient = 1 na ten element, 0 jinde. Minimální fan-in.
+        let act_f32 = activation.to_dtype(candle_core::DType::F32)?;
+        let loss = act_f32
             .narrow(0, 0, 1)?
             .narrow(1, 0, 1)?
             .narrow(2, 0, 1)?

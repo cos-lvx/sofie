@@ -70,26 +70,55 @@ impl FalconH1Model {
         pos: usize,
         state: &mut ModelState,
     ) -> Result<Tensor> {
+        let x = self.embed_and_layers(input_ids, pos, state, None)?;
+        self.final_head(&x)
+    }
+
+    /// Forward pouze do vrstvy `up_to_layer` (včetně) — vrací hidden
+    /// stream **před** final_norm a lm_head. Slouží pro diagnostiku:
+    /// loss na hidden izoluje backward path na `layer_idx..=up_to_layer`,
+    /// takže lze binary-searchem lokalizovat zdroj NaN/Inf.
+    pub fn forward_up_to_layer(
+        &self,
+        input_ids: &Tensor,
+        pos: usize,
+        state: &mut ModelState,
+        up_to_layer: usize,
+    ) -> Result<Tensor> {
+        self.embed_and_layers(input_ids, pos, state, Some(up_to_layer))
+    }
+
+    fn embed_and_layers(
+        &self,
+        input_ids: &Tensor,
+        pos: usize,
+        state: &mut ModelState,
+        up_to_layer: Option<usize>,
+    ) -> Result<Tensor> {
         // === 1. Token embedding + muP scaling ===
-        let mut x = self.embed_tokens.forward(input_ids)?; // [b, s, 3072]
+        let mut x = self.embed_tokens.forward(input_ids)?;
         let emb_scale = Tensor::new(&[self.config.embedding_multiplier as f32], x.device())?
             .to_dtype(x.dtype())?;
         x = x.broadcast_mul(&emb_scale)?;
 
-        // === 2. Průchod všemi 44 layery ===
+        // === 2. Průchod decoder vrstvami (až do up_to_layer včetně, nebo všechny) ===
+        let last = up_to_layer.unwrap_or(self.layers.len() - 1);
         for (i, layer) in self.layers.iter().enumerate() {
+            if i > last {
+                break;
+            }
             x = layer.forward(&x, pos, &mut state.layers[i])?;
         }
+        Ok(x)
+    }
 
+    fn final_head(&self, x: &Tensor) -> Result<Tensor> {
         // === 3. Finální norma ===
-        x = self.final_norm.forward(&x)?;
-
+        let x = self.final_norm.forward(x)?;
         // === 4. LM head → logity + muP scaling ===
-        let logits = self.lm_head.forward(&x)?; // [b, s, vocab_size]
+        let logits = self.lm_head.forward(&x)?;
         let lm_scale = Tensor::new(&[self.config.lm_head_multiplier as f32], logits.device())?
             .to_dtype(logits.dtype())?;
-        let logits = logits.broadcast_mul(&lm_scale)?;
-
-        Ok(logits)
+        logits.broadcast_mul(&lm_scale)
     }
 }

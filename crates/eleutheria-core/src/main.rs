@@ -123,6 +123,12 @@ struct TrainCoreMemorySmokeArgs {
     /// forward pass; pro alpha bring-up chceme dosáhnout step bez exploze).
     #[arg(long, default_value_t = 1e-3)]
     learning_rate: f64,
+
+    /// Zastav forward po vrstvě `cut_at_layer` (včetně) a loss počítej
+    /// z hidden stream místo z logits. Izoluje backward na úsek
+    /// `[layer_idx ..= cut_at_layer]` — diagnostika pro hledání NaN op.
+    #[arg(long)]
+    cut_at_layer: Option<usize>,
 }
 
 fn parse_state_filter(s: &str) -> StateFilter {
@@ -219,7 +225,12 @@ fn run_train_smoke(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result<()> {
         ta.seq_len, ta.layer_idx, ta.learning_rate
     );
 
-    let result = sofie.smoke_train_core_memory(ta.seq_len, ta.layer_idx, ta.learning_rate)?;
+    let result = match ta.cut_at_layer {
+        None => sofie.smoke_train_core_memory(ta.seq_len, ta.layer_idx, ta.learning_rate)?,
+        Some(cut) => {
+            sofie.smoke_train_core_memory_cut(ta.seq_len, ta.layer_idx, ta.learning_rate, cut)?
+        }
+    };
 
     println!("Výsledky:");
     println!("  layer_idx:              {}", result.layer_idx);

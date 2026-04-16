@@ -8,7 +8,27 @@ Formát: `BUG-NNN` s verzí nálezu, závažností (P1–P4), reprodukcí a stav
 
 ## Aktivní
 
-_Žádné aktivní bugy._
+### BUG-010 — Inter-layer backward amplifikuje gradient do NaN
+- **Nalezeno:** v0.5.0-alpha.4 | **Závažnost:** P2 (blokuje Core Memory training
+  přes více vrstev, ale alpha.1 cíl "autograd teče" splněn pro L23)
+- **Reprodukce:** `train-core-memory-smoke --seq-len 1 --layer-idx 22`
+  (CPU, 1.5B) → NaN. Izolovaně `--cut-at-layer 22` → PASS gradient 2.84.
+  Přidání 1 vrstvy `--cut-at-layer 23` → NaN.
+- **Pattern:** intra-layer SSM backward stabilní; inter-layer forward
+  Jacobian sporadicky exploduje. L20–L22 exploze po 1 přidané vrstvě,
+  L0 prochází přes 2 ale selže na 3. Není rovnoměrné.
+- **Hypotézy:** RMSNorm rsqrt backward pro bohatší aktivace pozdějších
+  vrstev / softplus numerická díra / konstruktivní interference gradientu
+  v paralelním hybridu
+- **Workaround pro alpha/experimenty:** trénovat jen L23 (`--layer-idx 23`
+  bez cut) nebo používat `--cut-at-layer` s úzkým rozsahem
+- **Plánované řešení:** alpha.5 — buď gradient clipping (fast mitigace),
+  F32 upcast v RMSNorm backward (root cause), nebo Deep Research pro
+  klasifikaci problému
+
+---
+
+## Vyřešené
 
 ---
 
