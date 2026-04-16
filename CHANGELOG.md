@@ -7,6 +7,34 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.2] — 2026-04-16
+
+### Opraveno
+- **NaN v gradientu při smoke testu na 1.5B CPU.** Alpha.1 používala loss
+  `mean(logits²)`, jejíž gradient `2·logits/n` akumulovala přes 24 vrstev
+  + lm_head × vocab 65537 do Inf→NaN. Nahrazena `mean(logits)` — gradient
+  je konstantní `1/n ≈ 4·10⁻⁶`, bounded přes celou síť.
+- Default `learning_rate` snížen z **1.0** na **1e-3** (RWKV doporučení 1.0
+  platí až po warmup pro fungující setup, ne pro první smoke iterace).
+
+### Přidáno
+- **NaN/Inf detekce** v `smoke_train_core_memory`:
+  - Před backward: kontrola finite loss, chyba s diagnostikou
+  - Po backward: kontrola finite gradient L2 norm, chyba s návrhem fixů
+- **CUDA OOM handling** — pokud `model_forward` vrátí OOM, uživateli se
+  ukáže friendly message s návrhy (menší `seq_len`, fallback na CPU,
+  alpha.2+ plán s gradient checkpointingem)
+
+### Poznámky z první CUDA iterace
+- 1.5B model + backward intermediates na RTX 4050 (6 GB) → OOM i při
+  `seq_len=1`. Model weights ~3 GB, backward graph drží aktivace pro 24
+  vrstev + MLP intermediates 4096 × seq × 24 × 4B + lm_head intermediates.
+  Peak odhadem ~7 GB.
+- **Gradient checkpointing je prerekvizita pro CUDA training** (alpha.3).
+  Prozatím smoke test běží jen na CPU.
+
+---
+
 ## [0.5.0-alpha.1] — 2026-04-16
 
 **Začátek Fáze 5 — Core Memory.** První kámen state tuning infrastruktury.

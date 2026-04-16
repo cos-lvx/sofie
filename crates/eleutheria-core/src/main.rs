@@ -118,8 +118,10 @@ struct TrainCoreMemorySmokeArgs {
     #[arg(long, default_value_t = 0)]
     layer_idx: usize,
 
-    /// AdamW learning rate (RWKV doporučení pro State Tuning: 1.0 na startu).
-    #[arg(long, default_value_t = 1.0)]
+    /// AdamW learning rate. Default 1e-3 — bezpečná hodnota pro smoke test
+    /// (RWKV doporučuje 1.0 pro State Tuning, ale až po warmup s funkčním
+    /// forward pass; pro alpha bring-up chceme dosáhnout step bez exploze).
+    #[arg(long, default_value_t = 1e-3)]
     learning_rate: f64,
 }
 

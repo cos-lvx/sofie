@@ -92,11 +92,20 @@ impl Sofie {
         // 4) Forward pass — `FalconH1Model::forward` vrací logits [batch, seq, vocab].
         let logits = self.model_forward(&input_tensor, 0, &mut state)?;
 
-        // 5) Dummy loss = mean(logits²). Skalár, autograd-aware.
-        //    (Cross-entropy by vyžadovala realistické targets — pro smoke test stačí L2 norma logits.)
+        // 5) Dummy loss = mean(logits). Skalární, gradient bounded na 1/n.
+        //    (sqr().mean() z alpha.1 dávala gradient 2·logits/n — po zpětném
+        //    průchodu přes lm_head × vocab_size a 24 vrstev akumulovala do
+        //    Inf→NaN. Pro autograd flow test stačí mean, gradient je
+        //    konstantně 1/n = ~4e-6, bounded přes celou síť.)
         let logits_f32 = logits.to_dtype(candle_core::DType::F32)?;
-        let loss = logits_f32.sqr()?.mean_all()?;
+        let loss = logits_f32.mean_all()?;
         let loss_value: f64 = loss.to_scalar::<f32>()? as f64;
+        if !loss_value.is_finite() {
+            return Err(anyhow!(
+                "loss je {} před backward — forward pass je numericky nestabilní",
+                loss_value
+            ));
+        }
 
         // 6) AdamW backward_step — backward() + step() v jednom.
         let mut opt = AdamW::new(
@@ -109,14 +118,20 @@ impl Sofie {
 
         // Backward store pro diagnostiku gradientu (separate call — AdamW konzumuje loss).
         let grads = loss.backward()?;
-        let gradient_norm = match grads.get(core.init_state.as_tensor()) {
-            Some(g) => tensor_l2_norm(g)?,
-            None => {
-                return Err(anyhow!(
-                    "gradient pro init_state_var nebyl vytvořen — autograd neprotékl"
-                ));
-            }
-        };
+        let grad_tensor = grads.get(core.init_state.as_tensor()).ok_or_else(|| {
+            anyhow!("gradient pro init_state_var nebyl vytvořen — autograd neprotékl")
+        })?;
+        let gradient_norm = tensor_l2_norm(grad_tensor)?;
+
+        // Numerická stabilita — NaN/Inf v gradientu znamená, že něco přeteklo
+        // v backward pass (viz alpha.1 kde sqr.mean akumulovala do Inf→NaN).
+        if !gradient_norm.is_finite() {
+            return Err(anyhow!(
+                "gradient L2 norm je {:.3e} (NaN/Inf) — numerická exploze v backward pass. \
+                 Zkus menší `learning_rate`, kratší `seq_len`, nebo upcast problematických ops na F32.",
+                gradient_norm
+            ));
+        }
 
         // Optimalizační krok — použije gradienty z backward() výše.
         opt.step(&grads)?;
