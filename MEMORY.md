@@ -275,6 +275,46 @@ Research dokument zapsán:
 **Prerekvizita Fáze 5 kompletní.** Next: v0.5.0-alpha1 autograd bring-up
 na 1.5B, jedna vrstva, sekvenční scan.
 
+## 2026-04-16 | v0.5.0-alpha.1 — Core Memory autograd bring-up
+
+Začátek Fáze 5. První skutečný krok k trénovanému initial SSM state.
+
+**Překvapivý nález při průzkumu:** naše `forward_prefill` v `mixer.rs:382`
+je už **sekvenční scan** (prostá smyčka přes tokeny), ne chunked SSD.
+Research agent verdict "YELLOW kvůli chunked scan backward" byl
+overcautious — chunked jsme nikdy neimplementovali. To autograd workflow
+dramaticky zjednodušuje.
+
+Nový modul `crates/eleutheria-core/src/training/`:
+- `CoreMemory` — drží `candle_core::Var` pro initial SSM state jedné
+  vrstvy, tvar `[n_heads, headdim, d_state]`, F32. Dva init módy:
+  `zeros()` (matching ModelState::new) a `randn_small()` (std=0.01).
+- `Sofie::smoke_train_core_memory(seq_len, layer_idx, lr)` —
+  jedna iterace forward + backward + AdamW step. Reportuje
+  gradient L2 normu, delta init_state, loss, wall time.
+
+Kritická otázka: **zero init** dává zero gradient? Multiplikativní
+SSM rekurze `h' = dA·h + dB⊗x`: s `h=0` derivace vůči `h` je `dA`
+(non-zero z `A_log`), ale `x` z input embeddings je non-zero, takže
+gradient by měl téct. Přesto `randn_small` je bezpečnější default.
+
+Accessor API na `Sofie`:
+- `device_ref()`, `dtype_ref()`, `new_model_state()`, `model_forward()`
+- Trainable Var injektujeme do `state.layers[i].ssm_state` přes
+  `to_dtype(bf16)` — autograd-aware konverze, gradient protéká
+
+CLI: `eleutheria --cuda train-core-memory-smoke --seq-len 10 --layer-idx 0`
+→ reportuje PASS / FAIL s diagnostickou tabulkou.
+
+34 testů prochází (+3 pro CoreMemory).
+
+**Co dál (alpha.2):** multi-layer init states, cross-entropy loss,
+skutečný training loop přes epochs, save/load. Pak alpha.3 — dataset
+generation a tréning na Sofie identity.
+
+**Ondra spustí smoke test na 1.5B** — ověří, že gradient skutečně
+dotéká, peak VRAM nepřeskočí 6 GB, a wall time je rozumný.
+
 Paralelně dorazil Deep Research na backprop v Candle — verdict YELLOW:
 autograd existuje (`Var`, `GradStore`, `AdamW`, kanonický MNIST training
 loop), ale náš chunked Mamba-2 SSD scan není testovaný na backward path.

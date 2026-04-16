@@ -67,6 +67,9 @@ struct Args {
 enum Command {
     /// Retention benchmark — měří SSM state retenci na různých vzdálenostech.
     BenchRetention(BenchRetentionArgs),
+    /// Core Memory autograd smoke test (Fáze 5 alpha) — ověří, že gradient
+    /// teče od loss zpět k trainable initial SSM state jedné vrstvy.
+    TrainCoreMemorySmoke(TrainCoreMemorySmokeArgs),
 }
 
 /// Argumenty pro `bench-retention` subkomand.
@@ -102,6 +105,22 @@ struct BenchRetentionArgs {
     ///   měření krátkých vzdáleností
     #[arg(long)]
     with_persona: bool,
+}
+
+/// Argumenty pro `train-core-memory-smoke` subkomand.
+#[derive(ClapArgs, Debug)]
+struct TrainCoreMemorySmokeArgs {
+    /// Počet tokenů ve vstupu (default 10 — minimum pro nízký peak VRAM).
+    #[arg(long, default_value_t = 10)]
+    seq_len: usize,
+
+    /// Index Mamba-2 vrstvy, jejíž initial state trénujeme.
+    #[arg(long, default_value_t = 0)]
+    layer_idx: usize,
+
+    /// AdamW learning rate (RWKV doporučení pro State Tuning: 1.0 na startu).
+    #[arg(long, default_value_t = 1.0)]
+    learning_rate: f64,
 }
 
 fn parse_state_filter(s: &str) -> StateFilter {
@@ -180,12 +199,57 @@ fn main() -> Result<()> {
     if let Some(cmd) = &args.command {
         match cmd {
             Command::BenchRetention(ba) => run_bench_retention(&sofie, &args, ba),
+            Command::TrainCoreMemorySmoke(ta) => run_train_smoke(&sofie, ta),
         }
     } else {
         match &args.prompt {
             Some(prompt) => run_single_shot(&sofie, &args, prompt),
             None => run_repl(&sofie, &args),
         }
+    }
+}
+
+/// Core Memory autograd smoke test — ověří, že gradient teče od loss zpět
+/// k trainable initial SSM state.
+fn run_train_smoke(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result<()> {
+    println!(
+        "\nCore Memory smoke test — seq_len={}, layer_idx={}, lr={}\n",
+        ta.seq_len, ta.layer_idx, ta.learning_rate
+    );
+
+    let result = sofie.smoke_train_core_memory(ta.seq_len, ta.layer_idx, ta.learning_rate)?;
+
+    println!("Výsledky:");
+    println!("  layer_idx:              {}", result.layer_idx);
+    println!("  seq_len:                {}", result.seq_len);
+    println!("  loss:                   {:.6}", result.loss_value);
+    println!("  gradient L2 norm:       {:.6e}", result.gradient_norm);
+    println!(
+        "  init_state |before|:    {:.6e}",
+        result.init_state_norm_before
+    );
+    println!(
+        "  init_state |after|:     {:.6e}",
+        result.init_state_norm_after
+    );
+    println!(
+        "  init_state delta:       {:.6e}",
+        result.init_state_delta_norm
+    );
+    println!("  wall time:              {} ms", result.wall_time_ms);
+    println!();
+
+    if result.passed() {
+        println!("✓ PASS — autograd teče, gradient je non-zero, init_state se pohnul.");
+        println!("  Fáze 5 state tuning workflow je feasibilní v Candle.");
+        Ok(())
+    } else {
+        eprintln!("✗ FAIL — gradient je zanedbatelný nebo init_state se nehnul.");
+        eprintln!(
+            "  gradient_norm={:.3e}, delta_norm={:.3e} (prah 1e-8)",
+            result.gradient_norm, result.init_state_delta_norm
+        );
+        Err(anyhow!("smoke test selhal — nutná investigace"))
     }
 }
 

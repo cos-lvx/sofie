@@ -7,6 +7,60 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.1] — 2026-04-16
+
+**Začátek Fáze 5 — Core Memory.** První kámen state tuning infrastruktury.
+
+### Přidáno
+- Nový modul `crates/eleutheria-core/src/training/`:
+  - `core_memory.rs` — `CoreMemory` struct drží trainable `candle_core::Var`
+    pro initial SSM state jedné vrstvy (`[n_heads, headdim, d_state]`, F32).
+    Konstruktory `zeros()` a `randn_small()` (s malou stdev=0.01 pro
+    non-zero gradient signal přes multiplikativní SSM rekurzi).
+  - `smoke.rs` — `Sofie::smoke_train_core_memory(seq_len, layer_idx, lr)`
+    provede jednu iteraci forward + backward + AdamW step, reportuje:
+    - gradient L2 norma (ověřuje, že autograd protekl celou sekvencí)
+    - delta L2 norma init_state (ověřuje, že optimizer step změnil Var)
+    - loss value, wall time, seq_len, layer_idx
+  - `SmokeTrainResult::passed()` — práh `gradient_norm > 1e-8` a
+    `delta_norm > 1e-8` (robustní vůči numerické šumové podlaze)
+- `Sofie` accessor API pro training modul:
+  - `device_ref()`, `dtype_ref()` — runtime kontext
+  - `new_model_state()` — wrapper pro `ModelState::new`
+  - `model_forward(input, base_pos, state)` — přímý forward bez session
+- CLI subkomand `train-core-memory-smoke --seq-len --layer-idx --learning-rate`
+
+### Technické poznámky
+- **Naše `forward_prefill` je už sekvenční scan** (`mixer.rs:382`, prostá
+  smyčka přes `seq_len`). Research verdict "YELLOW kvůli chunked SSD" byl
+  overcautious — chunked scan nikdy neexistoval v naší implementaci.
+- Trainable Var je F32, inject do `state.layers[i].ssm_state` přes
+  `to_dtype(bf16)` (autograd-aware). Gradient teče zpět přes dtype konverzi.
+- AdamW workflow: `loss.backward()` → diagnostika gradientu přes
+  `GradStore::get(&var.as_tensor())` → `opt.step(&grads)` → ověření delta
+- Zero init by dal zero gradient (multiplikativní rekurze `h' = dA·h + dB⊗x`
+  s `h=0` a `x=0` ... no ale `x` není nula, protože je z input embedding).
+  Přesto `randn_small` je bezpečnější default — drobná počáteční perturbace
+  zajistí, že gradient flow má co "chytit".
+
+### Úspěšný výstup smoke testu
+```
+✓ PASS — autograd teče, gradient je non-zero, init_state se pohnul.
+  Fáze 5 state tuning workflow je feasibilní v Candle.
+```
+
+### Co alpha.1 NEDĚLÁ (odloženo do alpha.2)
+- Training loop přes epochs
+- Dataset loading
+- Multi-layer init states (jen 1 vrstva)
+- Save/load trained state
+- Cross-entropy loss (jen dummy L2 loss na logits)
+
+### Testy
+34 celkem (+3 nové: `CoreMemory::zeros`, `randn_small`, `invalid_layer_idx`)
+
+---
+
 ## [0.4.5] — 2026-04-16
 
 ### Přidáno

@@ -19,6 +19,25 @@
 
 ## Aktuální: Fáze 5 — Core Memory + Episodic Memory (v0.5.0)
 
+### v0.5.0-alpha.1 ✅ — autograd bring-up
+- [x] `CoreMemory` struct (Var pro init_state jedné vrstvy)
+- [x] `Sofie::smoke_train_core_memory` — forward + backward + AdamW step
+- [x] CLI subkomand `train-core-memory-smoke`
+- [x] Ověřeno: `forward_prefill` je už sekvenční scan (ne chunked), autograd
+  teoreticky protéká bez úprav
+
+### v0.5.0-alpha.2 (next) — multi-layer + training loop
+- [ ] `CoreMemory` pro všechny Mamba-2 vrstvy (nejen vrstva 0)
+- [ ] Cross-entropy loss na next-token prediction
+- [ ] Skutečný training loop přes epochs + gradient accumulation
+- [ ] Save/load trained state přes `StateCheckpoint` (reuse existing)
+
+### v0.5.0 — Core Memory production
+- [ ] Dataset pro Sofie identity + Bootstrap + Ondra context
+- [ ] Training na 1.5B (pokud alpha.2 stabilní) nebo 7B (pokud lze fit)
+- [ ] Validation: re-run retention benchmark → SsmOnly pass-rate musí
+  vyskočit (ze 0 % na měřitelné číslo, pokud trained state funguje)
+
 Sofie si pamatuje přes sessions — ne jako databáze, ale jako zkušenost.
 
 ### Prerekvizita: Benchmark retence (v0.4.1–v0.4.3)

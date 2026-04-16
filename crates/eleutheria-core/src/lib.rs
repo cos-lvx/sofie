@@ -5,6 +5,7 @@ pub mod bench;
 pub mod falcon_h1;
 pub mod prompt;
 pub mod session;
+pub mod training;
 
 use anyhow::{Result, anyhow};
 use candle_core::{DType, Device, Tensor};
@@ -563,6 +564,40 @@ impl Sofie {
     /// Vrací konfiguraci modelu.
     pub fn config(&self) -> &FalconH1Config {
         &self.config
+    }
+
+    // -------------------------------------------------------------------
+    // Accessory pro training modul (pub(crate) by stačilo, ale training
+    // je pub mod — veřejné jsou tedy kvůli internímu použití z training/smoke.rs).
+    // -------------------------------------------------------------------
+
+    /// Referencí na compute device (CPU/CUDA).
+    pub fn device_ref(&self) -> &Device {
+        &self.device
+    }
+
+    /// Runtime dtype (BF16 na CUDA, F32 na CPU).
+    pub fn dtype_ref(&self) -> DType {
+        self.dtype
+    }
+
+    /// Vytvoří čerstvý `ModelState` s nulovými komponenty — wrapper pro
+    /// `ModelState::new`, aby training modul nemusel re-exportovat typ.
+    pub fn new_model_state(&self) -> Result<ModelState> {
+        Ok(ModelState::new(&self.config, self.dtype, &self.device)?)
+    }
+
+    /// Přímý forward pass přes Falcon-H1 model. Používá se v training modulu
+    /// pro manuální kontrolu stavu (inject trainable Var před voláním).
+    ///
+    /// Vrací logits `[batch, seq_len, vocab_size]`.
+    pub fn model_forward(
+        &self,
+        input_ids: &Tensor,
+        base_pos: usize,
+        state: &mut ModelState,
+    ) -> Result<Tensor> {
+        Ok(self.model.forward(input_ids, base_pos, state)?)
     }
 
     /// Vyfiltruje session na SSM-only stav — zachová SSM, zahodí KV cache
