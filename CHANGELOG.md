@@ -7,6 +7,38 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.4.5] — 2026-04-16
+
+### Přidáno
+- Research dokument `~/Atlas/Nexus/70-Eleutheria/Research/SSM_retention_findings_2026-04-15.md`
+  — detailní analýza pilotního běhu retention benchmarku na Falcon-H1-1.5B:
+  setup, výsledky, interpretace, dopady pro Fázi 5, limitace, další kroky.
+
+### Klíčové nálezy (shrnutí)
+- **Full** (SSM + KV + conv): 100 % recall do 500 tok, graceful degradation
+  80 % @ 1 k, 40 % @ 2 k
+- **SsmOnly** (jen SSM): **0 % na všech vzdálenostech** včetně 50 tok —
+  zachycený SSM state samostatně nenese diskrétní fakta
+- **Cold** (baseline): konstantních 20 % (jediný false positive
+  `preference_linh` — opraveno)
+
+**Architektonický závěr:** Core Memory (Fáze 5) musí být **trénovaný**
+initial state, ne captured — potvrzeno empiricky na naší architektuře.
+
+### Změněno
+- `preference_linh` matcher — `expected: &["linh", "tea"]` místo `&["tea"]`.
+  Vyžaduje zmínění jména Dr. Linh pro pass; eliminuje Cold false positive.
+- Přidán test `preference_linh_requires_name_and_drink` (31 testů celkem)
+
+### Dokončeno
+- **Prerekvizita Fáze 5 uzavřena** (v0.4.1 harness → v0.4.2 varianty →
+  v0.4.3 bugfix → v0.4.4 --with-persona opt-in → v0.4.5 research report).
+- Příští milestone: **v0.5.0-alpha1** — autograd bring-up na 1.5B,
+  jedna vrstva, sekvenční scan, trainable `Var` pro `init_state`,
+  AdamW (dle `reference_candle_backprop.md`)
+
+---
+
 ## [0.4.4] — 2026-04-15
 
 ### Přidáno

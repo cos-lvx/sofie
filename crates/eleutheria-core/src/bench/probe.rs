@@ -115,7 +115,11 @@ pub fn built_in_probes() -> &'static [RetentionProbe] {
             fact: "Dr. Linh prefers bitter tea to coffee, but never drinks it after sunset.",
             ack: "Understood.",
             question: "What does Dr. Linh prefer to drink?",
-            expected: &["tea"],
+            // `linh` + `tea` společně eliminují false-positive z Cold baseline —
+            // model bez kontextu generuje generické "I'd recommend tea", ale
+            // nepojmenuje Dr. Linh. Vyžadování obou substringů znamená skutečný
+            // recall (pilot 2026-04-15 ukázal 20% Cold pass jen kvůli `tea`).
+            expected: &["linh", "tea"],
         },
         RetentionProbe {
             id: "multiattr_helion",
@@ -144,6 +148,17 @@ mod tests {
         let probe = &built_in_probes()[0]; // relational_kazimir
         // "lighthouse" present, "galway" missing
         assert!(!probe.matches("Kazimir lives in a lighthouse on the coast."));
+    }
+
+    #[test]
+    fn preference_linh_requires_name_and_drink() {
+        let probe = &built_in_probes()[3]; // preference_linh
+        // True recall: zmiňuje jméno i nápoj.
+        assert!(probe.matches("Dr. Linh prefers bitter tea."));
+        assert!(probe.matches("linh drinks tea"));
+        // False positive eliminated: samotné "tea" bez jména nestačí.
+        assert!(!probe.matches("I'd recommend tea as a good choice."));
+        assert!(!probe.matches("tea is a healthy preference"));
     }
 
     #[test]

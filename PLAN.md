@@ -31,8 +31,15 @@ o Core Memory designu. Rozděleno na tři patche:
 - [x] **v0.4.3** — bugfix BUG-009 (UTF-8 safe streaming diff)
 - [x] **v0.4.4** — `--with-persona` opt-in, bench defaultně bez persony
   (čistý model-level SSM measurement)
-- [ ] **v0.4.5** — pilotní běh na Falcon-H1-1.5B, výsledky do
-  `~/Atlas/Nexus/70-Eleutheria/Research/`
+- [x] **v0.4.5** — pilotní běh dokončen na Falcon-H1-1.5B, research
+  dokument `SSM_retention_findings_2026-04-15.md` v Nexusu, zpřísněn
+  `preference_linh` matcher. **Prerekvizita Fáze 5 uzavřena.**
+
+### Empirické nálezy z pilotního běhu (2026-04-16)
+- **Full** 100 % do 500 tok, 80 % @ 1 k, 40 % @ 2 k — graceful degradation
+- **SsmOnly** **0 % na všech vzdálenostech** — zachycený stav nenese fakta
+- **Cold** 20 % = jeden false positive (opraveno)
+- **Architektonický závěr:** Core Memory MUSÍ být trénovaný, ne captured
 
 ### Prerekvizita: Deep Research pro Core Memory
 Před implementací state tuning:

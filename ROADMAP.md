@@ -104,12 +104,19 @@ stav, ne zachycený prompt. Episodic Memory přes echo embeddings z Falcon-H1 sa
   5%+ zlepšení bez tréninku (proven)
 - Trénované stavy >> zachycené stavy (RWKV empirický nález)
 
-**Prerekvizity (rozdělené na v0.4.1–v0.4.3):**
+**Prerekvizity (v0.4.1–v0.4.5) ✅ uzavřeno 2026-04-16:**
 - [x] **v0.4.1** — benchmark harness (modul `bench/`, 5 probes v EN, filler,
   CLI subkomand, `Sofie::inject_turn` API, JSON + MD report)
 - [x] **v0.4.2** — `SsmOnly` a `Cold` varianty (`filter_session_to_ssm_only`,
   `--variant all`)
-- [ ] **v0.4.3** — pilotní běh na Falcon-H1-1.5B, výsledky do Nexus research
+- [x] **v0.4.3** — bugfix BUG-009 (UTF-8 safe streaming diff)
+- [x] **v0.4.4** — `--with-persona` opt-in, bench defaultně bez persony
+- [x] **v0.4.5** — pilotní běh, research `SSM_retention_findings_2026-04-15.md`
+
+**Nález:** zachycený SSM state samostatně nenese fakta (SsmOnly 0 % napříč
+vzdálenostmi). Core Memory **musí být trénovaný** — potvrzeno empiricky.
+Další milestone: **v0.5.0-alpha1** — autograd bring-up dle
+`reference_candle_backprop.md`.
 
 **Implementace:**
 - [ ] State tuning infrastruktura — backpropagation přes Candle pro

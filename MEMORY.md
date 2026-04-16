@@ -240,6 +240,41 @@ správný srovnávací baseline pro budoucí produkční cíl.
 Pilot matrix na Falcon-H1-1.5B čekal na tento patch — spuštění odložen
 o jeden cyklus.
 
+## 2026-04-16 | v0.4.5 — Pilot report + prerekvizita Fáze 5 uzavřena
+
+Ondra spustil `bench-retention --variant all` na Falcon-H1-1.5B (RTX 4050).
+75 pokusů (3 varianty × 5 vzdáleností × 5 probes) doběhlo čistě, JSON + MD
+zapsán do Nexus research. Čísla jsou dramatická a jasná:
+
+**Full** (SSM + KV + conv): 100 % do 500 tok, 80 % @ 1 k, 40 % @ 2 k.
+Graceful degradation, čísla křehká první (`7429` padá na 1 k), proper nouns
+a enumerace na 2 k. Přežívají silné sémantické kotvy (`multiattr_helion`
+s "Professor" + "observatory" + "built" + "1893").
+
+**SsmOnly** (KV + conv vyčištěné, jen SSM zachován): **0 % na všech
+vzdálenostech včetně 50 tokenů**. Žádná výjimka, žádný probe. Zachycený
+SSM state samostatně nenese diskrétní fakta — potvrzuje RWKV empirický
+nález a Hossain et al. teoretickou predikci (α≈0.95, poločas ~14 tokenů).
+
+**Cold** (žádný kontext): konstantních 20 % = jeden false positive
+`preference_linh`, protože matcher hledal jen `"tea"` a model bez kontextu
+generuje "I'd recommend tea". Opraveno v v0.4.5: matcher teď vyžaduje
+`"linh"` + `"tea"`. Nový test `preference_linh_requires_name_and_drink`.
+
+Architektonický závěr (klíčový vstup pro Fázi 5):
+**Core Memory MUSÍ být trénovaný initial state, ne captured.** Naivní
+implementace "ulož state po persona promptu a reuse" **nefunguje** na
+naší architektuře. Musíme skutečně gradient-optimalizovat initial state.
+To mapuje na RWKV State Tuning / State-offset Tuning workflow dle
+`reference_candle_backprop.md`.
+
+Research dokument zapsán:
+`~/Atlas/Nexus/70-Eleutheria/Research/SSM_retention_findings_2026-04-15.md`
+(setup, výsledky, interpretace, dopady pro Fázi 5, limitace, další kroky).
+
+**Prerekvizita Fáze 5 kompletní.** Next: v0.5.0-alpha1 autograd bring-up
+na 1.5B, jedna vrstva, sekvenční scan.
+
 Paralelně dorazil Deep Research na backprop v Candle — verdict YELLOW:
 autograd existuje (`Var`, `GradStore`, `AdamW`, kanonický MNIST training
 loop), ale náš chunked Mamba-2 SSD scan není testovaný na backward path.
