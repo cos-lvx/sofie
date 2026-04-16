@@ -7,6 +7,77 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.5] — 2026-04-16
+
+### Přidáno
+- `Sofie::measure_forward_hidden_norms(seq_len)` — L2 norma hidden stream
+  po každé vrstvě, pro diagnostiku forward amplifikace
+- `Sofie::smoke_sweep(seq_len, layer_idx, lr)` — sweep cut_at_layer přes
+  všech `num_hidden_layers` hodnot + plný forward v jednom běhu
+- CLI flag `--sweep` na `train-core-memory-smoke` → tabulkový output
+- `smoke_train_core_memory_impl` teď **nevyhazuje Err pro NaN gradient**
+  (vrací result s NaN hodnotami a `passed()=false`) — umožňuje sweep
+  skrz failed konfigurace
+
+### Diagnostický průlom — forward hidden norms
+
+Sweep L0 odhalil dramatický **skok aktivací mezi L1 a L2**:
+
+```
+L0: 2.37e-14   ← téměř nula (post-embedding + L0 forward)
+L1: 2.78e-7    ← stále mrtvé
+L2: 166        ← skok o 9 řádů
+L3-L22: 150-450 plateau
+L23: 1282      ← narůstá
+```
+
+**Peri-LN massive activations pattern** (arXiv 2502.02732) — Pre-LN
+architektury mají tento charakteristický rys. Forward aktivace mají
+extrémní dynamický rozsah, backward přes RMSNorm amplifikuje do
+Inf/NaN.
+
+**Smoke sweep pro L0 tuto hypotézu potvrzuje:**
+- `cut=0`: hidden 1e-14 → gradient 1.95e-16 **underflow**
+- `cut=1`: hidden 1e-7 → gradient 2.5e-9 **underflow**
+- `cut=2`: hidden 166 → gradient **0.106 ✓ PASS**
+- `cut=3+`: amplifikace přes vrstvy → **NaN/Inf**
+
+Kompletní "dead zone" na začátku (L0+L1) + "hot zone" od L2 vysvětluje
+všechny tři failure modes: underflow u L0, exploze u pozdějších vrstev,
+a průchodnost u středního rozsahu.
+
+### Research agent report (backend pozadí)
+
+Spuštěn research agent s konkrétními binary search daty. Hlavní nálezy:
+
+**Top hypotézy (ranked):**
+1. **Peri-LN massive activations** (A) — přesně odpovídá našemu patternu
+2. **Paralelní hybrid konstruktivní interference** — SSM + attention
+   gradient sum přes residual může amplifikovat
+3. **muP asymetrie** — dampening multipliery jsou kritický stability trick
+
+**Standardní recept (Falcon-H1 / Mamba-2 training):**
+- `max_grad_norm=1.0` (gradient clipping je **standard**, ne opt-in)
+- AdamW s betas `(0.9, 0.95)`, WSD schedule
+- BF16 forward + F32 master weights (BF16 je nutnost u Pre-LN)
+- Dampening μP multipliers v SSM bloku jsou klíčový stability trick
+
+**Candle-specific:**
+- Žádný built-in `clip_grad_norm` — musíme napsat vlastní helper
+- Žádný reportovaný autograd bug v RMSNorm path
+
+**Doporučený postup pro alpha.6:**
+1. Gradient clipping helper (30 min)
+2. **Verify dampening multipliers loaded correctly** (nejrychlejší test —
+   pokud `ssm_out_multiplier=1.0` místo malé hodnoty, máme primární root cause)
+3. Realističtější loss (target perturbation místo single-element)
+4. Aplikovat gradient clip na L20-L22 experiment
+5. Pokud stále NaN → minimal reproduction
+
+Plný research report uložen do `reference_peri_ln_hybrid_gradient.md`.
+
+---
+
 ## [0.5.0-alpha.4] — 2026-04-16
 
 ### Přidáno

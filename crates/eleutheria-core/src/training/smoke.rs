@@ -160,22 +160,17 @@ impl Sofie {
         })?;
         let gradient_norm = tensor_l2_norm(grad_tensor)?;
 
-        // Numerická stabilita — NaN/Inf v gradientu znamená, že něco přeteklo
-        // v backward pass (viz alpha.1 kde sqr.mean akumulovala do Inf→NaN).
-        if !gradient_norm.is_finite() {
-            return Err(anyhow!(
-                "gradient L2 norm je {:.3e} (NaN/Inf) — numerická exploze v backward pass. \
-                 Zkus menší `learning_rate`, kratší `seq_len`, nebo upcast problematických ops na F32.",
-                gradient_norm
-            ));
-        }
-
-        // Optimalizační krok — použije gradienty z backward() výše.
-        opt.step(&grads)?;
-
-        // L2 norma po kroku + delta.
-        let init_state_norm_after = tensor_l2_norm(core.init_state.as_tensor())?;
-        let init_state_delta_norm = (init_state_norm_after - init_state_norm_before).abs();
+        // NaN/Inf v gradientu NENÍ Err — vrátíme SmokeTrainResult s NaN
+        // hodnotami a passed()=false. To umožňuje sweep přes mnoho konfigurací
+        // i když některé selhávají (analýza patternu).
+        let (init_state_norm_after, init_state_delta_norm) = if gradient_norm.is_finite() {
+            opt.step(&grads)?;
+            let n_after = tensor_l2_norm(core.init_state.as_tensor())?;
+            (n_after, (n_after - init_state_norm_before).abs())
+        } else {
+            // Skip optimizer step — aplikovat NaN gradient by rozbilo Var.
+            (f64::NAN, f64::NAN)
+        };
 
         let wall_time_ms = start.elapsed().as_millis();
 
@@ -197,4 +192,61 @@ fn tensor_l2_norm(t: &Tensor) -> Result<f64> {
     let t_f32 = t.to_dtype(candle_core::DType::F32)?;
     let sum_sq: f32 = t_f32.sqr()?.sum_all()?.to_scalar()?;
     Ok((sum_sq as f64).sqrt())
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostický sweep — pro binary search NaN zdroje v backward
+// ---------------------------------------------------------------------------
+
+impl Sofie {
+    /// Změř L2 normu hidden stream po každé vrstvě (pro analýzu forward
+    /// amplifikace). Vrací `Vec<f64>` délky `num_hidden_layers` —
+    /// `result[i]` je norm aktivace po vrstvě i.
+    ///
+    /// Inicializuje fresh state (nulové SSM), spouští forward_up_to_layer
+    /// v cyklu. Drahé (N²/2 ops celkem) ale čistě diagnostické.
+    pub fn measure_forward_hidden_norms(&self, seq_len: usize) -> Result<Vec<f64>> {
+        let input_ids: Vec<u32> = (1..=seq_len as u32).collect();
+        let input_tensor = Tensor::new(input_ids.as_slice(), self.device_ref())?.unsqueeze(0)?;
+
+        let num_layers = self.config().num_hidden_layers;
+        let mut norms = Vec::with_capacity(num_layers);
+
+        for layer in 0..num_layers {
+            let mut state = self.new_model_state()?;
+            let hidden = self.model_forward_up_to_layer(&input_tensor, 0, &mut state, layer)?;
+            norms.push(tensor_l2_norm(&hidden)?);
+        }
+        Ok(norms)
+    }
+
+    /// Sweep smoke testu přes rozsah `cut_at_layer` — pro fixní `layer_idx`
+    /// spustí `smoke_train_core_memory_cut` postupně pro cut od `layer_idx`
+    /// do `num_hidden_layers - 1`. Plus jeden běh bez cut (plný forward).
+    ///
+    /// Vrací vector `(cut_description, SmokeTrainResult)`. Results s NaN
+    /// gradientem mají `passed()=false`, neselhávají sweep jako celek —
+    /// umožňuje kompletní tabulku i přes některé fail body.
+    pub fn smoke_sweep(
+        &self,
+        seq_len: usize,
+        layer_idx: usize,
+        learning_rate: f64,
+    ) -> Result<Vec<(String, SmokeTrainResult)>> {
+        let num_layers = self.config().num_hidden_layers;
+        let mut out = Vec::new();
+
+        for cut in layer_idx..num_layers {
+            let desc = format!("cut={}", cut);
+            let result =
+                self.smoke_train_core_memory_cut(seq_len, layer_idx, learning_rate, cut)?;
+            out.push((desc, result));
+        }
+
+        // Finální plný forward (cut=None, přes lm_head)
+        let full = self.smoke_train_core_memory(seq_len, layer_idx, learning_rate)?;
+        out.push(("cut=full (logits)".to_string(), full));
+
+        Ok(out)
+    }
 }

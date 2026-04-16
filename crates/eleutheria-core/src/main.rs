@@ -129,6 +129,12 @@ struct TrainCoreMemorySmokeArgs {
     /// `[layer_idx ..= cut_at_layer]` — diagnostika pro hledání NaN op.
     #[arg(long)]
     cut_at_layer: Option<usize>,
+
+    /// Diagnostický sweep — spustí smoke pro každý cut od `layer_idx` až
+    /// po poslední vrstvu + plný forward, vypíše tabulku výsledků.
+    /// Navíc měří forward hidden norms po každé vrstvě.
+    #[arg(long)]
+    sweep: bool,
 }
 
 fn parse_state_filter(s: &str) -> StateFilter {
@@ -225,6 +231,10 @@ fn run_train_smoke(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result<()> {
         ta.seq_len, ta.layer_idx, ta.learning_rate
     );
 
+    if ta.sweep {
+        return run_train_smoke_sweep(sofie, ta);
+    }
+
     let result = match ta.cut_at_layer {
         None => sofie.smoke_train_core_memory(ta.seq_len, ta.layer_idx, ta.learning_rate)?,
         Some(cut) => {
@@ -264,6 +274,53 @@ fn run_train_smoke(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result<()> {
         );
         Err(anyhow!("smoke test selhal — nutná investigace"))
     }
+}
+
+/// Diagnostický sweep — forward hidden norms + smoke přes cut range.
+fn run_train_smoke_sweep(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result<()> {
+    println!(
+        "\nCore Memory diagnostic sweep — seq_len={}, layer_idx={}, lr={}\n",
+        ta.seq_len, ta.layer_idx, ta.learning_rate
+    );
+
+    // 1) Forward hidden norms — L2 norma aktivace po každé vrstvě
+    println!("Forward hidden norms (fresh state, žádný trained Var):");
+    let norms = sofie.measure_forward_hidden_norms(ta.seq_len)?;
+    println!("  layer    |hidden|_2       finite?");
+    println!("  -----    -------------    -------");
+    for (i, norm) in norms.iter().enumerate() {
+        let marker = if norm.is_finite() { "✓" } else { "✗" };
+        println!("  {:>5}    {:>13.6e}    {}", i, norm, marker);
+    }
+    println!();
+
+    // 2) Smoke sweep — pro fixní layer_idx přes všechny cut hodnoty
+    println!("Smoke sweep (trainable Var, loss na aktivaci):");
+    let results = sofie.smoke_sweep(ta.seq_len, ta.layer_idx, ta.learning_rate)?;
+    println!(
+        "  {:<20}  {:>13}  {:>13}  {:>13}  status",
+        "variant", "loss", "grad L2", "delta"
+    );
+    println!(
+        "  {:<20}  {:>13}  {:>13}  {:>13}  ------",
+        "-------", "----", "-------", "-----"
+    );
+    for (desc, r) in &results {
+        let status = if r.passed() {
+            "PASS"
+        } else if !r.gradient_norm.is_finite() {
+            "NaN/Inf"
+        } else {
+            "underflow"
+        };
+        println!(
+            "  {:<20}  {:>13.6e}  {:>13.6e}  {:>13.6e}  {}",
+            desc, r.loss_value, r.gradient_norm, r.init_state_delta_norm, status
+        );
+    }
+    println!();
+
+    Ok(())
 }
 
 /// Retention benchmark — harness pro měření SSM state retence.
