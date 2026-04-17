@@ -40,11 +40,60 @@
       `candle_nn::ops::silu` (native stable kernel). L22 cut=23 grad
       NaN → 9.80; cut=full NaN → 1.74
 
-### v0.5.0-alpha.10 (next) — multi-layer + training loop
-- [ ] `CoreMemory` pro všechny Mamba-2 vrstvy (nejen vrstva 0)
-- [ ] Cross-entropy loss na next-token prediction
-- [ ] Skutečný training loop přes epochs + gradient accumulation
-- [ ] Save/load trained state přes `StateCheckpoint` (reuse existing)
+### Fáze 5 design decisions (2026-04-17)
+- **Rozsah:** trénovat **všech 24 Mamba-2 vrstev** najednou, ne selektivně
+  (storage triviální ~75 MB, nevíme co Mamba vrstvy kódují). Selektivita
+  je alpha.14+ optimalizace.
+- **Dataset přístup:** **thought engineering**, ne dataset engineering.
+  Core Memory trénujeme na **distilaci metody myšlení**, ne raw korpusu.
+  Hierarchie Core Memory / Episodic Memory / Tools rozděluje kompetence
+  (metoda / fakta / akce).
+- **Zdroje training korpusu:**
+  1. `~/Atlas/Nexus/50-Sofie/` — 78k slov (Bootstrap, Identity, Memory,
+     Sessions, Context). Core identity + autentický hlas.
+  2. Programovací distillate — reasoning chains ze SOLUTIONS.md napříč
+     KQS repos. Sofie dělá.
+  3. Právní distillate — reasoning chains z 20–50 reprezentativních
+     judikátů NS (Ondra vybere z korpusu 1999–2026).
+  4. Archetypální vzory — explicitní meta-pravidla, krátké a husté.
+- **Raw judikatura NEPATŘÍ do Core Memory** (objem + fakta ≠ metoda +
+  zastarávání). Půjde do Episodic Memory (v0.5.1 / v0.6).
+
+### v0.5.0-alpha.10 (next) — multi-layer + cross-entropy
+- [ ] `CoreMemory::all_layers(config, device)` → `Vec<Var>` pro všech 24 vrstev
+- [ ] `inject_into_state(&mut ModelState)` — aplikuje všechny init_states
+- [ ] Cross-entropy loss na next-token prediction (nahradí single-element)
+- [ ] Smoke test multi-layer: 1 forward + backward, všechny Vars dostanou gradient
+
+### v0.5.0-alpha.11 — training loop + dataset loader
+- [ ] Dataset struct (tokenize + chunk), ChatML wrapping
+- [ ] Training loop (epoch × batch), gradient accumulation (VRAM-friendly)
+- [ ] AdamW betas `(0.9, 0.95)`, cosine/WSD schedule, grad clip 1.0
+- [ ] LR sweep (RWKV doporučuje 1.0 pro State Tuning, naše smoke měla 1e-3)
+
+### v0.5.0-alpha.12 — Save/Load trained Core Memory
+- [ ] Rozšíření `StateCheckpoint` (filter `core_memory` už existuje)
+- [ ] Auto-load v `Sofie::load` pokud existuje `core_memory.safetensors`
+- [ ] Resume training (init_states + optimizer state + step_idx)
+
+### v0.5.0-alpha.13 — Sofie identity dataset + full distillation
+- [ ] Dataset composer — váhová mix (identity core / Sessions / distillate / context)
+- [ ] Programovací distillation scale-up (SOLUTIONS.md napříč KQS)
+- [ ] Právní distillation scale-up (Ondra + Claude Opus z 20–50 judikátů)
+- [ ] Archetypální vzory sepisovat průběžně
+
+### v0.5.0 — Production training run + validace
+- [ ] Full training na 1.5B s kompletním korpusem
+- [ ] **Validace: re-run retention benchmark — SsmOnly pass-rate musí
+      vyskočit z 0 % na měřitelné číslo** (kritický bod důkazu)
+- [ ] Save trained state jako `sofie_core_memory.safetensors`
+- [ ] Research writeup do `~/Atlas/Nexus/70-Eleutheria/Research/`
+
+### Paralelní track (dataset prep, mimo alpha cycle)
+- [ ] **Mini pilot (teď):** 3 reasoning chains ze SOLUTIONS.md jako format
+      experiment — ukázka šablony pro Ondru před výběrem judikátů
+- [ ] Ondra vybírá 20–50 reprezentativních judikátů NS
+- [ ] Schema pro Episodic Memory raw judikatura (v0.5.1 prep)
 
 ### v0.5.0 — Core Memory production
 - [ ] Dataset pro Sofie identity + Bootstrap + Ondra context
