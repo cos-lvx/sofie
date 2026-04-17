@@ -1,6 +1,6 @@
 # Roadmap — Eleutheria
 
-> Poslední aktualizace: 2026-04-15
+> Poslední aktualizace: 2026-04-17
 
 ## Filozofie
 
@@ -115,23 +115,35 @@ stav, ne zachycený prompt. Episodic Memory přes echo embeddings z Falcon-H1 sa
 
 **Nález:** zachycený SSM state samostatně nenese fakta (SsmOnly 0 % napříč
 vzdálenostmi). Core Memory **musí být trénovaný** — potvrzeno empiricky.
-Další milestone: **v0.5.0-alpha1** — autograd bring-up dle
-`reference_candle_backprop.md`.
 
-**Implementace:**
-- [ ] State tuning infrastruktura — backpropagation přes Candle pro
-  optimalizaci initial SSM state
-- [ ] Core Memory training — natrénovat initial state kódující Sofiinu
-  identitu, hodnoty, znalosti o Ondrovi. Trénovací data: existující
-  konverzace, Bootstrap.md, Identity.md
-- [ ] Core Memory loading — při startu session načíst trénovaný initial
-  state místo prázdného (nula → natrénovaný stav)
-- [ ] Echo embeddings — implementace self-retrieval přes Falcon-H1:
-  vstup se opakuje 2×, embedding z druhého průchodu
-- [ ] Episodic Memory store — PostgreSQL + pgvector na Mnémosyné,
-  embeddingy generované Falcon-H1 echo metodou
-- [ ] MemoryInjection stage — retrieval relevantních vzpomínek,
-  injekce do kontextu pro attention branch
+**State tuning bring-up (alpha.1–alpha.9) ✅ uzavřeno 2026-04-17:**
+- [x] **alpha.1** — `CoreMemory` struct, autograd teče pro L23 single layer
+- [x] **alpha.2–alpha.4** — sequential scan, single-element loss,
+  `forward_up_to_layer` + binary search
+- [x] **alpha.5–alpha.6** — diagnostic sweep, gradient clipping helper,
+  μP dampening multipliery ověřeny
+- [x] **alpha.7** — minimal reproduction (`training/repro.rs`), stable softplus
+- [x] **alpha.8** — instrumentovaný forward (trace sink + cut-at-component),
+  diagnostika lokalizovala SSM branch backward jako viníka
+- [x] **alpha.9 — BUG-010 vyřešen.** Lokální `silu(x) = x*recip(1+exp(-x))`
+  exploduje přes `recip(Inf)` backward pro extrémní |x|. Fix: delegace
+  na `candle_nn::ops::silu`. L22 cut=full NaN→1.74, autograd stabilní
+  přes všechny vrstvy.
+
+**Implementace (alpha.10+):**
+- [ ] **alpha.10** — Multi-layer `CoreMemory::all_layers()` + cross-entropy
+  loss na next-token prediction
+- [ ] **alpha.11** — Training loop + dataset loader, AdamW (0.9, 0.95),
+  cosine/WSD schedule, grad clip 1.0, gradient accumulation
+- [ ] **alpha.12** — Save/Load trained Core Memory přes `StateCheckpoint`
+  (filter `core_memory` už existuje), auto-load v `Sofie::load`
+- [ ] **alpha.13** — Sofie identity dataset (persona seed + Nexus docs +
+  syntetická dialog generace)
+- [ ] **v0.5.0** — Production training run; **validace přes re-run
+  retention benchmarku** (SsmOnly pass-rate musí vyskočit z 0 %)
+- [ ] **Episodic Memory** — echo embeddings z Falcon-H1 (self-retrieval
+  bez separátního modelu), PostgreSQL + pgvector na Mnémosyné,
+  `MemoryInjection` stage v pipeline
 - [ ] Evaluace: Core Memory state vs. textový system prompt —
   porovnání kvality odpovědí a úspory context window
 
