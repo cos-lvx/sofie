@@ -37,6 +37,32 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
   `CUDARC_CUDA_VERSION=13010`. Odebrat až cudarc přidá 13.2 podporu.
 - **Řešení:** Sledovat cudarc releases, případně aktualizovat Candle (viz SOL-008)
 
+### KI-005 — CUDA OOM pro multi-layer backward na 6 GB VRAM
+
+- **Fáze:** 5 (Core Memory training)
+- **Dopad:** Střední — blokuje GPU training na RTX 4050. CPU F32
+  fallback funguje, ale pomalý (KI-006).
+- **Kontext:** Alpha.10 `train-core-memory-multi --cuda --seq-len 2`
+  selhává s `CUDA_ERROR_OUT_OF_MEMORY`. Forward sám prochází (alpha.8
+  potvrdila), ale plný backward graph přes 24 vrstev × 65537 vocab se
+  nevejde — jen LM head matmul s grad váží ~768 MB.
+- **Řešení:** Alpha.12 — gradient checkpointing (recompute activations
+  per layer chunk místo držet v grafu). Alternativa: Gaia deploy s větší
+  VRAM (≥24 GB pro pohodlný seq_len na 1.5B/7B).
+
+### KI-006 — Training CPU F32 je 48 s/step na 1.5B
+
+- **Fáze:** 5 (Core Memory training)
+- **Dopad:** Střední — blokuje větší runy. Smoke a mini-korpus OK
+  (minuty), full korpus 50-Sofie (~100k tokenů, seq_len 64–128) by
+  trval dny.
+- **Kontext:** Alpha.11 `train-core-memory` na 1.5B CPU F32, `seq_len=8
+  batch=1 grad_accum=2`: ~48 s per optimizer step. Full forward + backward
+  přes 24 vrstev je compute-bound. RAM ~18 GB.
+- **Řešení:** Vyřeší se společně s KI-005 — gradient checkpointing
+  odblokuje CUDA, rychlost skočí řádově. Alternativa: 7B training na
+  Gaia pro produkci, 1.5B CPU jen pro dev cyklus (smoke tests).
+
 ---
 
 ## Vyřešené
