@@ -59,15 +59,21 @@
 - **Raw judikatura NEPATŘÍ do Core Memory** (objem + fakta ≠ metoda +
   zastarávání). Půjde do Episodic Memory (v0.5.1 / v0.6).
 
-### v0.5.0-alpha.10 (next) — multi-layer + cross-entropy
-- [ ] `CoreMemory::all_layers(config, device)` → `Vec<Var>` pro všech 24 vrstev
-- [ ] `inject_into_state(&mut ModelState)` — aplikuje všechny init_states
-- [ ] Cross-entropy loss na next-token prediction (nahradí single-element)
-- [ ] Smoke test multi-layer: 1 forward + backward, všechny Vars dostanou gradient
+### v0.5.0-alpha.10 ✅ — multi-layer + cross-entropy
+- [x] `CoreMemoryStack::zeros/randn_small` + `inject_into_state` + `vars_owned`
+- [x] `cross_entropy_next_token(logits, input_ids)` s shift-by-one
+- [x] `Sofie::smoke_train_core_memory_multilayer` + CLI `train-core-memory-multi`
+- [x] Ověřeno na 1.5B CPU F32: 24 vrstev dostalo gradient, loss 21.5,
+      grad clipped na 1.0, per-layer grad spread L0→L23 (Peri-LN pattern)
+- [x] 66 unit testů (+8 oproti alpha.9)
 
-### v0.5.0-alpha.11 — training loop + dataset loader
+### v0.5.0-alpha.11 (next) — training loop + dataset loader
 - [ ] Dataset struct (tokenize + chunk), ChatML wrapping
 - [ ] Training loop (epoch × batch), gradient accumulation (VRAM-friendly)
+- [ ] **Gradient checkpointing** — alpha.10 odhalil CUDA OOM na 6 GB,
+      plný backward přes 24 vrstev × 65537 vocab se nevejde. Candle
+      support ověřit; pokud absent, custom implementace (forward v no_grad
+      + recompute per chunk).
 - [ ] AdamW betas `(0.9, 0.95)`, cosine/WSD schedule, grad clip 1.0
 - [ ] LR sweep (RWKV doporučuje 1.0 pro State Tuning, naše smoke měla 1e-3)
 

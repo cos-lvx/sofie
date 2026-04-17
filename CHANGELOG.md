@@ -7,6 +7,86 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.10] — 2026-04-17
+
+### Přidáno — Multi-layer Core Memory + cross-entropy loss
+
+**Fáze 5 alpha.10 milestone:** autograd teče přes všech 24 Mamba-2
+vrstev najednou s realistickou LM loss. První produkční building block
+pro Core Memory training.
+
+#### `CoreMemoryStack` (`training/core_memory.rs`)
+
+- `CoreMemoryStack::zeros(config, device)` — nulová inicializace všech
+  vrstev (pro restart z trained checkpointu)
+- `CoreMemoryStack::randn_small(config, device)` — malá randn init
+  (std=0.01), vhodná pro bring-up (non-zero grad signal od 1. iterace)
+- `inject_into_state(&mut ModelState, runtime_dtype)` — aplikuje
+  všechny trainable init_states do ModelState s dtype upcastem
+- `vars()` / `vars_owned()` — collection pro předání AdamW optimizéru
+  a `clip_grad_norm`
+- 4 unit testy (zeros count, randn nonzero, vars length, inject replaces
+  ssm_state)
+
+#### Cross-entropy loss (`training/loss.rs`)
+
+- `cross_entropy_next_token(logits, input_ids)` — standardní LM loss
+  s shift-by-one konvencí. F32 upcast pro log_softmax (BF16 nestabilní
+  pro extreme logits). Gather na target positions, NLL mean přes všechny
+  (batch × (seq_len-1)) predikcí.
+- 4 unit testy (confident correct → loss≈0, uniform → ln(vocab),
+  seq_len=1 rejection, gradient flows to logits)
+
+#### Multi-layer smoke test
+
+- `Sofie::smoke_train_core_memory_multilayer(seq_len, lr, max_grad_norm)`
+  — kompletní forward + backward + step přes všech 24 vrstev
+- `MultiLayerSmokeResult` s per-layer gradient norms + init state
+  before/after (analýza distribuce gradientu napříč hloubkou)
+- CLI subkomanda `train-core-memory-multi --seq-len N --learning-rate LR
+  --grad-clip G` (default seq_len=4, lr=1e-3, grad_clip=1.0)
+
+### Ověřeno na Falcon-H1-1.5B (CPU F32, 24 vrstev)
+
+```
+seq_len=2, lr=1e-3, grad_clip=1.0
+loss (cross-entropy):    21.51   (random baseline ln(65537)≈11.09)
+total grad L2 (pre-clip):  5.24
+total grad L2 (post-clip): 1.00
+wall time:              14860 ms
+per-layer grad spread:   L0=1.6e-2 … L23=4.38 (roste s hloubkou,
+                         Peri-LN massive activations pattern, clipping srovnává)
+```
+
+**PASS:** všechny 24 vrstvy dostaly gradient, non-trivial values napříč
+celým stackem, init_state se pohnul ve všech vrstvách.
+
+### Známé limity (→ alpha.11+)
+
+- **CUDA OOM na RTX 4050 (6 GB)** pro multi-layer backward graph — full
+  forward s autograd přes 24 vrstev × 65537 vocab nezvládne. CPU F32
+  projede za 15 s. Pro reálný training (tisíce kroků) potřebujeme buď:
+  (a) gradient checkpointing, (b) gradient accumulation, (c) Gaia deploy
+  s víc VRAM. Řeší alpha.11.
+- **Loss > random baseline** (21.5 vs. 11.09) je očekávané — trained
+  init_state je random, frozen weights ho neberou jako valid starting
+  point. Po několika krocích training by loss měla klesnout k baseline
+  a níž.
+
+### Testy
+
+66 unit testů (+8 oproti alpha.9: 4 loss + 4 CoreMemoryStack).
+
+### Plán alpha.11
+
+- Dataset struct (text → tokenize → chunks), ChatML wrapping
+- Training loop (epoch × batch), gradient accumulation
+- AdamW betas `(0.9, 0.95)`, cosine/WSD schedule
+- LR sweep (RWKV doporučuje 1.0 pro State Tuning po warmup)
+- Gradient checkpointing (pokud VRAM zůstane blocker)
+
+---
+
 ## [0.5.0-alpha.9] — 2026-04-17
 
 ### 🎯 BUG-010 vyřešen — NaN backward přes více vrstev odstraněn

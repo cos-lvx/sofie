@@ -25,7 +25,8 @@ use candle_nn::{AdamW, ParamsAdamW};
 
 use crate::Sofie;
 use crate::falcon_h1::layer::LayerStop;
-use crate::training::core_memory::CoreMemory;
+use crate::training::core_memory::{CoreMemory, CoreMemoryStack};
+use crate::training::loss::cross_entropy_next_token;
 use crate::training::trace::{self, TraceEntry};
 
 /// Výsledek smoke testu — metriky a diagnostika.
@@ -383,5 +384,200 @@ impl Sofie {
         out.push(("cut=full (logits)".to_string(), full));
 
         Ok(out)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Multi-layer smoke test (alpha.10+) — Vec<Var> pro všech N vrstev,
+// cross-entropy loss na next-token prediction
+// ---------------------------------------------------------------------------
+
+/// Výsledek multi-layer smoke testu — agregát + per-layer gradient norms.
+#[derive(Debug, Clone)]
+pub struct MultiLayerSmokeResult {
+    /// Hodnota cross-entropy loss před krokem (v ideálním případě blízko
+    /// `ln(vocab_size)` pro random init, klesá k 0 pro perfect fit).
+    pub loss_value: f64,
+    /// Agregovaná L2 norma gradientu napříč všemi vrstvami
+    /// (sqrt of sum of squared grad norms — globální L2).
+    pub total_gradient_norm: f64,
+    /// Pre-clip varianta `total_gradient_norm`.
+    pub pre_clip_total_gradient_norm: f64,
+    /// Per-vrstva L2 norm gradientu — `[layer_0_grad, layer_1_grad, ...]`.
+    /// Užitečné pro analýzu: distribuuje se gradient rovnoměrně, nebo
+    /// je koncentrovaný v některých vrstvách?
+    pub per_layer_gradient_norms: Vec<f64>,
+    /// Per-layer L2 norm init_state před krokem.
+    pub per_layer_init_norms_before: Vec<f64>,
+    /// Per-layer L2 norm init_state po kroku.
+    pub per_layer_init_norms_after: Vec<f64>,
+    /// Wall-clock čas celého cyklu (ms).
+    pub wall_time_ms: u128,
+    /// Seq_len vstupu.
+    pub seq_len: usize,
+    /// Počet trénovaných vrstev.
+    pub num_layers: usize,
+}
+
+impl MultiLayerSmokeResult {
+    /// Pass = všech per-layer gradientů je finite a alespoň průměrně
+    /// nenulové. Jedna vrstva se zero gradientem je OK (může se stát
+    /// pro některé pozice při krátkém seq_len), ale většina musí hořet.
+    pub fn passed(&self) -> bool {
+        let finite = self.total_gradient_norm.is_finite();
+        let non_trivial_count = self
+            .per_layer_gradient_norms
+            .iter()
+            .filter(|&&n| n.is_finite() && n > 1e-10)
+            .count();
+        finite && non_trivial_count * 2 >= self.num_layers // alespoň polovina
+    }
+}
+
+impl Sofie {
+    /// Multi-layer smoke test — trénuje `init_state` všech Mamba-2 vrstev
+    /// najednou s cross-entropy loss na next-token prediction.
+    ///
+    /// **Rozdíly oproti single-layer `smoke_train_core_memory`:**
+    /// - Trénovaný: `CoreMemoryStack` (Vec<Var>) místo jednoho Var
+    /// - Loss: cross-entropy na next-token (realistic LM objective)
+    ///   místo dummy single-element
+    /// - Output: per-layer gradient norms (analýza distribuce)
+    ///
+    /// **Požadavek:** `seq_len >= 2` (cross-entropy potřebuje alespoň
+    /// jeden next-token target).
+    ///
+    /// **VRAM pozor:** Pro 1.5B model s `seq_len=4` už jsme blízko 6 GB
+    /// limitu (RTX 4050). Pro větší seq_len použij gradient accumulation
+    /// (alpha.11+).
+    pub fn smoke_train_core_memory_multilayer(
+        &self,
+        seq_len: usize,
+        learning_rate: f64,
+        max_grad_norm: Option<f64>,
+    ) -> Result<MultiLayerSmokeResult> {
+        if seq_len < 2 {
+            return Err(anyhow!(
+                "multi-layer smoke vyžaduje seq_len >= 2 pro next-token loss"
+            ));
+        }
+
+        let start = std::time::Instant::now();
+        let num_layers = self.config().num_hidden_layers;
+
+        // 1) Vytvoř trainable Core Memory stack s malou náhodnou init
+        //    (zero init by dal zero grad pro SSM rekurzi).
+        let stack = CoreMemoryStack::randn_small(self.config(), self.device_ref())
+            .map_err(|e| anyhow!("CoreMemoryStack::randn_small: {e}"))?;
+
+        // 2) Dummy input sekvence — token IDs 1..=seq_len (valid pro vocab > seq_len)
+        let input_ids: Vec<u32> = (1..=seq_len as u32).collect();
+        let input_tensor = Tensor::new(input_ids.as_slice(), self.device_ref())?.unsqueeze(0)?;
+
+        // 3) Čerstvý ModelState, injektuj všechny trainable init_states
+        let mut state = self.new_model_state()?;
+        stack
+            .inject_into_state(&mut state, self.dtype_ref())
+            .map_err(|e| anyhow!("inject_into_state: {e}"))?;
+
+        // Baseline norms před krokem (per layer)
+        let per_layer_init_norms_before: Vec<f64> = stack
+            .layers
+            .iter()
+            .map(|c| tensor_l2_norm(c.init_state.as_tensor()))
+            .collect::<Result<Vec<_>>>()?;
+
+        // 4) Plný forward pass → logits [batch, seq_len, vocab]
+        let logits = self.model_forward(&input_tensor, 0, &mut state)?;
+
+        // 5) Cross-entropy next-token loss
+        let loss = cross_entropy_next_token(&logits, &input_tensor)
+            .map_err(|e| anyhow!("cross_entropy: {e}"))?;
+        let loss_value: f64 = loss.to_scalar::<f32>()? as f64;
+        if !loss_value.is_finite() {
+            return Err(anyhow!(
+                "loss je {loss_value} před backward — forward je nestabilní"
+            ));
+        }
+
+        // 6) Backward — gradient store pro diagnostiku
+        let mut grads = loss.backward()?;
+
+        // Per-layer gradient norms + total
+        let mut per_layer_gradient_norms: Vec<f64> = Vec::with_capacity(num_layers);
+        let mut pre_clip_sum_sq = 0.0f64;
+        for core in &stack.layers {
+            let grad_norm = match grads.get(core.init_state.as_tensor()) {
+                Some(g) => tensor_l2_norm(g)?,
+                None => 0.0, // chybějící grad = žádný gradient signal
+            };
+            per_layer_gradient_norms.push(grad_norm);
+            if grad_norm.is_finite() {
+                pre_clip_sum_sq += grad_norm * grad_norm;
+            } else {
+                pre_clip_sum_sq = f64::NAN;
+            }
+        }
+        let pre_clip_total_gradient_norm = if pre_clip_sum_sq.is_nan() {
+            f64::NAN
+        } else {
+            pre_clip_sum_sq.sqrt()
+        };
+
+        // Volitelný gradient clipping (global L2 norm napříč všemi Vars)
+        let vars_owned = stack.vars_owned();
+        if let Some(max_norm) = max_grad_norm
+            && pre_clip_total_gradient_norm.is_finite()
+        {
+            let var_refs: Vec<&candle_core::Var> = vars_owned.iter().collect();
+            crate::training::clip::clip_grad_norm(&mut grads, &var_refs, max_norm)?;
+        }
+
+        // Post-clip total
+        let total_gradient_norm = if pre_clip_total_gradient_norm.is_finite() {
+            let mut sq = 0.0f64;
+            for core in &stack.layers {
+                if let Some(g) = grads.get(core.init_state.as_tensor()) {
+                    let n = tensor_l2_norm(g)?;
+                    sq += n * n;
+                }
+            }
+            sq.sqrt()
+        } else {
+            f64::NAN
+        };
+
+        // 7) Optimizer step — pouze pokud gradient finite
+        if total_gradient_norm.is_finite() {
+            let mut opt = AdamW::new(
+                vars_owned.clone(),
+                ParamsAdamW {
+                    lr: learning_rate,
+                    ..ParamsAdamW::default()
+                },
+            )?;
+            opt.step(&grads)?;
+        }
+
+        // Post-step norms (i když nebyl step — pak se rovnají before)
+        let per_layer_init_norms_after: Vec<f64> = stack
+            .layers
+            .iter()
+            .map(|c| tensor_l2_norm(c.init_state.as_tensor()))
+            .collect::<Result<Vec<_>>>()?;
+
+        let wall_time_ms = start.elapsed().as_millis();
+
+        Ok(MultiLayerSmokeResult {
+            loss_value,
+            total_gradient_norm,
+            pre_clip_total_gradient_norm,
+            per_layer_gradient_norms,
+            per_layer_init_norms_before,
+            per_layer_init_norms_after,
+            wall_time_ms,
+            seq_len,
+            num_layers,
+        })
     }
 }

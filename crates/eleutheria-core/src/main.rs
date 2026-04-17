@@ -72,6 +72,11 @@ enum Command {
     /// Core Memory autograd smoke test (Fáze 5 alpha) — ověří, že gradient
     /// teče od loss zpět k trainable initial SSM state jedné vrstvy.
     TrainCoreMemorySmoke(TrainCoreMemorySmokeArgs),
+    /// Multi-layer Core Memory smoke (Fáze 5 alpha.10+) — trénuje init_state
+    /// všech vrstev najednou s cross-entropy loss na next-token. Ověří,
+    /// že autograd teče ke všem trainable Vars a gradient signál je
+    /// rozumně distribuovaný napříč vrstvami.
+    TrainCoreMemoryMulti(TrainCoreMemoryMultiArgs),
 }
 
 /// Argumenty pro `bench-retention` subkomand.
@@ -158,6 +163,29 @@ struct TrainCoreMemorySmokeArgs {
     trace: bool,
 }
 
+/// Argumenty pro `train-core-memory-multi` subkomand — multi-layer smoke
+/// test s cross-entropy loss (Fáze 5 alpha.10+).
+#[derive(ClapArgs, Debug)]
+struct TrainCoreMemoryMultiArgs {
+    /// Počet tokenů ve vstupu. Min 2 (cross-entropy potřebuje next-token
+    /// target). Default 4 — konzervativní pro 6 GB VRAM na RTX 4050.
+    /// Pro větší seq_len použij gradient accumulation (alpha.11+).
+    #[arg(long, default_value_t = 4)]
+    seq_len: usize,
+
+    /// AdamW learning rate. Default 1e-3 — bezpečný pro smoke bring-up.
+    /// Produkční training (alpha.11+) bude ladit přes LR sweep; RWKV
+    /// doporučuje 1.0 pro State Tuning, ale až po warmup.
+    #[arg(long, default_value_t = 1e-3)]
+    learning_rate: f64,
+
+    /// Gradient clipping (max L2 norm, globálně napříč všemi vrstvami).
+    /// Default 1.0 — standardní Mamba-2 recept, chrání před případnou
+    /// gradient explozí pro edge-case vstupy.
+    #[arg(long, default_value_t = 1.0)]
+    grad_clip: f64,
+}
+
 fn parse_state_filter(s: &str) -> StateFilter {
     match s {
         "full" => StateFilter::full(),
@@ -235,6 +263,7 @@ fn main() -> Result<()> {
         match cmd {
             Command::BenchRetention(ba) => run_bench_retention(&sofie, &args, ba),
             Command::TrainCoreMemorySmoke(ta) => run_train_smoke(&sofie, ta),
+            Command::TrainCoreMemoryMulti(ta) => run_train_multi(&sofie, ta),
         }
     } else {
         match &args.prompt {
@@ -379,6 +408,84 @@ fn run_train_smoke_sweep(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result
     println!();
 
     Ok(())
+}
+
+/// Multi-layer Core Memory smoke test — trénuje init_state všech vrstev
+/// najednou s cross-entropy loss na next-token prediction.
+fn run_train_multi(sofie: &Sofie, ta: &TrainCoreMemoryMultiArgs) -> Result<()> {
+    println!(
+        "\nCore Memory multi-layer smoke — seq_len={}, lr={}, grad_clip={}\n",
+        ta.seq_len, ta.learning_rate, ta.grad_clip
+    );
+
+    let grad_clip = if ta.grad_clip > 0.0 {
+        Some(ta.grad_clip)
+    } else {
+        None
+    };
+
+    let result =
+        sofie.smoke_train_core_memory_multilayer(ta.seq_len, ta.learning_rate, grad_clip)?;
+
+    println!("Výsledky:");
+    println!("  num_layers:              {}", result.num_layers);
+    println!("  seq_len:                 {}", result.seq_len);
+    println!("  loss (cross-entropy):    {:.6}", result.loss_value);
+    println!(
+        "  expected if random:      ln(vocab)≈{:.4}",
+        (sofie.config().vocab_size as f64).ln()
+    );
+    println!(
+        "  total gradient L2 (pre-clip): {:.6e}",
+        result.pre_clip_total_gradient_norm
+    );
+    println!(
+        "  total gradient L2 norm:       {:.6e}",
+        result.total_gradient_norm
+    );
+    println!("  wall time:              {} ms", result.wall_time_ms);
+    println!();
+
+    // Per-layer tabulka
+    println!("Per-layer gradient + init norms:");
+    println!(
+        "  {:>5}  {:>13}  {:>13}  {:>13}  {:>10}",
+        "layer", "grad L2", "init |before|", "init |after|", "Δ init"
+    );
+    println!(
+        "  {:>5}  {:>13}  {:>13}  {:>13}  {:>10}",
+        "-----", "-------", "-------------", "------------", "------"
+    );
+    for i in 0..result.num_layers {
+        let g = result.per_layer_gradient_norms[i];
+        let b = result.per_layer_init_norms_before[i];
+        let a = result.per_layer_init_norms_after[i];
+        let delta = (a - b).abs();
+        println!(
+            "  {:>5}  {:>13.4e}  {:>13.4e}  {:>13.4e}  {:>10.4e}",
+            i, g, b, a, delta
+        );
+    }
+    println!();
+
+    if result.passed() {
+        println!("✓ PASS — autograd teče ke všem vrstvám, gradient distribuovaný.");
+        println!("  Multi-layer state tuning funkční — alpha.10 milestone splněn.");
+        Ok(())
+    } else {
+        eprintln!("✗ FAIL — gradient neprotekl ke dostatečnému počtu vrstev.");
+        eprintln!(
+            "  total_grad={:.3e}, non-trivial layers={}/{}",
+            result.total_gradient_norm,
+            result
+                .per_layer_gradient_norms
+                .iter()
+                .filter(|&&n| n.is_finite() && n > 1e-10)
+                .count(),
+            result.num_layers
+        );
+        Err(anyhow!("multi-layer smoke test selhal"))
+    }
 }
 
 /// Retention benchmark — harness pro měření SSM state retence.

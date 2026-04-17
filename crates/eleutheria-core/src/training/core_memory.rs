@@ -1,15 +1,22 @@
-//! `CoreMemory` — trainable initial SSM state pro jednu Mamba-2 vrstvu.
+//! `CoreMemory` — trainable initial SSM state pro Mamba-2 vrstvy.
 //!
 //! Drží `candle_nn::Var` v F32 (pro numerickou stabilitu během backpropu)
-//! se tvarem `[n_heads, headdim, d_state]`. Při forward pass se kopíruje
-//! do `ModelState.layers[layer_idx].ssm_state` po upcastu na runtime dtype.
-//! Gradient teče zpět přes `to_dtype` (autograd-aware v Candle) až k `Var`.
+//! se tvarem `[n_heads, headdim, d_state]` per vrstva. Při forward pass
+//! se kopíruje do `ModelState.layers[i].ssm_state` po upcastu na runtime
+//! dtype. Gradient teče zpět přes `to_dtype` (autograd-aware v Candle)
+//! až k `Var`.
 //!
-//! Ve v0.5.0-alpha.1 trénujeme pouze vrstvu 0 — smoke test, ne produkce.
+//! **Jednoduché API (alpha.1–alpha.9):** `CoreMemory` = jedna vrstva,
+//! indexovaná `layer_idx`. Použité ve smoke testech.
+//!
+//! **Multi-layer API (alpha.10+):** `CoreMemoryStack` = `Vec<CoreMemory>`,
+//! jedna instance per Mamba-2 vrstva. Produkční verze pro Fáze 5 —
+//! trénujeme všechny vrstvy najednou (viz `project_core_memory_scope`).
 
 use candle_core::{DType, Device, Result, Var};
 
 use crate::falcon_h1::config::FalconH1Config;
+use crate::falcon_h1::state::ModelState;
 
 /// Trainable initial SSM state pro jednu vrstvu.
 pub struct CoreMemory {
@@ -70,6 +77,79 @@ impl CoreMemory {
             headdim: config.mamba_d_head,
             d_state: config.mamba_d_state,
         }
+    }
+}
+
+/// Multi-layer trainable Core Memory — jedna `CoreMemory` instance per
+/// Mamba-2 vrstva. Produkční verze pro Fáze 5 (alpha.10+).
+///
+/// **Scope rozhodnutí:** trénujeme **všechny** vrstvy najednou, ne
+/// selektivně. Storage je triviální (~75 MB v F32 pro 1.5B, ~132 MB
+/// pro 7B), nevíme co Mamba vrstvy kódují. Selektivita je alpha.14+
+/// optimalizace. Viz `project_core_memory_scope` memory.
+pub struct CoreMemoryStack {
+    /// Per-layer Core Memory. Délka = `config.num_hidden_layers`.
+    pub layers: Vec<CoreMemory>,
+}
+
+impl CoreMemoryStack {
+    /// Vytvoří Core Memory stack s nulovou inicializací všech vrstev.
+    ///
+    /// **Poznámka:** nulová inicializace dává zero gradient v SSM rekurzi
+    /// (`h' = dA·h + dB⊗x` s `h=0` a `x=0`). Pro smoke/bring-up tréninky
+    /// použij `randn_small_stack`; pro production restart z trained
+    /// checkpointu (kde init_state už není zero) je zero start OK.
+    pub fn zeros(config: &FalconH1Config, device: &Device) -> Result<Self> {
+        let layers = (0..config.num_hidden_layers)
+            .map(|i| CoreMemory::zeros(config, device, i))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self { layers })
+    }
+
+    /// Vytvoří Core Memory stack s malou náhodnou inicializací všech
+    /// vrstev (std=0.01). Vhodné pro smoke testy a training bring-up,
+    /// kde potřebujeme non-zero gradient signal od první iterace.
+    pub fn randn_small(config: &FalconH1Config, device: &Device) -> Result<Self> {
+        let layers = (0..config.num_hidden_layers)
+            .map(|i| CoreMemory::randn_small(config, device, i))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self { layers })
+    }
+
+    /// Injektuje všechny trainable init_states do `ModelState` před forward
+    /// pass. Každý Var se upcastuje na runtime dtype modelu (typicky BF16
+    /// na CUDA, F32 na CPU). Gradient teče zpět přes `to_dtype` k Var.
+    pub fn inject_into_state(&self, state: &mut ModelState, runtime_dtype: DType) -> Result<()> {
+        if self.layers.len() != state.layers.len() {
+            return Err(candle_core::Error::Msg(format!(
+                "CoreMemoryStack má {} vrstev, ModelState má {} — musí souhlasit",
+                self.layers.len(),
+                state.layers.len()
+            )));
+        }
+        for (i, core) in self.layers.iter().enumerate() {
+            let trained = core.init_state.as_tensor().to_dtype(runtime_dtype)?;
+            state.layers[i].ssm_state = trained;
+        }
+        Ok(())
+    }
+
+    /// Počet vrstev (pro validaci a reporting).
+    pub fn num_layers(&self) -> usize {
+        self.layers.len()
+    }
+
+    /// Referenční slice `&[Var]` všech trainable init_states — pro předání
+    /// optimizéru (`AdamW::new`) a `clip_grad_norm`.
+    pub fn vars(&self) -> Vec<&Var> {
+        self.layers.iter().map(|c| &c.init_state).collect()
+    }
+
+    /// Vlastnické `Vec<Var>` pro předání optimizéru, který bere ownership.
+    /// Klonuje Var handle (Var je Arc-wrapped, takže klon je levný a sdílí
+    /// storage).
+    pub fn vars_owned(&self) -> Vec<Var> {
+        self.layers.iter().map(|c| c.init_state.clone()).collect()
     }
 }
 
@@ -154,5 +234,75 @@ mod tests {
         let config = dummy_config();
         let result = CoreMemory::zeros(&config, &Device::Cpu, 99);
         assert!(result.is_err());
+    }
+
+    // ----------------------------------------------------------------
+    // CoreMemoryStack (multi-layer, alpha.10+)
+    // ----------------------------------------------------------------
+
+    #[test]
+    fn stack_zeros_creates_correct_count() {
+        let config = dummy_config();
+        let stack = CoreMemoryStack::zeros(&config, &Device::Cpu).unwrap();
+        assert_eq!(stack.num_layers(), config.num_hidden_layers);
+        for (i, core) in stack.layers.iter().enumerate() {
+            assert_eq!(core.layer_idx, i);
+            assert_eq!(core.init_state.as_tensor().dims(), &[2, 16, 8]);
+        }
+    }
+
+    #[test]
+    fn stack_randn_all_layers_nonzero() {
+        let config = dummy_config();
+        let stack = CoreMemoryStack::randn_small(&config, &Device::Cpu).unwrap();
+        assert_eq!(stack.num_layers(), 4);
+        for core in &stack.layers {
+            let sum_sq: f32 = core
+                .init_state
+                .as_tensor()
+                .sqr()
+                .unwrap()
+                .sum_all()
+                .unwrap()
+                .to_scalar()
+                .unwrap();
+            assert!(sum_sq > 0.0);
+        }
+    }
+
+    #[test]
+    fn stack_vars_length_matches_layers() {
+        let config = dummy_config();
+        let stack = CoreMemoryStack::randn_small(&config, &Device::Cpu).unwrap();
+        assert_eq!(stack.vars().len(), config.num_hidden_layers);
+        assert_eq!(stack.vars_owned().len(), config.num_hidden_layers);
+    }
+
+    #[test]
+    fn stack_inject_into_state_replaces_ssm_states() {
+        let config = dummy_config();
+        let stack = CoreMemoryStack::randn_small(&config, &Device::Cpu).unwrap();
+        let mut state = ModelState::new(&config, DType::F32, &Device::Cpu).unwrap();
+
+        // Zero state before — sanity check na ModelState::new.
+        for layer in &state.layers {
+            let sum: f32 = layer.ssm_state.sum_all().unwrap().to_scalar().unwrap();
+            assert_eq!(sum, 0.0);
+        }
+
+        stack.inject_into_state(&mut state, DType::F32).unwrap();
+
+        // Po injection každá vrstva musí mít non-zero state (z randn init).
+        for (i, layer) in state.layers.iter().enumerate() {
+            let sum_sq: f32 = layer
+                .ssm_state
+                .sqr()
+                .unwrap()
+                .sum_all()
+                .unwrap()
+                .to_scalar()
+                .unwrap();
+            assert!(sum_sq > 0.0, "vrstva {i} má po injection nulový SSM state");
+        }
     }
 }

@@ -129,11 +129,14 @@ vzdálenostmi). Core Memory **musí být trénovaný** — potvrzeno empiricky.
   exploduje přes `recip(Inf)` backward pro extrémní |x|. Fix: delegace
   na `candle_nn::ops::silu`. L22 cut=full NaN→1.74, autograd stabilní
   přes všechny vrstvy.
+- [x] **alpha.10** — Multi-layer `CoreMemoryStack` (Vec<Var> pro všech
+  24 vrstev) + cross-entropy next-token loss. Ověřeno: všechny vrstvy
+  dostanou gradient, loss 21.5 vs. baseline ln(65537)≈11.09. Odhaleno
+  CUDA OOM pro full backward na 6 GB VRAM (alpha.11 řeší).
 
-**Implementace (alpha.10+):**
-- [ ] **alpha.10** — Multi-layer `CoreMemory::all_layers()` + cross-entropy
-  loss na next-token prediction
-- [ ] **alpha.11** — Training loop + dataset loader, AdamW (0.9, 0.95),
+**Implementace (alpha.11+):**
+- [ ] **alpha.11** — Training loop + dataset loader + gradient
+  checkpointing (odblokovat CUDA), AdamW (0.9, 0.95),
   cosine/WSD schedule, grad clip 1.0, gradient accumulation
 - [ ] **alpha.12** — Save/Load trained Core Memory přes `StateCheckpoint`
   (filter `core_memory` už existuje), auto-load v `Sofie::load`

@@ -4,6 +4,29 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-17 | v0.5.0-alpha.10 — Multi-layer CoreMemory + cross-entropy
+
+První produkční building block Fáze 5. Infrastruktura pro multi-layer
+state tuning:
+
+- `CoreMemoryStack` — `Vec<CoreMemory>` pro všech 24 Mamba-2 vrstev,
+  `inject_into_state`, `vars_owned` pro AdamW
+- `cross_entropy_next_token(logits, input_ids)` — shift-by-one LM loss
+  s F32 upcast pro log_softmax (BF16 nestabilní)
+- `Sofie::smoke_train_core_memory_multilayer` + CLI
+  `train-core-memory-multi`
+
+Ověřeno na Falcon-H1-1.5B CPU F32 (seq_len=2, lr=1e-3, clip=1.0):
+loss 21.5 (vs. baseline ln(vocab)≈11.09), total grad clipped na 1.0,
+všech 24 vrstev dostalo gradient, per-layer grad roste s hloubkou
+(L0=1.6e-2 → L23=4.38, Peri-LN pattern). 15 s wall time na CPU.
+
+**CUDA OOM** na RTX 4050 (6 GB) pro multi-layer backward graph —
+full forward přes 24 vrstev + 65537 vocab nezvládne. alpha.11 řeší
+gradient checkpointing / accumulation / větší VRAM (Gaia).
+
+66 unit testů (+8: 4 loss + 4 CoreMemoryStack). Zero warnings.
+
 ## 2026-04-17 | v0.5.0-alpha.9 — BUG-010 vyřešen (silu backward fix)
 
 **Diagnostika z alpha.8 identifikovala root cause:** lokální
