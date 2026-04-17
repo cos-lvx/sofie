@@ -4,6 +4,27 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-17 | v0.5.0-alpha.9 — BUG-010 vyřešen (silu backward fix)
+
+**Diagnostika z alpha.8 identifikovala root cause:** lokální
+`silu(x) = x * recip(1 + exp(-x))` v `mixer.rs` a `norm.rs` produkuje NaN
+gradient pro extrémně záporné x (exp overflow → recip(Inf)=0 → 0*Inf=NaN
+v backward chain). Hluboké vrstvy Falcon-H1 produkují hodnoty ±100,
+kde tato naivní implementace exploduje.
+
+**Fix:** delegace na `candle_nn::ops::silu` (native `Tensor::silu()`
+s numericky stabilním backward kernelem).
+
+**Ověřeno na Falcon-H1-1.5B (CUDA RTX 4050):**
+- L22 cut=22: grad 2.85 (před i po)
+- L22 cut=23: **NaN → 9.80**
+- L22 cut=full (přes lm_head): **NaN → 1.74**
+
+Fáze 5 (Core Memory) odblokovaná. Další krok: alpha.10 multi-layer
+training loop.
+
+58 unit testů (+3 silu micro testy, +5 trace z alpha.8).
+
 ## 2026-04-17 | v0.5.0-alpha.8 — Instrumentovaný forward pass (BUG-010)
 
 Přidána dvojí diagnostika pro lokalizaci op zodpovědné za NaN gradient

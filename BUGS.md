@@ -8,48 +8,47 @@ Formát: `BUG-NNN` s verzí nálezu, závažností (P1–P4), reprodukcí a stav
 
 ## Aktivní
 
-### BUG-010 — Inter-layer backward amplifikuje gradient do NaN
-- **Nalezeno:** v0.5.0-alpha.4 | **Závažnost:** P2 (blokuje Core Memory training
-  přes více vrstev, ale alpha.1 cíl "autograd teče" splněn pro L23)
-- **Reprodukce:** `train-core-memory-smoke --seq-len 1 --layer-idx 22`
-  (CPU, 1.5B) → NaN. Izolovaně `--cut-at-layer 22` → PASS gradient 2.84.
-  Přidání 1 vrstvy `--cut-at-layer 23` → NaN.
-- **Pattern:** intra-layer SSM backward stabilní; inter-layer forward
-  Jacobian sporadicky exploduje. L20–L22 exploze po 1 přidané vrstvě,
-  L0 prochází přes 2 ale selže na 3. Není rovnoměrné.
-- **Hypotézy:** RMSNorm rsqrt backward pro bohatší aktivace pozdějších
-  vrstev / softplus numerická díra / konstruktivní interference gradientu
-  v paralelním hybridu
-- **Workaround pro alpha/experimenty:** trénovat jen L23 (`--layer-idx 23`
-  bez cut) nebo používat `--cut-at-layer` s úzkým rozsahem
-- **Update v0.5.0-alpha.6:** Gradient clipping (`--grad-clip 1.0`)
-  **nepomohl** — pre-clip gradient je už NaN. Research hypotéza
-  "amplifikace přes vrstvy" není úplná; skutečný root cause je
-  **op-specific NaN uvnitř `loss.backward()` samotného**. Dampening μP
-  multipliery ověřeny jako správně načtené (ne primary root cause).
-- **Update v0.5.0-alpha.7:** Minimal reproduction `training/repro.rs`
-  (14 micro testů). Stable softplus implementován (`relu(x) + log1p(exp(-|x|))`).
-  Fix softplus **nevyřešil BUG-010** — realistický `dt + dt_bias` nepřesahuje
-  safe range. Dokumentovány další Candle autograd limity přes `#[should_panic]`
-  (recip near-zero → Inf, softplus naivní x=100 → NaN).
-- **Update v0.5.0-alpha.8:** Přidána infrastruktura pro diagnostiku:
-  (1) thread-local forward trace sink s 30+ probe body
-  (`training/trace.rs`), (2) sub-layer cut-at-component (`LayerStop` enum
-  v `falcon_h1::layer`, `forward_until`, `forward_up_to_layer_with_stop`),
-  (3) CLI `--trace` a `--cut-at-component`. Instrumentace sama
-  problém neřeší, ale umožní alpha.9 identifikaci konkrétní op.
-- **Plánované řešení:** alpha.9 — spuštění diagnostiky, fix konkrétního op
-  (primární kandidáti po alpha.7/.8: local `silu` v mixer.rs/norm.rs pro
-  velmi záporné x (recip(Inf) backward), attention softmax pre-max-subtract,
-  conv1d backward)
+*(Žádné aktivní bugy.)*
 
 ---
 
 ## Vyřešené
 
----
+### BUG-010 — Inter-layer backward amplifikuje gradient do NaN ✓
+- **Nalezeno:** v0.5.0-alpha.4 | **Závažnost:** P2 (blokoval Core Memory
+  training přes více vrstev)
+- **Reprodukce:** `train-core-memory-smoke --seq-len 1 --layer-idx 22
+  --cut-at-layer 23` → NaN. Izolovaně cut=22 → PASS gradient 2.84.
+- **Root cause (identifikováno alpha.8 diagnostikou):** lokální
+  `silu(x) = x * recip(1 + exp(-x))` v `mixer.rs` a `norm.rs`.
+  Pro extrémně záporné x: forward `exp(-x) = Inf` → `1+Inf = Inf`
+  → `recip(Inf) = 0` → `silu = 0` (forward OK); backward
+  `recip + x * recip² * exp(-x)` = `0 + x * 0 * Inf` → **`0 * Inf = NaN`**.
+  Hluboké Falcon-H1 vrstvy produkují po conv1d hodnoty ±100, kde
+  tato naivní implementace exploduje.
+- **Řešení (v0.5.0-alpha.9):** delegace `silu` v `mixer.rs` a `norm.rs`
+  na `candle_nn::ops::silu` (native `Tensor::silu()` s numericky
+  stabilním backward kernelem). F32 upcast zachován.
+- **Ověřeno:** L22 cut=22 grad 2.85 (beze změny), cut=23 NaN→**9.80**,
+  cut=full NaN→**1.74**. Sweep všech cut bodů PASS.
+- **Opraveno:** v0.5.0-alpha.9
 
-## Vyřešené
+### Historie diagnostiky (alpha.4–alpha.8)
+- **alpha.4:** `forward_up_to_layer` + binary search cut-at-layer
+  — lokalizace na poslední vrstvu ve stacku.
+- **alpha.5:** diagnostic sweep, forward hidden norms per-layer.
+- **alpha.6:** gradient clipping ověřeno jako neefektivní (pre-clip grad
+  už NaN). Dampening μP multipliery ověřeny jako správně načtené.
+- **alpha.7:** minimal reproduction (`training/repro.rs`), stable softplus.
+  Fix softplus **nevyřešil** BUG-010 — realistický `dt + dt_bias`
+  safe range nepřekračuje. Dokumentovány Candle autograd limity
+  přes `#[should_panic]` (recip near-zero → Inf, naivní softplus
+  x=100 → NaN).
+- **alpha.8:** instrumentace — thread-local forward trace sink
+  (`training/trace.rs`, 30+ probe bodů) + sub-layer cut-at-component
+  (`LayerStop` enum, 9 pozic uvnitř vrstvy). Diagnostika jednoznačně
+  potvrdila: **SSM branch backward selhává, attention OK**
+  (`after-ssm`=NaN, `after-attn`=0.60, `after-pre-norm`=2.08).
 
 ### BUG-009 — Panic v streaming diff při BPE retokenizaci ✓
 - **Nalezeno:** v0.4.2 | **Závažnost:** P1

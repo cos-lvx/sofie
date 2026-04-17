@@ -87,11 +87,14 @@ impl RmsNormGated {
     }
 }
 
-/// Silu aktivace: silu(x) = x * sigmoid(x)
+/// Silu aktivace: silu(x) = x * sigmoid(x).
 /// Smooth gate — propouští kladné, tlumí záporné.
+///
+/// Viz `mixer.rs::silu` pro detailní doc — lokální `x * recip(1 + exp(-x))`
+/// má NaN backward pro extrémní |x|. `candle_nn::ops::silu` má stabilní
+/// native kernel. F32 upcast pro numerickou přesnost (BF16 má 7 mantissa bitů).
 fn silu(x: &Tensor) -> Result<Tensor> {
     let orig_dtype = x.dtype();
-    let x = x.to_dtype(DType::F32)?;
-    let sigmoid = x.neg()?.exp()?.affine(1.0, 1.0)?.recip()?;
-    x.broadcast_mul(&sigmoid)?.to_dtype(orig_dtype)
+    let x_f32 = x.to_dtype(DType::F32)?;
+    candle_nn::ops::silu(&x_f32)?.to_dtype(orig_dtype)
 }

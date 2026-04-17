@@ -295,6 +295,62 @@ fn recip_backward_near_zero_produces_inf() {
 // Kompletní RMSNorm + následná lineární vrstva (simulace backward path)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// silu backward — kandidát root cause BUG-010 (alpha.8 diagnostika)
+// ---------------------------------------------------------------------------
+
+/// Naše `silu(x) = x * recip(1 + exp(-x))` implementace z mixer.rs / norm.rs
+/// (lokální fn, ne `candle_nn::ops::silu`).
+fn silu_local(x: &Tensor) -> Result<Tensor> {
+    let x = x.to_dtype(DType::F32)?;
+    let sigmoid = x.neg()?.exp()?.affine(1.0, 1.0)?.recip()?;
+    x.broadcast_mul(&sigmoid)
+}
+
+#[test]
+fn silu_local_backward_normal() -> Result<()> {
+    let var = Var::randn_f64(0.0, 1.0, (64,), DType::F32, &Device::Cpu)?;
+    let out = silu_local(var.as_tensor())?;
+    let loss = out.sum_all()?;
+    let grads = loss.backward()?;
+    assert_grad_finite(&var, &grads, "silu_local normal")?;
+    Ok(())
+}
+
+/// **BUG-010 primary root cause kandidát.** Pro velmi záporné x:
+/// - forward: `exp(-x) = exp(+|x|) → Inf`, `1+Inf = Inf`, `recip(Inf) = 0`,
+///   `silu = x * 0 = 0` (forward OK)
+/// - backward: `d/dx (x * recip(1+exp(-x)))`
+///   `= recip + x * recip² * exp(-x)`
+///   `= 0 + (-100) * 0 * Inf`
+///   `= 0 * Inf = NaN`
+///
+/// **Fix:** stable silu přes `candle_nn::ops::silu` (ten používá numericky
+/// stabilní internu) nebo manuální `max(0, x) + min(0, x * sigmoid(x))`.
+#[test]
+#[should_panic(expected = "gradient není finite")]
+fn silu_local_backward_extreme_negative_produces_nan() {
+    let data = vec![-100.0f32; 64];
+    let var = Var::from_slice(&data, (64,), &Device::Cpu).unwrap();
+    let out = silu_local(var.as_tensor()).unwrap();
+    let loss = out.sum_all().unwrap();
+    let grads = loss.backward().unwrap();
+    assert_grad_finite(&var, &grads, "silu_local x=-100 (recip Inf backward)").unwrap();
+}
+
+/// **Fix verification** — `candle_nn::ops::silu` přežije x=-100 bez NaN.
+#[test]
+fn silu_candle_nn_backward_extreme_negative_finite() -> Result<()> {
+    let data = vec![-100.0f32; 64];
+    let var = Var::from_slice(&data, (64,), &Device::Cpu)?;
+    let out = candle_nn::ops::silu(var.as_tensor())?;
+    let loss = out.sum_all()?;
+    let grads = loss.backward()?;
+    let norm = assert_grad_finite(&var, &grads, "candle_nn::ops::silu x=-100")?;
+    println!("  candle_nn silu(-100) gradient: {:.6e}", norm);
+    Ok(())
+}
+
 #[test]
 fn rmsnorm_then_linear_backward() -> Result<()> {
     // Simuluj: RMSNorm → matmul. Replikuje pattern normed = pre_norm(x), pak linear.

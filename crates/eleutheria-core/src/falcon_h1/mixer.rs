@@ -454,12 +454,25 @@ impl Mixer {
     }
 }
 
-/// Silu aktivace: silu(x) = x * sigmoid(x)
+/// Silu aktivace: silu(x) = x * sigmoid(x).
+///
+/// **Proč ne lokální `x * recip(1 + exp(-x))`:** naivní implementace
+/// produkuje `NaN` gradient pro extrémně záporné x (ověřeno v
+/// `training::repro::silu_local_backward_extreme_negative_produces_nan`):
+/// forward `exp(-x) = Inf` → `recip(Inf) = 0` → `silu = 0` (OK),
+/// ale backward obsahuje člen `x * recip² * exp(-x) = x * 0 * Inf = NaN`.
+///
+/// **BUG-010 primary root cause:** hluboké vrstvy Falcon-H1 produkují po
+/// conv1d hodnoty v rozsahu ±100, pro které lokální silu backward exploduje.
+/// `candle_nn::ops::silu` deleguje na native `Tensor::silu()` s vlastním
+/// numericky stabilním backward kernelem.
+///
+/// F32 upcast zachován pro konzistenci s ostatními numericky citlivými
+/// místy (RmsNorm, softplus) — BF16 má jen 7 mantissa bitů.
 fn silu(x: &Tensor) -> Result<Tensor> {
     let orig_dtype = x.dtype();
-    let x = x.to_dtype(DType::F32)?;
-    let sigmoid = x.neg()?.exp()?.affine(1.0, 1.0)?.recip()?;
-    x.broadcast_mul(&sigmoid)?.to_dtype(orig_dtype)
+    let x_f32 = x.to_dtype(DType::F32)?;
+    candle_nn::ops::silu(&x_f32)?.to_dtype(orig_dtype)
 }
 
 /// Softplus: softplus(x) = ln(1 + exp(x)) — **numericky stabilní**.

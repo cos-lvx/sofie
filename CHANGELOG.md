@@ -7,6 +7,60 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.9] — 2026-04-17
+
+### 🎯 BUG-010 vyřešen — NaN backward přes více vrstev odstraněn
+
+**Root cause** (identifikovaný diagnostikou z alpha.8):
+lokální `silu(x) = x * recip(1 + exp(-x))` v `mixer.rs` a `norm.rs`
+produkuje `NaN` gradient pro extrémně záporné x:
+- forward: `exp(-x) = Inf` (F32 overflow pro x < -87)
+  → `1 + Inf = Inf` → `recip(Inf) = 0` → `silu = x * 0 = 0` (forward je OK)
+- backward: `d/dx = recip + x * recip² * exp(-x)`
+  → `0 + (-100) * 0 * Inf` → **`0 * Inf = NaN`**
+
+Hluboké vrstvy Falcon-H1 produkují po conv1d hodnoty v rozsahu ±100
+(diagnostika: `layer.mlp.down_raw` v L23 = 3632, `mixer_out_raw` v L22 = 500).
+V těchto rozsazích naivní silu backward exploduje.
+
+### Opraveno
+
+- `mixer.rs::silu` — delegace na `candle_nn::ops::silu` (native
+  `Tensor::silu()` s numericky stabilním backward kernelem). F32 upcast
+  zachován pro konzistenci s ostatními citlivými místy.
+- `norm.rs::silu` — stejný refactor (použito v `RmsNormGated` v SSM branch)
+
+### Ověřeno na Falcon-H1-1.5B (CUDA, RTX 4050)
+
+| Konfigurace (seq_len=1, CoreMemory L22) | Před fixem | Po fixu |
+|------------------------------------------|-----------|---------|
+| cut=22 (jen L22)                         | 2.85      | 2.85    |
+| cut=23 (L22 + L23)                       | **NaN**   | **9.80**|
+| cut=full (L22 + L23 + lm_head)           | **NaN**   | **1.74**|
+
+Forward hidden norms (L0 → L23): 2.4e-14 → 1.3e3 (massive activations
+pattern zůstává — je intrinsic Peri-LN, fix jen řeší backward stabilitu).
+
+### Přidáno — micro testy v `training/repro.rs`
+
+- `silu_local_backward_normal` — normal input PASS
+- `silu_local_backward_extreme_negative_produces_nan` —
+  `#[should_panic]` dokumentuje bug (naivní silu x=-100 → NaN grad)
+- `silu_candle_nn_backward_extreme_negative_finite` — fix verification
+  (candle silu x=-100 → finite grad)
+
+### Testy
+
+58 unit testů prochází (+3 oproti alpha.8).
+
+### Další krok
+
+BUG-010 ≠ blokátor Core Memory production. Pokračujeme na multi-layer
+training loop (v0.5.0-alpha.10): `CoreMemory` pro všechny vrstvy,
+cross-entropy loss na next-token, gradient accumulation, save/load.
+
+---
+
 ## [0.5.0-alpha.8] — 2026-04-17
 
 ### Přidáno — Instrumentace forward pass (BUG-010 diagnostika)
