@@ -67,20 +67,34 @@
       grad clipped na 1.0, per-layer grad spread L0→L23 (Peri-LN pattern)
 - [x] 66 unit testů (+8 oproti alpha.9)
 
-### v0.5.0-alpha.11 (next) — training loop + dataset loader
-- [ ] Dataset struct (tokenize + chunk), ChatML wrapping
-- [ ] Training loop (epoch × batch), gradient accumulation (VRAM-friendly)
-- [ ] **Gradient checkpointing** — alpha.10 odhalil CUDA OOM na 6 GB,
-      plný backward přes 24 vrstev × 65537 vocab se nevejde. Candle
-      support ověřit; pokud absent, custom implementace (forward v no_grad
-      + recompute per chunk).
-- [ ] AdamW betas `(0.9, 0.95)`, cosine/WSD schedule, grad clip 1.0
-- [ ] LR sweep (RWKV doporučuje 1.0 pro State Tuning, naše smoke měla 1e-3)
+### v0.5.0-alpha.11 ✅ — training loop + dataset loader
+- [x] `TokenDataset::from_text` + `iter_batches` s deterministic shuffle
+      (xorshift64, vlastní impl)
+- [x] `TrainingConfig` + `Sofie::train_core_memory` — epochs × batches
+      × gradient accumulation → AdamW step, halt na NaN
+- [x] `Sofie::tokenizer_ref()` accessor
+- [x] CLI subkomanda `train-core-memory --dataset <path> ...`
+- [x] Ověřeno na 1.5B CPU F32 (step 5 loss 5.71, best 4.64 vs. baseline 11.09)
+- [x] 76 unit testů (+10 oproti alpha.10)
 
-### v0.5.0-alpha.12 — Save/Load trained Core Memory
-- [ ] Rozšíření `StateCheckpoint` (filter `core_memory` už existuje)
-- [ ] Auto-load v `Sofie::load` pokud existuje `core_memory.safetensors`
+### v0.5.0-alpha.12 (next) — gradient checkpointing + save/load
+- [ ] **Gradient checkpointing** — CPU je 48s/step pro 1.5B seq_len=8,
+      CUDA OOM pro multi-layer backward. Recompute activations per
+      layer chunk místo držet v grafu. Candle support ověřit,
+      pokud absent → custom impl.
+- [ ] Ověřit CUDA path funkční po checkpointing — seq_len>=8 + batch>=1
+- [ ] Save/Load trained Core Memory přes `StateCheckpoint` (filter
+      `core_memory` už existuje)
+- [ ] Auto-load v `Sofie::load` pokud existuje trained checkpoint
 - [ ] Resume training (init_states + optimizer state + step_idx)
+
+### v0.5.0-alpha.13 — Sofie identity dataset composer
+- [ ] Dataset composer — váhová mix (identity core / Sessions / distillate / context)
+- [ ] Programovací distillation scale-up (SOLUTIONS.md napříč KQS)
+- [ ] Právní distillation scale-up (Ondra + Claude Opus z 20–50 judikátů)
+- [ ] Archetypální vzory sepisovat průběžně
+
+### (odloženo — alpha.12 pokrývá)
 
 ### v0.5.0-alpha.13 — Sofie identity dataset + full distillation
 - [ ] Dataset composer — váhová mix (identity core / Sessions / distillate / context)

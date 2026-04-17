@@ -581,6 +581,11 @@ impl Sofie {
         self.dtype
     }
 
+    /// Reference na načtený tokenizer (pro training dataset tokenize).
+    pub fn tokenizer_ref(&self) -> &Tokenizer {
+        &self.tokenizer
+    }
+
     /// Vytvoří čerstvý `ModelState` s nulovými komponenty — wrapper pro
     /// `ModelState::new`, aby training modul nemusel re-exportovat typ.
     pub fn new_model_state(&self) -> Result<ModelState> {

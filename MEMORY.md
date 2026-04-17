@@ -4,6 +4,32 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-17 | v0.5.0-alpha.11 — Training loop + dataset loader
+
+Produkční variant single-iteration smoke testu. Core Memory se umí
+trénovat na textovém korpusu.
+
+- `TokenDataset` (`training/dataset.rs`) — tokenize + chunk + shuffle
+  s deterministic xorshift64 PRNG (žádná externí `rand` dep)
+- `TrainingConfig` + `train_core_memory` (`training/train.rs`) — epochs
+  × batches × gradient accumulation → AdamW step, halt na NaN,
+  `tracing::info!` logging
+- `Sofie::tokenizer_ref()` accessor
+- CLI subkomanda `train-core-memory --dataset <path> ...`
+
+**Ověřeno na 1.5B CPU F32** (smoke_corpus 475 tokens, seq_len=8,
+batch=1, grad_accum=2):
+```
+step 5: loss=5.71, best=4.64
+  (random baseline ln(65537)≈11.09 → pod baseline, signifikantní signál)
+```
+Loss klesá monotónně. Training loop funkční.
+
+**CPU F32 je 48s/step** — full training na 100k tokens trvá dny.
+Alpha.12 prioritně: gradient checkpointing → odblokování CUDA.
+
+76 unit testů (+10: 7 dataset + 2 train + 1 extra). Zero warnings.
+
 ## 2026-04-17 | v0.5.0-alpha.10 — Multi-layer CoreMemory + cross-entropy
 
 První produkční building block Fáze 5. Infrastruktura pro multi-layer

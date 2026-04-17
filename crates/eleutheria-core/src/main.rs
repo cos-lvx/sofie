@@ -77,6 +77,12 @@ enum Command {
     /// že autograd teče ke všem trainable Vars a gradient signál je
     /// rozumně distribuovaný napříč vrstvami.
     TrainCoreMemoryMulti(TrainCoreMemoryMultiArgs),
+    /// Core Memory training loop (Fáze 5 alpha.11+) — produkční varianta
+    /// multi-layer smoke. Načte textový dataset, tokenizuje, chunkuje,
+    /// trénuje přes epochs × batches s gradient accumulation a AdamW.
+    /// Bez save/load (alpha.12) a bez distilátu (alpha.13) — minimum
+    /// funkční loop pro ověření, že loss klesá.
+    TrainCoreMemory(TrainCoreMemoryArgs),
 }
 
 /// Argumenty pro `bench-retention` subkomand.
@@ -161,6 +167,53 @@ struct TrainCoreMemorySmokeArgs {
     /// mixer, attention. Diagnostika pro BUG-010 alpha.8. Nezasahuje backward.
     #[arg(long)]
     trace: bool,
+}
+
+/// Argumenty pro `train-core-memory` — produkční training loop.
+#[derive(ClapArgs, Debug)]
+struct TrainCoreMemoryArgs {
+    /// Cesta k textovému souboru (UTF-8) s trénovacím korpusem.
+    #[arg(long)]
+    dataset: PathBuf,
+
+    /// Počet epoch.
+    #[arg(long, default_value_t = 1)]
+    epochs: usize,
+
+    /// Délka trénovací sekvence v tokenech.
+    #[arg(long, default_value_t = 16)]
+    seq_len: usize,
+
+    /// Micro-batch size (počet sekvencí v jednom forward passu).
+    /// Pro RTX 4050 6 GB s seq_len 16 použij 1; větší VRAM umožní 2–4.
+    #[arg(long, default_value_t = 1)]
+    batch_size: usize,
+
+    /// Gradient accumulation steps — kolik micro-batches se akumuluje
+    /// před jedním optimizer.step(). Efektivní batch = batch_size × grad_accum.
+    #[arg(long, default_value_t = 4)]
+    grad_accum: usize,
+
+    /// AdamW learning rate.
+    #[arg(long, default_value_t = 1e-3)]
+    learning_rate: f64,
+
+    /// Max L2 norm pro gradient clipping (0 = vypnuto).
+    #[arg(long, default_value_t = 1.0)]
+    grad_clip: f64,
+
+    /// Jak často logovat running loss (po N optimizer steps).
+    #[arg(long, default_value_t = 10)]
+    log_every: usize,
+
+    /// Seed pro shuffle dataset pořadí (epoch_idx se přičte).
+    #[arg(long, default_value_t = 0)]
+    seed: u64,
+
+    /// Přidat BOS token na začátek korpusu (default true pro sjednocený
+    /// start jako v inference; false pro kontinuální korpus bez BOS mid-stream).
+    #[arg(long, default_value_t = true)]
+    add_bos: bool,
 }
 
 /// Argumenty pro `train-core-memory-multi` subkomand — multi-layer smoke
@@ -264,6 +317,7 @@ fn main() -> Result<()> {
             Command::BenchRetention(ba) => run_bench_retention(&sofie, &args, ba),
             Command::TrainCoreMemorySmoke(ta) => run_train_smoke(&sofie, ta),
             Command::TrainCoreMemoryMulti(ta) => run_train_multi(&sofie, ta),
+            Command::TrainCoreMemory(ta) => run_train(&sofie, ta),
         }
     } else {
         match &args.prompt {
@@ -408,6 +462,88 @@ fn run_train_smoke_sweep(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result
     println!();
 
     Ok(())
+}
+
+/// Core Memory training loop — produkční varianta.
+/// Načte textový korpus, tokenizuje, chunkuje, trénuje přes epochs.
+fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
+    use eleutheria_core::training::{CoreMemoryStack, TokenDataset, TrainingConfig};
+
+    println!("\nCore Memory training — dataset: {}", ta.dataset.display());
+    println!(
+        "  epochs={}, batch_size={}, seq_len={}, grad_accum={}, lr={}, clip={}",
+        ta.epochs, ta.batch_size, ta.seq_len, ta.grad_accum, ta.learning_rate, ta.grad_clip
+    );
+
+    // 1) Načti text
+    let text = std::fs::read_to_string(&ta.dataset)
+        .map_err(|e| anyhow!("chyba čtení {}: {}", ta.dataset.display(), e))?;
+    println!("  korpus: {} bytes", text.len());
+
+    // 2) Tokenize + dataset
+    let dataset = TokenDataset::from_text(&text, sofie.tokenizer_ref(), ta.seq_len, ta.add_bos)
+        .map_err(|e| anyhow!("dataset build: {e}"))?;
+    println!(
+        "  tokenů: {}, chunků: {} (seq_len {})",
+        dataset.total_tokens(),
+        dataset.num_chunks(),
+        dataset.seq_len()
+    );
+
+    // 3) Vytvoř trainable Core Memory stack
+    let stack = CoreMemoryStack::randn_small(sofie.config(), sofie.device_ref())
+        .map_err(|e| anyhow!("CoreMemoryStack: {e}"))?;
+    println!("  CoreMemory: {} vrstev, randn init\n", stack.num_layers());
+
+    // 4) Trénuj
+    let grad_clip = if ta.grad_clip > 0.0 {
+        Some(ta.grad_clip)
+    } else {
+        None
+    };
+    let config = TrainingConfig {
+        epochs: ta.epochs,
+        batch_size: ta.batch_size,
+        grad_accum_steps: ta.grad_accum,
+        learning_rate: ta.learning_rate,
+        grad_clip,
+        shuffle_seed: ta.seed,
+        log_every_n_steps: ta.log_every,
+    };
+
+    let result = sofie.train_core_memory(&stack, &dataset, &config)?;
+
+    println!("\nVýsledky tréninku:");
+    println!("  total steps:           {}", result.total_steps);
+    println!("  total micro-batches:   {}", result.total_micro_batches);
+    println!("  initial loss:          {:.4}", result.initial_loss);
+    println!("  final loss:            {:.4}", result.final_loss);
+    println!("  best loss:             {:.4}", result.best_loss);
+    println!("  loss per epoch:");
+    for (i, l) in result.loss_per_epoch.iter().enumerate() {
+        println!("    epoch {}: {:.4}", i, l);
+    }
+    println!("  wall time:             {} ms", result.wall_time_ms);
+    println!(
+        "  expected random baseline: ln(vocab)≈{:.4}",
+        (sofie.config().vocab_size as f64).ln()
+    );
+    println!();
+
+    if result.loss_decreased {
+        println!("✓ Loss klesl — Core Memory se učí.");
+        if result.final_loss < (sofie.config().vocab_size as f64).ln() {
+            println!("  Navíc pod random baseline — signifikantní signál.");
+        }
+        Ok(())
+    } else {
+        eprintln!("✗ Loss neklesl — trénink se zasekl nebo je konfigurace špatná.");
+        eprintln!(
+            "  initial={:.4}, final={:.4}",
+            result.initial_loss, result.final_loss
+        );
+        Err(anyhow!("training loss nedecreased"))
+    }
 }
 
 /// Multi-layer Core Memory smoke test — trénuje init_state všech vrstev

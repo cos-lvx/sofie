@@ -132,11 +132,17 @@ vzdálenostmi). Core Memory **musí být trénovaný** — potvrzeno empiricky.
 - [x] **alpha.10** — Multi-layer `CoreMemoryStack` (Vec<Var> pro všech
   24 vrstev) + cross-entropy next-token loss. Ověřeno: všechny vrstvy
   dostanou gradient, loss 21.5 vs. baseline ln(65537)≈11.09. Odhaleno
-  CUDA OOM pro full backward na 6 GB VRAM (alpha.11 řeší).
+  CUDA OOM pro full backward na 6 GB VRAM.
+- [x] **alpha.11** — Training loop + dataset loader. `TokenDataset`
+  (tokenize + chunk + deterministic shuffle), `TrainingConfig` +
+  `train_core_memory` (epochs × batches × gradient accumulation →
+  AdamW), CLI subkomanda. Ověřeno na 1.5B CPU F32: loss klesá pod
+  random baseline (5.71 vs. 11.09, best 4.64). Training funkční,
+  ale 48 s/step je pomalé — CUDA path potřebuje gradient checkpointing.
 
-**Implementace (alpha.11+):**
-- [ ] **alpha.11** — Training loop + dataset loader + gradient
-  checkpointing (odblokovat CUDA), AdamW (0.9, 0.95),
+**Implementace (alpha.12+):**
+- [ ] **alpha.12** — Gradient checkpointing (odblokovat CUDA) + Save/Load
+  trained Core Memory, AdamW (0.9, 0.95),
   cosine/WSD schedule, grad clip 1.0, gradient accumulation
 - [ ] **alpha.12** — Save/Load trained Core Memory přes `StateCheckpoint`
   (filter `core_memory` už existuje), auto-load v `Sofie::load`

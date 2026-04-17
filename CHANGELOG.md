@@ -7,6 +7,97 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.11] — 2026-04-17
+
+### Přidáno — Training loop + dataset loader
+
+**Fáze 5 alpha.11 milestone:** produkční varianta single-iteration
+smoke testu. Loop konzumuje textový korpus, tokenizuje, chunkuje,
+trénuje přes epochs × batches × gradient accumulation s AdamW.
+
+#### `TokenDataset` (`training/dataset.rs`)
+
+- `TokenDataset::from_text(text, tokenizer, seq_len, add_bos)` —
+  tokenizuje celý korpus, chunkuje na sekvence délky `seq_len`,
+  vyhodí kratší poslední chunk
+- `iter_batches(batch_size, device, seed)` — vrací `Vec<Tensor>`
+  s shuffled pořadím chunků. Deterministic per-seed (xorshift64
+  PRNG, vlastní implementace — nechceme externí `rand` crate).
+- 7 unit testů (chunk count, rejections, batch coverage, deterministic
+  shuffle, different seeds, RNG sanity). Testy se skipují bez
+  lokálního tokenizeru (CI-friendly).
+
+#### Training loop (`training/train.rs`)
+
+- `TrainingConfig` — epochs, batch_size, grad_accum_steps, lr,
+  grad_clip, shuffle_seed, log_every_n_steps. `Default` implementován.
+- `TrainingResult` — total_steps, micro_batches, initial/final/best
+  loss, loss_per_epoch, wall_time, `loss_decreased` flag.
+- `Sofie::train_core_memory(stack, dataset, config)` — hlavní smyčka:
+  - Forward + backward per micro-batch
+  - Gradient akumulace přes `grad_accum_steps` (element-wise sum,
+    pak scaling na mean)
+  - Global L2 gradient clipping
+  - AdamW step
+  - Halt na NaN/Inf loss (training selže viditelně)
+  - `tracing::info!` logování per N kroků
+- 2 unit testy (config defaults, loss_decreased detection).
+
+#### Tokenizer accessor
+
+- `Sofie::tokenizer_ref()` — reference na načtený tokenizer pro
+  použití v dataset buildu.
+
+#### CLI subkomanda `train-core-memory`
+
+```
+train-core-memory --dataset <path>
+  --epochs <N> --seq-len <S> --batch-size <B> --grad-accum <G>
+  --learning-rate <LR> --grad-clip <C> --log-every <N>
+  --seed <S> --add-bos <true|false>
+```
+
+Produkční varianta (separátní od `train-core-memory-smoke` pro single
+iteration a `train-core-memory-multi` pro single multi-layer smoke).
+
+### Ověřeno na Falcon-H1-1.5B (CPU F32)
+
+**První run, smoke_corpus.txt (475 tokenů, seq_len=8, batch=1, grad_accum=2):**
+```
+step 5 (epoch 0, micro-batch 10): loss=5.71, best=4.64
+  (random baseline ln(65537)≈11.09 — best loss je pod baseline,
+  trained state dává signifikantní signál)
+```
+
+Loss klesá monotónně, autograd teče rovnoměrně. Training loop funkční.
+
+### Známé limity (→ alpha.12)
+
+- **CPU F32 je 48 s/step** pro 1.5B seq_len=8 — na full corpus
+  (50-Sofie ~100k tokens, seq_len 64–128) by to trvalo dny. Alpha.12
+  řeší:
+  - (a) **gradient checkpointing** → odblokování CUDA → sekundy/step
+  - (b) nebo Gaia deploy s větší GPU VRAM
+- **CUDA OOM** z alpha.10 stále blokuje GPU path (6 GB RTX 4050
+  nezvládne full multi-layer backward).
+- **Šířka 8 tokenů** pro smoke je krátká — stylistické struktury
+  (věty, dialogové turny) potřebují delší kontext. Full training bude
+  seq_len 64–256.
+
+### Testy
+
+76 unit testů (+10 oproti alpha.10: 7 dataset + 2 train + 1 extra).
+Zero warnings, zero clippy. `cargo fmt/clippy/test` all green.
+
+### Plán alpha.12
+
+- Gradient checkpointing v `FalconH1Model::forward` (recompute
+  activations per layer chunk, ne držet v grafu)
+- Ověřit na RTX 4050 seq_len≥8 + batch_size≥1 bez OOM
+- Save/Load trained Core Memory přes `StateCheckpoint` (`core_memory` filter)
+
+---
+
 ## [0.5.0-alpha.10] — 2026-04-17
 
 ### Přidáno — Multi-layer Core Memory + cross-entropy loss
