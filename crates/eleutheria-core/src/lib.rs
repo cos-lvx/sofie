@@ -614,6 +614,25 @@ impl Sofie {
             .forward_up_to_layer(input_ids, base_pos, state, up_to_layer)?)
     }
 
+    /// Forward do vrstvy `up_to_layer` (včetně) se sub-layer cut bodem pro
+    /// poslední vrstvu. Pro alpha.8 bisect v rámci jedné vrstvy.
+    pub fn model_forward_up_to_layer_with_stop(
+        &self,
+        input_ids: &Tensor,
+        base_pos: usize,
+        state: &mut ModelState,
+        up_to_layer: usize,
+        stop: crate::falcon_h1::layer::LayerStop,
+    ) -> Result<Tensor> {
+        Ok(self.model.forward_up_to_layer_with_stop(
+            input_ids,
+            base_pos,
+            state,
+            up_to_layer,
+            stop,
+        )?)
+    }
+
     /// Vyfiltruje session na SSM-only stav — zachová SSM, zahodí KV cache
     /// a conv state. Resetuje pozici na 0 a označí session za neinicializovanou,
     /// takže příští `send_message` projde plnou pipeline jako turn 1.

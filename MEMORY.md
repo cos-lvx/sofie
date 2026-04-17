@@ -4,6 +4,33 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-17 | v0.5.0-alpha.8 — Instrumentovaný forward pass (BUG-010)
+
+Přidána dvojí diagnostika pro lokalizaci op zodpovědné za NaN gradient
+v backward přes více vrstev:
+
+1. **Forward tensor stats** — `training/trace.rs` thread-local sink,
+   `probe(&t, label)` v 30+ bodech forward pass (layer, mixer, attention).
+   Statistiky: `abs_max`, `abs_min_nonzero`, `mean`, `l2`, `has_nan`,
+   `has_inf`. Detach před výpočtem — neváže autograd graf.
+2. **Sub-layer cut-at-component** — enum `LayerStop`
+   (`AfterPreNorm / AfterSsm / AfterAttn / AfterResidual1 / AfterPostNorm /
+   AfterMlpGate / AfterMlpSiluMul / AfterMlpDown / Full`),
+   `FalconH1Layer::forward_until`, `FalconH1Model::forward_up_to_layer_with_stop`.
+   Binary search op uvnitř jedné vrstvy.
+
+CLI: `--cut-at-component <name>` a `--trace` na `train-core-memory-smoke`.
+Unified API `Sofie::smoke_train_core_memory_component` vrací
+`(SmokeTrainResult, Option<Vec<TraceEntry>>)`.
+
+**Další krok (alpha.9):** Ondra spustí smoke test s `--trace` na L0
+i problematických L20–L22, identifikujeme op s extrémním dynamickým
+rozsahem. Primární podezřelí: local `silu` v mixer.rs/norm.rs pro velmi
+záporné x (recip(Inf) backward), attention softmax pro extreme logits,
+conv1d backward.
+
+55 unit testů (přibylo 5 pro trace modul). Zero warnings, zero clippy.
+
 ## 2026-03-03 | Scaffold
 
 Kompletní scaffold Falcon-H1 engine: config parser, state management, normalizace,

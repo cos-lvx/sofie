@@ -27,9 +27,21 @@ Formát: `BUG-NNN` s verzí nálezu, závažností (P1–P4), reprodukcí a stav
   "amplifikace přes vrstvy" není úplná; skutečný root cause je
   **op-specific NaN uvnitř `loss.backward()` samotného**. Dampening μP
   multipliery ověřeny jako správně načtené (ne primary root cause).
-- **Plánované řešení:** alpha.7 — minimal reproduction, instrumented
-  forward pass k identifikaci konkrétního op (pravděpodobně RMSNorm
-  rsqrt backward s denormalized input, nebo softplus/exp overflow)
+- **Update v0.5.0-alpha.7:** Minimal reproduction `training/repro.rs`
+  (14 micro testů). Stable softplus implementován (`relu(x) + log1p(exp(-|x|))`).
+  Fix softplus **nevyřešil BUG-010** — realistický `dt + dt_bias` nepřesahuje
+  safe range. Dokumentovány další Candle autograd limity přes `#[should_panic]`
+  (recip near-zero → Inf, softplus naivní x=100 → NaN).
+- **Update v0.5.0-alpha.8:** Přidána infrastruktura pro diagnostiku:
+  (1) thread-local forward trace sink s 30+ probe body
+  (`training/trace.rs`), (2) sub-layer cut-at-component (`LayerStop` enum
+  v `falcon_h1::layer`, `forward_until`, `forward_up_to_layer_with_stop`),
+  (3) CLI `--trace` a `--cut-at-component`. Instrumentace sama
+  problém neřeší, ale umožní alpha.9 identifikaci konkrétní op.
+- **Plánované řešení:** alpha.9 — spuštění diagnostiky, fix konkrétního op
+  (primární kandidáti po alpha.7/.8: local `silu` v mixer.rs/norm.rs pro
+  velmi záporné x (recip(Inf) backward), attention softmax pre-max-subtract,
+  conv1d backward)
 
 ---
 

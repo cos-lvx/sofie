@@ -5,9 +5,10 @@ use candle_core::{Device, Result, Tensor};
 use candle_nn::{Embedding, Linear, Module, VarBuilder};
 
 use super::config::FalconH1Config;
-use super::layer::FalconH1Layer;
+use super::layer::{FalconH1Layer, LayerStop};
 use super::norm::RmsNorm;
 use super::state::ModelState;
+use crate::training::trace;
 
 /// Kompletní Falcon-H1 model.
 pub struct FalconH1Model {
@@ -70,7 +71,7 @@ impl FalconH1Model {
         pos: usize,
         state: &mut ModelState,
     ) -> Result<Tensor> {
-        let x = self.embed_and_layers(input_ids, pos, state, None)?;
+        let x = self.embed_and_layers(input_ids, pos, state, None, LayerStop::Full)?;
         self.final_head(&x)
     }
 
@@ -85,7 +86,24 @@ impl FalconH1Model {
         state: &mut ModelState,
         up_to_layer: usize,
     ) -> Result<Tensor> {
-        self.embed_and_layers(input_ids, pos, state, Some(up_to_layer))
+        self.embed_and_layers(input_ids, pos, state, Some(up_to_layer), LayerStop::Full)
+    }
+
+    /// Varianta `forward_up_to_layer` se sub-layer cut na **poslední vrstvě**.
+    /// Vrstvy `[0 .. up_to_layer]` běží plně, vrstva `up_to_layer` se zastaví
+    /// na `stop` bodu a vrací odtud hidden. Pro `stop == LayerStop::Full` je
+    /// chování totožné s `forward_up_to_layer`.
+    ///
+    /// Umožňuje bisect uvnitř jedné vrstvy pro lokalizaci op s NaN backward.
+    pub fn forward_up_to_layer_with_stop(
+        &self,
+        input_ids: &Tensor,
+        pos: usize,
+        state: &mut ModelState,
+        up_to_layer: usize,
+        stop: LayerStop,
+    ) -> Result<Tensor> {
+        self.embed_and_layers(input_ids, pos, state, Some(up_to_layer), stop)
     }
 
     fn embed_and_layers(
@@ -94,12 +112,14 @@ impl FalconH1Model {
         pos: usize,
         state: &mut ModelState,
         up_to_layer: Option<usize>,
+        last_layer_stop: LayerStop,
     ) -> Result<Tensor> {
         // === 1. Token embedding + muP scaling ===
         let mut x = self.embed_tokens.forward(input_ids)?;
         let emb_scale = Tensor::new(&[self.config.embedding_multiplier as f32], x.device())?
             .to_dtype(x.dtype())?;
         x = x.broadcast_mul(&emb_scale)?;
+        trace::probe(&x, "model.embed_scaled")?;
 
         // === 2. Průchod decoder vrstvami (až do up_to_layer včetně, nebo všechny) ===
         let last = up_to_layer.unwrap_or(self.layers.len() - 1);
@@ -107,7 +127,13 @@ impl FalconH1Model {
             if i > last {
                 break;
             }
-            x = layer.forward(&x, pos, &mut state.layers[i])?;
+            let stop = if i == last {
+                last_layer_stop
+            } else {
+                LayerStop::Full
+            };
+            x = layer.forward_until(&x, pos, &mut state.layers[i], stop)?;
+            trace::probe(&x, &format!("model.after_layer_{i}"))?;
         }
         Ok(x)
     }

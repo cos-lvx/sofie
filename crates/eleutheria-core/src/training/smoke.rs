@@ -24,7 +24,9 @@ use candle_nn::optim::Optimizer;
 use candle_nn::{AdamW, ParamsAdamW};
 
 use crate::Sofie;
+use crate::falcon_h1::layer::LayerStop;
 use crate::training::core_memory::CoreMemory;
+use crate::training::trace::{self, TraceEntry};
 
 /// Výsledek smoke testu — metriky a diagnostika.
 #[derive(Debug, Clone)]
@@ -73,7 +75,16 @@ impl Sofie {
         layer_idx: usize,
         learning_rate: f64,
     ) -> Result<SmokeTrainResult> {
-        self.smoke_train_core_memory_impl(seq_len, layer_idx, learning_rate, None, None)
+        self.smoke_train_core_memory_impl(
+            seq_len,
+            layer_idx,
+            learning_rate,
+            None,
+            None,
+            LayerStop::Full,
+            false,
+        )
+        .map(|(r, _)| r)
     }
 
     /// Varianta smoke testu, která **zastaví forward po vrstvě `cut_at_layer`**
@@ -102,7 +113,10 @@ impl Sofie {
             learning_rate,
             Some(cut_at_layer),
             None,
+            LayerStop::Full,
+            false,
         )
+        .map(|(r, _)| r)
     }
 
     /// Smoke test s **gradient clippingem** — standardní Mamba-2 recept
@@ -131,9 +145,51 @@ impl Sofie {
             learning_rate,
             cut_at_layer,
             Some(max_grad_norm),
+            LayerStop::Full,
+            false,
+        )
+        .map(|(r, _)| r)
+    }
+
+    /// Smoke test se sub-layer cut-at-component na poslední trénované vrstvě.
+    /// Umožňuje bisect uvnitř jedné vrstvy — např. `--cut-at-layer 23
+    /// --cut-at-component after-ssm` zastaví forward po SSM branch na layer 22
+    /// (index 23 znamená vrstvy 0..=23, sub-stop se vztahuje k té poslední).
+    ///
+    /// Volitelně `enable_trace=true` aktivuje forward tensor stats sink a
+    /// vrátí seznam entries vedle `SmokeTrainResult`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn smoke_train_core_memory_component(
+        &self,
+        seq_len: usize,
+        layer_idx: usize,
+        learning_rate: f64,
+        cut_at_layer: Option<usize>,
+        max_grad_norm: Option<f64>,
+        stop: LayerStop,
+        enable_trace: bool,
+    ) -> Result<(SmokeTrainResult, Option<Vec<TraceEntry>>)> {
+        if let Some(cut) = cut_at_layer
+            && cut < layer_idx
+        {
+            return Err(anyhow!(
+                "cut_at_layer={} musí být >= layer_idx={}",
+                cut,
+                layer_idx
+            ));
+        }
+        self.smoke_train_core_memory_impl(
+            seq_len,
+            layer_idx,
+            learning_rate,
+            cut_at_layer,
+            max_grad_norm,
+            stop,
+            enable_trace,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn smoke_train_core_memory_impl(
         &self,
         seq_len: usize,
@@ -141,7 +197,9 @@ impl Sofie {
         learning_rate: f64,
         cut_at_layer: Option<usize>,
         max_grad_norm: Option<f64>,
-    ) -> Result<SmokeTrainResult> {
+        stop: LayerStop,
+        enable_trace: bool,
+    ) -> Result<(SmokeTrainResult, Option<Vec<TraceEntry>>)> {
         let start = std::time::Instant::now();
 
         // 1) Vytvoř trainable Core Memory s malou náhodnou inicializací.
@@ -161,11 +219,28 @@ impl Sofie {
         // L2 norma před krokem (scalar, F32).
         let init_state_norm_before = tensor_l2_norm(core.init_state.as_tensor())?;
 
-        // 4) Forward pass — plný (logits) nebo cut (hidden).
-        let activation = match cut_at_layer {
-            None => self.model_forward(&input_tensor, 0, &mut state)?,
-            Some(cut) => self.model_forward_up_to_layer(&input_tensor, 0, &mut state, cut)?,
+        // Aktivuj trace sink jen pokud caller chce. Forward pass naplní,
+        // po forward ho odebereme — backward už neinstrumentujeme.
+        if enable_trace {
+            trace::start();
+        }
+
+        // 4) Forward pass — plný (logits) / cut bez sub-stop / cut s sub-stop.
+        let activation = match (cut_at_layer, stop) {
+            (None, _) => self.model_forward(&input_tensor, 0, &mut state)?,
+            (Some(cut), LayerStop::Full) => {
+                self.model_forward_up_to_layer(&input_tensor, 0, &mut state, cut)?
+            }
+            (Some(cut), sub_stop) => self.model_forward_up_to_layer_with_stop(
+                &input_tensor,
+                0,
+                &mut state,
+                cut,
+                sub_stop,
+            )?,
         };
+
+        let trace_entries = if enable_trace { trace::finish() } else { None };
 
         // 5) Dummy loss — jeden element aktivace (pozice [0, 0, 0]).
         //    Gradient = 1 na ten element, 0 jinde. Minimální fan-in.
@@ -227,7 +302,7 @@ impl Sofie {
 
         let wall_time_ms = start.elapsed().as_millis();
 
-        Ok(SmokeTrainResult {
+        let result = SmokeTrainResult {
             init_state_norm_before,
             init_state_norm_after,
             init_state_delta_norm,
@@ -237,7 +312,8 @@ impl Sofie {
             wall_time_ms,
             seq_len,
             layer_idx,
-        })
+        };
+        Ok((result, trace_entries))
     }
 }
 

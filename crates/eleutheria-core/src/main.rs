@@ -4,6 +4,8 @@ use clap::{Args as ClapArgs, Parser, Subcommand};
 use eleutheria_core::bench::{
     BenchVariant, RetentionBench, built_in_probes, harness::DEFAULT_DISTANCES,
 };
+use eleutheria_core::falcon_h1::layer::LayerStop;
+use eleutheria_core::training::trace;
 use eleutheria_core::{GenerateControl, Sofie, SofieSession, StateCheckpoint, StateFilter};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
@@ -141,6 +143,19 @@ struct TrainCoreMemorySmokeArgs {
     /// clipping ho odblokuje (research verdict z v0.5.0-alpha.5).
     #[arg(long)]
     grad_clip: Option<f64>,
+
+    /// Sub-layer cut bod na **poslední** trénované vrstvě (vrstva
+    /// `cut_at_layer`). Varianty: `pre-norm`, `ssm`, `attn`, `residual1`,
+    /// `post-norm`, `mlp-gate`, `mlp-silu-mul`, `mlp-down`, `full` (default).
+    /// Umožňuje binary search lokalizaci op s NaN backward (BUG-010 alpha.8).
+    #[arg(long)]
+    cut_at_component: Option<String>,
+
+    /// Zapne forward tensor stats sink — po forward pass vytiskne tabulku
+    /// abs_max/abs_min_nonzero/mean/l2/NaN/Inf pro každý probe bod v layer,
+    /// mixer, attention. Diagnostika pro BUG-010 alpha.8. Nezasahuje backward.
+    #[arg(long)]
+    trace: bool,
 }
 
 fn parse_state_filter(s: &str) -> StateFilter {
@@ -241,20 +256,34 @@ fn run_train_smoke(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result<()> {
         return run_train_smoke_sweep(sofie, ta);
     }
 
-    let result = match (ta.cut_at_layer, ta.grad_clip) {
-        (None, None) => {
-            sofie.smoke_train_core_memory(ta.seq_len, ta.layer_idx, ta.learning_rate)?
-        }
-        (Some(cut), None) => {
-            sofie.smoke_train_core_memory_cut(ta.seq_len, ta.layer_idx, ta.learning_rate, cut)?
-        }
-        (cut, Some(max_norm)) => sofie.smoke_train_core_memory_clipped(
+    // Parse sub-layer cut bod (--cut-at-component). Default: Full (žádný sub-cut).
+    let stop = match &ta.cut_at_component {
+        Some(s) => LayerStop::from_str(s).map_err(|e| anyhow!(e))?,
+        None => LayerStop::Full,
+    };
+
+    // Pokud je trace nebo cut-at-component aktivní, jdi přes unified `_component` API.
+    // Jinak zachovej staré API (pro backward compatibility a lehčí overhead).
+    let needs_component_path = ta.trace
+        || ta.cut_at_component.is_some()
+        || ta.grad_clip.is_some()
+        || ta.cut_at_layer.is_some();
+
+    let (result, trace_entries) = if needs_component_path {
+        sofie.smoke_train_core_memory_component(
             ta.seq_len,
             ta.layer_idx,
             ta.learning_rate,
-            cut,
-            max_norm,
-        )?,
+            ta.cut_at_layer,
+            ta.grad_clip,
+            stop,
+            ta.trace,
+        )?
+    } else {
+        (
+            sofie.smoke_train_core_memory(ta.seq_len, ta.layer_idx, ta.learning_rate)?,
+            None,
+        )
     };
 
     println!("Výsledky:");
@@ -279,7 +308,17 @@ fn run_train_smoke(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result<()> {
         result.init_state_delta_norm
     );
     println!("  wall time:              {} ms", result.wall_time_ms);
+    if ta.cut_at_component.is_some() {
+        println!("  stop component:         {}", stop.label());
+    }
     println!();
+
+    // Forward tensor stats — pokud uživatel zapnul --trace.
+    if let Some(entries) = trace_entries {
+        println!("Forward trace ({} probes):", entries.len());
+        print!("{}", trace::render_table(&entries));
+        println!();
+    }
 
     if result.passed() {
         println!("✓ PASS — autograd teče, gradient je non-zero, init_state se pohnul.");

@@ -5,6 +5,7 @@ use candle_core::{D, Device, IndexOp, Result, Tensor};
 use candle_nn::{Linear, Module, VarBuilder, linear_no_bias};
 
 use super::state::LayerState;
+use crate::training::trace;
 
 /// Rotary Position Embeddings.
 /// Kóduje pozici tokenu rotací párů dimenzí v Q a K.
@@ -137,6 +138,9 @@ impl Attention {
         let q = self.q_proj.forward(x)?; // [b, s, n_q * hd]
         let k = self.k_proj.forward(x)?; // [b, s, n_kv * hd]
         let v = self.v_proj.forward(x)?; // [b, s, n_kv * hd]
+        trace::probe(&q, "attn.q_proj")?;
+        trace::probe(&k, "attn.k_proj")?;
+        trace::probe(&v, "attn.v_proj")?;
 
         // Reshape na hlavy: [b, s, n, hd] → [b, n, s, hd]
         let q = q
@@ -152,6 +156,8 @@ impl Attention {
         // === 2. RoPE na Q a K ===
         let q = self.rope.apply(&q, pos)?;
         let k = self.rope.apply(&k, pos)?;
+        trace::probe(&q, "attn.q_rope")?;
+        trace::probe(&k, "attn.k_rope")?;
 
         // === 3. Aktualizace KV cache ===
         // Připojíme nové K, V k existujícímu cache
@@ -182,6 +188,7 @@ impl Attention {
         let scale = Tensor::new(&[self.key_multiplier as f32], attn_weights.device())?
             .to_dtype(attn_weights.dtype())?;
         let attn_weights = attn_weights.broadcast_mul(&scale)?;
+        trace::probe(&attn_weights, "attn.qk_logits")?;
 
         // Kauzální maska: zakáže přístup k budoucím tokenům
         let full_seq = attn_weights.dim(D::Minus1)?;
@@ -191,7 +198,9 @@ impl Attention {
                 Self::causal_mask(seq_len, full_seq, x.device())?.to_dtype(attn_weights.dtype())?;
             let attn_weights = attn_weights.broadcast_add(&mask)?;
             let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
+            trace::probe(&attn_weights, "attn.softmax")?;
             let output = attn_weights.matmul(&v)?;
+            trace::probe(&output, "attn.softmax_v")?;
             // [b, n_q, s, hd] → [b, s, n_q, hd] → [b, s, n_q * hd]
             let output = output.transpose(1, 2)?.reshape((
                 batch,
@@ -200,17 +209,21 @@ impl Attention {
             ))?;
             // Projekce zpět na hidden_size
             let output = self.o_proj.forward(&output)?;
+            trace::probe(&output, "attn.o_proj")?;
             Ok(output)
         } else {
             // Generování: seq_len=1, maska není potřeba
             let attn_weights = candle_nn::ops::softmax_last_dim(&attn_weights)?;
+            trace::probe(&attn_weights, "attn.softmax")?;
             let output = attn_weights.matmul(&v)?;
+            trace::probe(&output, "attn.softmax_v")?;
             let output =
                 output
                     .transpose(1, 2)?
                     .reshape((batch, 1, self.n_q_heads * self.head_dim))?;
             // Projekce zpět na hidden_size
             let output = self.o_proj.forward(&output)?;
+            trace::probe(&output, "attn.o_proj")?;
             Ok(output)
         }
     }

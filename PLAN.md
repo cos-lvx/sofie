@@ -1,6 +1,6 @@
 # Plán — Eleutheria
 
-> Poslední aktualizace: 2026-04-15
+> Poslední aktualizace: 2026-04-17
 
 ## Dokončeno
 
@@ -26,7 +26,26 @@
 - [x] Ověřeno: `forward_prefill` je už sekvenční scan (ne chunked), autograd
   teoreticky protéká bez úprav
 
-### v0.5.0-alpha.2 (next) — multi-layer + training loop
+### v0.5.0-alpha.2–alpha.8 — BUG-010 diagnostika (probíhá)
+- [x] alpha.2 — sequential scan bring-up
+- [x] alpha.3 — single-element loss pro stabilní gradient
+- [x] alpha.4 — `forward_up_to_layer` + binary search cut-at-layer
+- [x] alpha.5 — diagnostic sweep + research backend
+- [x] alpha.6 — gradient clipping (clip_grad_norm, μP multipliery ověřeny)
+- [x] alpha.7 — minimal reproduction (`training/repro.rs`), stable softplus
+- [x] alpha.8 — instrumentovaný forward (trace sink + cut-at-component)
+
+### v0.5.0-alpha.9 (next) — identifikace op + fix
+- [ ] Spustit `train-core-memory-smoke --trace` na L0 + L22 (reference vs.
+      problematická vrstva) — zachytit hodnoty `abs_max`, `abs_min_nonzero`
+      pro každý probe bod, najít extrémní op
+- [ ] Binary search `--cut-at-component` uvnitř L22: kde backward přechází
+      z OK na NaN? ssm branch, attention, mlp, nebo residual sum?
+- [ ] Fix konkrétní op (kandidáti: stable silu, softmax max-subtract,
+      conv1d backward alternativa)
+- [ ] Ověřit: multi-layer backward přechází bez NaN
+
+### v0.5.0 — multi-layer + training loop
 - [ ] `CoreMemory` pro všechny Mamba-2 vrstvy (nejen vrstva 0)
 - [ ] Cross-entropy loss na next-token prediction
 - [ ] Skutečný training loop přes epochs + gradient accumulation

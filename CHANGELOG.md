@@ -7,6 +7,75 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.8] — 2026-04-17
+
+### Přidáno — Instrumentace forward pass (BUG-010 diagnostika)
+
+- `training/trace.rs` — thread-local trace sink (`start` / `finish` /
+  `probe(&t, label)`). `probe` na aktivním sinku spočte
+  `abs_max, abs_min_nonzero, mean, l2, has_nan, has_inf` a pushne do
+  `Vec<TraceEntry>`. Detach před výpočtem — neváže autograd graf.
+  5 unit testů (no-op když sink neaktivní, capture entries, NaN/Inf flags,
+  abs_min_nonzero skip nul přes `where_cond`, tabulkový render).
+- `falcon_h1::layer::LayerStop` — enum sub-layer cut bodů
+  (`AfterPreNorm`, `AfterSsmBranch`, `AfterAttnBranch`, `AfterResidual1`,
+  `AfterPostNorm`, `AfterMlpGate`, `AfterMlpSiluMul`, `AfterMlpDown`,
+  `Full`). Implementuje `FromStr` pro CLI parsing.
+- `FalconH1Layer::forward_until(x, pos, state, stop)` — varianta
+  `forward` s brzkým returnem na daném mezibodě. Původní `forward`
+  deleguje na `forward_until(.., LayerStop::Full)`.
+- `FalconH1Model::forward_up_to_layer_with_stop(..., up_to_layer, stop)` —
+  sub-layer cut na poslední trénované vrstvě.
+- `Sofie::model_forward_up_to_layer_with_stop` + `smoke_train_core_memory_component`
+  (trace + component cut v jednom API).
+- CLI flagy na `train-core-memory-smoke`:
+  - `--cut-at-component <pre-norm|ssm|attn|residual1|post-norm|mlp-gate|mlp-silu-mul|mlp-down|full>`
+  - `--trace` — forward tensor stats tabulka po běhu
+
+### Probe body (30+ míst v forward pass)
+
+- **model.rs:** `embed_scaled`, `after_layer_{i}`
+- **layer.rs:** `pre_norm_out`, `mixer_out_raw`, `ssm_out_scaled`,
+  `attn_out_raw`, `attn_out_scaled`, `residual_1`, `post_norm_out`,
+  `mlp.gate_raw`, `mlp.up`, `mlp.gate_scaled`, `mlp.silu_gate`,
+  `mlp.silu_gate_times_up`, `mlp.down_raw`, `mlp.down_scaled`,
+  `residual_2`
+- **mixer.rs:** `in_proj_out`, `after_mup_vec`, `z`, `dt_raw`,
+  `conv_out`, `silu_conv`, `dt_plus_bias`, `softplus_dt`, `a_neg_exp`,
+  `dt_mul_a`, `da_seq_exp`, `ssm_state_final`, `ssm_scan_out`,
+  `gated_norm_out`, `out_proj`
+- **attention.rs:** `q_proj`, `k_proj`, `v_proj`, `q_rope`, `k_rope`,
+  `qk_logits`, `softmax`, `softmax_v`, `o_proj`
+
+### Použití
+
+```
+# Plný forward s trace:
+train-core-memory-smoke --layer-idx 0 --seq-len 1 --trace
+
+# Binary search: izoluj NaN backward uvnitř L22:
+train-core-memory-smoke --layer-idx 22 --cut-at-layer 22 \\
+  --cut-at-component after-ssm --trace
+train-core-memory-smoke --layer-idx 22 --cut-at-layer 22 \\
+  --cut-at-component after-attn --trace
+# …postupně rozšiřovat komponentu, sledovat kdy gradient přejde z OK na NaN.
+```
+
+### Plán alpha.9
+
+Spuštění diagnostiky na Falcon-H1-1.5B. Očekáváme, že trace identifikuje
+op s extrémním dynamickým rozsahem — kandidáti po alpha.7:
+- `silu(x) = x * recip(1 + exp(-x))` v `mixer.rs::silu` a `norm.rs::silu`
+  pro velmi záporné x (recip(Inf) backward)
+- Attention `qk_logits` / `softmax` pro extrémní pre-softmax hodnoty
+- `conv1d` backward (zatím netestováno v repro.rs)
+
+### Testy
+
+55 unit testů prochází. Přibyly: 5× trace, smoke/model regrese neporušena.
+
+---
+
 ## [0.5.0-alpha.7] — 2026-04-16
 
 ### Přidáno

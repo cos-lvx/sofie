@@ -9,6 +9,7 @@ use candle_nn::{Linear, Module, VarBuilder, linear_no_bias};
 
 use super::norm::RmsNormGated;
 use super::state::LayerState;
+use crate::training::trace;
 
 /// Mamba-2 SSM mixer — rekurentní inference mód.
 pub struct Mixer {
@@ -290,17 +291,21 @@ impl Mixer {
             Tensor::new(&[self.ssm_in_multiplier as f32], x.device())?.to_dtype(x.dtype())?;
         let x_scaled = x.broadcast_mul(&in_scale)?; // [b, s, hidden]
         let proj = self.in_proj.forward(&x_scaled)?; // [b, s, 6680]
+        trace::probe(&proj, "mixer.in_proj_out")?;
 
         let mup = self
             .mup_vector
             .to_device(proj.device())?
             .to_dtype(proj.dtype())?;
         let proj = proj.broadcast_mul(&mup)?;
+        trace::probe(&proj, "mixer.after_mup_vec")?;
 
         // Split: z | xBC | dt
         let z = proj.narrow(D::Minus1, 0, self.d_ssm)?; // [b, s, 3072]
         let xbc = proj.narrow(D::Minus1, self.d_ssm, self.d_inner)?; // [b, s, 3584]
         let dt = proj.narrow(D::Minus1, self.d_ssm + self.d_inner, self.n_heads)?; // [b, s, 24]
+        trace::probe(&z, "mixer.z")?;
+        trace::probe(&dt, "mixer.dt_raw")?;
 
         // === 2. Kauzální conv1d na celé sekvenci ===
         // Transponuj: [b, s, d_inner] → [b, d_inner, s]
@@ -343,9 +348,11 @@ impl Mixer {
 
         // Transponuj zpět: [b, s, d_inner]
         let xbc_conv = xbc_conv.transpose(1, 2)?;
+        trace::probe(&xbc_conv, "mixer.conv_out")?;
 
         // === 3. SiLU aktivace ===
         let xbc_conv = silu(&xbc_conv)?; // [b, s, d_inner]
+        trace::probe(&xbc_conv, "mixer.silu_conv")?;
 
         // === 4. Split xBC → x_ssm, B, C ===
         let x_ssm = xbc_conv.narrow(D::Minus1, 0, self.d_ssm)?; // [b, s, 3072]
@@ -359,15 +366,21 @@ impl Mixer {
             .to_dtype(DType::F32)?
             .unsqueeze(0)?
             .unsqueeze(0)?; // [1, 1, n_heads]
-        let dt_f32 = dt.to_dtype(DType::F32)?.broadcast_add(&dt_bias)?; // [b, s, n_heads]
-        let dt_f32 = softplus(&dt_f32)?;
+        let dt_plus_bias = dt.to_dtype(DType::F32)?.broadcast_add(&dt_bias)?; // [b, s, n_heads]
+        trace::probe(&dt_plus_bias, "mixer.dt_plus_bias")?;
+        let dt_f32 = softplus(&dt_plus_bias)?;
+        trace::probe(&dt_f32, "mixer.softplus_dt")?;
 
         // A = -exp(A_log): decay rate per head [n_heads]
         let a_f32 = self.a_log.to_dtype(DType::F32)?.exp()?.neg()?;
+        trace::probe(&a_f32, "mixer.a_neg_exp")?;
 
         // dA = exp(dt * A): [b, s, n_heads]
         let a_bcast = a_f32.unsqueeze(0)?.unsqueeze(0)?; // [1, 1, n_heads]
-        let da_seq = dt_f32.broadcast_mul(&a_bcast)?.exp()?; // [b, s, n_heads]
+        let dt_mul_a = dt_f32.broadcast_mul(&a_bcast)?;
+        trace::probe(&dt_mul_a, "mixer.dt_mul_a")?;
+        let da_seq = dt_mul_a.exp()?; // [b, s, n_heads]
+        trace::probe(&da_seq, "mixer.da_seq_exp")?;
 
         // D parametr: [n_heads]
         let d_f32 = self.d_param.to_dtype(DType::F32)?;
@@ -421,17 +434,21 @@ impl Mixer {
 
         // Ulož finální SSM stav (F32 → dtype stavu)
         let state_dtype = state.ssm_state.dtype();
+        trace::probe(&h, "mixer.ssm_state_final")?;
         state.ssm_state = h.squeeze(0)?.to_dtype(state_dtype)?; // [n_heads, headdim, d_state]
 
         // Stack výstupů do sekvence: list<[b, d_ssm]> → [b, s, d_ssm]
         let y = Tensor::stack(&ys, 1)?;
+        trace::probe(&y, "mixer.ssm_scan_out")?;
 
         // === 7. Gated normalizace ===
         // y a z jsou obě [b, s, d_ssm] — norm zpracuje celou sekvenci najednou
         let y = self.norm.forward(&y, &z)?;
+        trace::probe(&y, "mixer.gated_norm_out")?;
 
         // === 8. Výstupní projekce ===
         let y = self.out_proj.forward(&y)?; // [b, s, hidden]
+        trace::probe(&y, "mixer.out_proj")?;
 
         Ok(y)
     }
