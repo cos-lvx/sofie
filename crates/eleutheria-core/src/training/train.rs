@@ -42,6 +42,10 @@ pub struct TrainingConfig {
     pub shuffle_seed: u64,
     /// Logování — po kolika optimizer stepech vypsat running loss.
     pub log_every_n_steps: usize,
+    /// Použít gradient checkpointing (per-layer chunked backward, alpha.12).
+    /// Sníží peak memory cca 10–20× za cenu ~2× delšího kroku — určeno
+    /// pro CUDA, kde plný 24-vrstvý backward graf nesedí do VRAM (KI-005).
+    pub checkpoint: bool,
 }
 
 impl Default for TrainingConfig {
@@ -54,6 +58,7 @@ impl Default for TrainingConfig {
             grad_clip: Some(1.0),
             shuffle_seed: 0,
             log_every_n_steps: 10,
+            checkpoint: false,
         }
     }
 }
@@ -139,8 +144,14 @@ impl Sofie {
             let mut accum_loss_sum = 0.0f64;
 
             for batch in batches {
-                // Forward + backward pro jeden micro-batch
-                let (loss_val, grads) = self.forward_backward_micro_batch(stack, &batch)?;
+                // Forward + backward pro jeden micro-batch — checkpointed
+                // varianta drop-uje per-layer activations, plný backward
+                // držg všechno v autograd graphu (rychlejší, ale OOM rizika).
+                let (loss_val, grads) = if config.checkpoint {
+                    self.forward_backward_checkpointed(stack, &batch)?
+                } else {
+                    self.forward_backward_micro_batch(stack, &batch)?
+                };
                 total_micro_batches += 1;
                 if !loss_val.is_finite() {
                     return Err(anyhow!(

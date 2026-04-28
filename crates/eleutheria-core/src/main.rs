@@ -214,6 +214,13 @@ struct TrainCoreMemoryArgs {
     /// start jako v inference; false pro kontinuální korpus bez BOS mid-stream).
     #[arg(long, default_value_t = true)]
     add_bos: bool,
+
+    /// Použít gradient checkpointing (per-layer chunked backward).
+    /// Sníží peak memory cca 10–20× za cenu ~2× delšího každého kroku.
+    /// Cílové použití: CUDA s ≤ 12 GB VRAM kde plný backward graf nesedí
+    /// (KI-005). Pro malý seq_len na CPU obvykle není potřeba.
+    #[arg(long, default_value_t = false)]
+    checkpoint: bool,
 }
 
 /// Argumenty pro `train-core-memory-multi` subkomand — multi-layer smoke
@@ -509,7 +516,11 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         grad_clip,
         shuffle_seed: ta.seed,
         log_every_n_steps: ta.log_every,
+        checkpoint: ta.checkpoint,
     };
+    if ta.checkpoint {
+        println!("  gradient checkpointing: ON (per-layer chunked backward)");
+    }
 
     let result = sofie.train_core_memory(&stack, &dataset, &config)?;
 

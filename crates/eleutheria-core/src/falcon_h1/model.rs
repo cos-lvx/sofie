@@ -106,6 +106,52 @@ impl FalconH1Model {
         self.embed_and_layers(input_ids, pos, state, Some(up_to_layer), stop)
     }
 
+    /// Počet decoder vrstev (= `config.num_hidden_layers`).
+    pub fn num_layers(&self) -> usize {
+        self.layers.len()
+    }
+
+    /// Vrací embedding s muP scaling (viz `embed_and_layers` krok 1).
+    /// Použito v chunked checkpointing — embedding je vstup pro chunk 0.
+    pub fn embed(&self, input_ids: &Tensor) -> Result<Tensor> {
+        let mut x = self.embed_tokens.forward(input_ids)?;
+        let emb_scale = Tensor::new(&[self.config.embedding_multiplier as f32], x.device())?
+            .to_dtype(x.dtype())?;
+        x = x.broadcast_mul(&emb_scale)?;
+        Ok(x)
+    }
+
+    /// Forward pass jedné vrstvy — chunked checkpointing volá tuto metodu
+    /// per layer s explicit input. Modifikuje `state.layers[layer_idx]`
+    /// in-place (SSM scan, KV cache).
+    pub fn forward_layer(
+        &self,
+        layer_idx: usize,
+        x: &Tensor,
+        pos: usize,
+        state: &mut ModelState,
+    ) -> Result<Tensor> {
+        if layer_idx >= self.layers.len() {
+            return Err(candle_core::Error::Msg(format!(
+                "layer_idx={} mimo rozsah (num_layers={})",
+                layer_idx,
+                self.layers.len()
+            )));
+        }
+        self.layers[layer_idx].forward(x, pos, &mut state.layers[layer_idx])
+    }
+
+    /// Final norm + lm_head + muP scaling — vrací logity.
+    /// Pro chunked checkpointing: poslední chunk volá toto na hidden po
+    /// vrstvě N-1.
+    pub fn final_head(&self, x: &Tensor) -> Result<Tensor> {
+        let x = self.final_norm.forward(x)?;
+        let logits = self.lm_head.forward(&x)?;
+        let lm_scale = Tensor::new(&[self.config.lm_head_multiplier as f32], logits.device())?
+            .to_dtype(logits.dtype())?;
+        logits.broadcast_mul(&lm_scale)
+    }
+
     fn embed_and_layers(
         &self,
         input_ids: &Tensor,
@@ -136,15 +182,5 @@ impl FalconH1Model {
             trace::probe(&x, &format!("model.after_layer_{i}"))?;
         }
         Ok(x)
-    }
-
-    fn final_head(&self, x: &Tensor) -> Result<Tensor> {
-        // === 3. Finální norma ===
-        let x = self.final_norm.forward(x)?;
-        // === 4. LM head → logity + muP scaling ===
-        let logits = self.lm_head.forward(&x)?;
-        let lm_scale = Tensor::new(&[self.config.lm_head_multiplier as f32], logits.device())?
-            .to_dtype(logits.dtype())?;
-        logits.broadcast_mul(&lm_scale)
     }
 }

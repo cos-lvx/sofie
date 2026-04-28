@@ -19,6 +19,7 @@
 //! - **v0.5.0:** tréning Core Memory na reálném datasetu (Sofie identity,
 //!   Bootstrap, Ondra context), validace přes re-run retention benchmarku.
 
+pub mod checkpoint;
 pub mod clip;
 pub mod core_memory;
 pub mod dataset;

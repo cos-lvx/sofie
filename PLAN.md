@@ -77,15 +77,34 @@
 - [x] Ověřeno na 1.5B CPU F32 (step 5 loss 5.71, best 4.64 vs. baseline 11.09)
 - [x] 76 unit testů (+10 oproti alpha.10)
 
-### v0.5.0-alpha.12 (next) — gradient checkpointing + save/load
-- [ ] **Gradient checkpointing** — CPU je 48s/step pro 1.5B seq_len=8,
-      CUDA OOM pro multi-layer backward. Recompute activations per
-      layer chunk místo držet v grafu. Candle support ověřit,
-      pokud absent → custom impl.
-- [ ] Ověřit CUDA path funkční po checkpointing — seq_len>=8 + batch>=1
+### v0.5.0-alpha.12 ✅ (2026-04-28) — per-layer gradient checkpointing
+- [x] **Gradient checkpointing** — custom 3-fázová implementace
+      (`training/checkpoint.rs`). Phase 1 no-grad forward sweep + state
+      snapshots, Phase 2 final chunk loss.backward, Phase 3 reverse
+      layer sweep s **synthetic loss trick** (`sum(out * grad_target)`).
+      Per-layer chunky.
+- [x] CPU 1.5B F32 seq_len=8 batch=1 grad_accum=2: 19 s/step (vs. 48
+      s/step alpha.11 baseline = 2.5× rychleji), loss 7.11 → 3.70 best
+      pod random baseline. KI-006 vyřešen.
+- [x] CLI `--checkpoint` flag, `TrainingConfig::checkpoint`.
+- [x] FalconH1Model per-layer API: `embed`, `forward_layer`, `final_head`,
+      `num_layers`. `LayerState::snapshot` (deep copy 4 tensorů).
+- [x] 1 nový unit test (77 total, +1 oproti alpha.11).
+- [ ] **CUDA RTX 4050 6 GB stále OOM** — per-layer není dost agresivní
+      pro intra-layer activations (Mamba scan + attention QKV jedné
+      vrstvy se nevejdou do ~2.4 GB volné VRAM po loadingu modelu).
+      KI-005 částečně, sub-layer chunking je práce pro alpha.13.
 - [ ] Save/Load trained Core Memory přes `StateCheckpoint` (filter
-      `core_memory` už existuje)
-- [ ] Auto-load v `Sofie::load` pokud existuje trained checkpoint
+      `core_memory` už existuje) — odsunuto do alpha.13
+- [ ] Auto-load v `Sofie::load` — odsunuto do alpha.13
+- [ ] Resume training — odsunuto do alpha.13
+
+### v0.5.0-alpha.13 (next) — sub-layer checkpointing + save/load
+- [ ] **Sub-layer chunking** — rozdělit jednu vrstvu na pre_norm /
+      SSM / attention / MLP chunky. Synthetic loss trick stejný pattern,
+      jen jemnější granularita. Cíl: odblokovat RTX 4050 6 GB.
+- [ ] Save/Load trained Core Memory (alpha.12 odsunuto)
+- [ ] Auto-load v `Sofie::load`
 - [ ] Resume training (init_states + optimizer state + step_idx)
 
 ### v0.5.0-alpha.13 — Sofie identity dataset composer

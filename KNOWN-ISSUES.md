@@ -37,31 +37,42 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
   `CUDARC_CUDA_VERSION=13010`. Odebrat až cudarc přidá 13.2 podporu.
 - **Řešení:** Sledovat cudarc releases, případně aktualizovat Candle (viz SOL-008)
 
-### KI-005 — CUDA OOM pro multi-layer backward na 6 GB VRAM
+### KI-005 — CUDA OOM pro multi-layer backward na 6 GB VRAM (částečně)
 
 - **Fáze:** 5 (Core Memory training)
-- **Dopad:** Střední — blokuje GPU training na RTX 4050. CPU F32
-  fallback funguje, ale pomalý (KI-006).
-- **Kontext:** Alpha.10 `train-core-memory-multi --cuda --seq-len 2`
-  selhává s `CUDA_ERROR_OUT_OF_MEMORY`. Forward sám prochází (alpha.8
-  potvrdila), ale plný backward graph přes 24 vrstev × 65537 vocab se
-  nevejde — jen LM head matmul s grad váží ~768 MB.
-- **Řešení:** Alpha.12 — gradient checkpointing (recompute activations
-  per layer chunk místo držet v grafu). Alternativa: Gaia deploy s větší
-  VRAM (≥24 GB pro pohodlný seq_len na 1.5B/7B).
+- **Dopad:** Střední — RTX 4050 6 GB stále neumí trénovat 1.5B
+  multi-layer ani s alpha.12 per-layer checkpointing. CPU funguje
+  pohodlně po KI-006 fixu.
+- **Kontext:** Alpha.12 zavedla per-layer chunked gradient checkpointing
+  (`training/checkpoint.rs`). Inter-layer memory snížena z 24× → 1×,
+  ale **intra-layer** activations (Mamba chunked scan na 128 segmentech +
+  attention QKV cached + MLP intermediate) jedné vrstvy se nevejdou do
+  volných ~2.4 GB po model loadingu. Bez checkpoint OOM ihned, s
+  checkpoint OOM později uvnitř Phase 3 (per-layer re-forward).
+- **Plán řešení:**
+  1. **Alpha.13 — sub-layer checkpointing.** Rozdělit jednu vrstvu na
+     pre_norm / SSM / attention / MLP chunky. Synthetic loss propaguje
+     gradient mezi sub-chunky stejným patternem jako per-layer.
+  2. **Alpha.13+ — selective component-aware** (memory-priority drop
+     attention QKV, keep SSM scan). Vyžaduje custom Op v Candle nebo
+     re-architekturu kolem `Tensor::detach`.
+  3. **Gaia deploy** s ≥ 24 GB VRAM pro 1.5B/7B production training —
+     fallback, pokud sub-layer checkpoint nestačí.
 
-### KI-006 — Training CPU F32 je 48 s/step na 1.5B
+### KI-006 — Training CPU F32 je 48 s/step na 1.5B (vyřešeno alpha.12)
 
 - **Fáze:** 5 (Core Memory training)
-- **Dopad:** Střední — blokuje větší runy. Smoke a mini-korpus OK
-  (minuty), full korpus 50-Sofie (~100k tokenů, seq_len 64–128) by
-  trval dny.
-- **Kontext:** Alpha.11 `train-core-memory` na 1.5B CPU F32, `seq_len=8
-  batch=1 grad_accum=2`: ~48 s per optimizer step. Full forward + backward
-  přes 24 vrstev je compute-bound. RAM ~18 GB.
-- **Řešení:** Vyřeší se společně s KI-005 — gradient checkpointing
-  odblokuje CUDA, rychlost skočí řádově. Alternativa: 7B training na
-  Gaia pro produkci, 1.5B CPU jen pro dev cyklus (smoke tests).
+- **Stav:** **VYŘEŠENO v alpha.12.** Per-layer gradient checkpointing
+  redukuje CPU step time ze 48 s na **19 s** (2.5× rychleji) díky
+  menšímu memory traffic — re-forward během backward je levnější než
+  držet plný 24-layer autograd graf.
+- **Kontext:** Alpha.11 baseline `seq_len=8 batch=1 grad_accum=2` na
+  1.5B CPU F32: 48 s/step. Alpha.12 stejný setup s `--checkpoint`:
+  19 s/step. Loss curve identické (7.11 → 3.70 best, pod random baseline
+  ln(vocab)≈11.09).
+- **Side-effect:** alpha.12 odhalila, že na CPU je checkpoint nejen
+  pamětně, ale i **rychleji** — což otáčí intuici, že re-forward je
+  drahý.
 
 ---
 

@@ -24,6 +24,19 @@ pub struct LayerState {
 }
 
 impl LayerState {
+    /// Hluboký snapshot stavu — všechny tensory se kopírují (storage clone),
+    /// takže snapshot je nezávislý na původním `LayerState`. Slouží pro
+    /// chunked gradient checkpointing: před každou vrstvou si uložíme stav,
+    /// abychom mohli re-forwardnout vrstvu z identického startu během backward.
+    pub fn snapshot(&self) -> Result<Self> {
+        Ok(Self {
+            ssm_state: self.ssm_state.copy()?,
+            conv_state: self.conv_state.copy()?,
+            k_cache: self.k_cache.copy()?,
+            v_cache: self.v_cache.copy()?,
+        })
+    }
+
     /// Vytvoří prázdný stav (nuly) pro jeden layer.
     pub fn new(
         config: &super::config::FalconH1Config,

@@ -7,6 +7,70 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.12] — 2026-04-28
+
+### Přidáno — Per-layer chunked gradient checkpointing
+
+**Fáze 5 alpha.12 milestone:** custom gradient checkpointing pro
+multi-layer Core Memory training. Per-layer chunky, synthetic loss
+trick pro propagaci gradientu skrz chunk hranice.
+
+#### `Sofie::forward_backward_checkpointed` (`training/checkpoint.rs`)
+
+- Phase 1 — no-grad forward sweep: per-layer forward s detached
+  inputem, save snapshotu stavu před každou vrstvou + detached input
+- Phase 2 — final chunk: re-forward `final_norm + lm_head` s autograd,
+  cross_entropy loss, `loss.backward()` → gradient na last hidden
+- Phase 3 — reverse layer sweep: pro každou vrstvu N-1..0 restore
+  snapshotu, fresh `Var::from_tensor(saved_input)`, re-forward s
+  autograd, synthetic loss `sum(output * grad_target)`, `synth.backward()`
+  vrátí gradient pro `init_state[i]` + nový grad_target pro chunk i-1
+
+#### Synthetic loss trick
+
+- Candle backward startuje od skalárního loss; pro chunked propagaci
+  libovolného tensor gradientu konvertujem na skalár `synth = sum(out *
+  grad_target)`. Chain rule pak korektně vrátí `d_synth / d_init_state[i]`
+  i `d_synth / d_x_in[i]`.
+
+#### `LayerState::snapshot` (`falcon_h1/state.rs`)
+
+- Hluboký copy všech 4 tensorů (ssm, conv, k_cache, v_cache). Před
+  každou vrstvou pořizujeme snapshot, abychom mohli re-forward ze
+  shodného startu během backward.
+
+#### `FalconH1Model` per-layer API
+
+- `embed`, `forward_layer(idx, x, pos, state)`, `final_head`, `num_layers`
+  jako veřejné metody. Předtím existovala jen monolitická `forward` —
+  chunked checkpointing potřebuje per-layer step.
+
+#### `TrainingConfig::checkpoint` + CLI `--checkpoint`
+
+- Opt-in flag pro chunked path. `train_core_memory` rozhoduje runtime,
+  zda volat `forward_backward_checkpointed` nebo původní
+  `forward_backward_micro_batch` (alpha.11 baseline).
+
+#### Empirické nálezy
+
+- **CPU 1.5B F32 seq_len=8 batch=1 grad_accum=2:** 19 s/step
+  s checkpoint vs. 48 s/step alpha.11 baseline (**2.5× rychleji** — menší
+  memory traffic vyhrává nad 2× compute z re-forward). Loss klesl
+  7.11 → 3.70 best, pod random baseline (ln(vocab)≈11.09).
+- **CUDA RTX 4050 6 GB:** OOM přetrvává i s checkpoint (per-layer
+  granularita není dost agresivní — Mamba scan + attention activations
+  jedné vrstvy se nevejdou do volných ~2.4 GB po model loadingu). Sub-layer
+  chunking je úkol pro alpha.13.
+
+#### Testy
+
+- 1 nový unit test (`checkpointed_forward_backward_runs_on_short_seq`)
+  ověřuje konečný loss + non-zero gradient alespoň jedné vrstvy. Skipuje
+  se bez lokálního modelu (CI-friendly).
+- Celkem 77 unit testů (+1 oproti alpha.11).
+
+---
+
 ## [0.5.0-alpha.11] — 2026-04-17
 
 ### Přidáno — Training loop + dataset loader
