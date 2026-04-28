@@ -1,6 +1,6 @@
 # Plán — Eleutheria
 
-> Poslední aktualizace: 2026-04-17
+> Poslední aktualizace: 2026-04-28
 
 ## Dokončeno
 
@@ -110,9 +110,27 @@
 - [ ] Research writeup do `~/Atlas/Nexus/70-Eleutheria/Research/`
 
 ### Paralelní track (dataset prep, mimo alpha cycle)
-- [ ] **Mini pilot (teď):** 3 reasoning chains ze SOLUTIONS.md jako format
-      experiment — ukázka šablony pro Ondru před výběrem judikátů
-- [ ] Ondra vybírá 20–50 reprezentativních judikátů NS
+- [x] **Mini pilot:** 3 reasoning chains ze SOLUTIONS.md (`programming_pilot_2026-04-17.md`)
+- [x] Ondra vybral 43 reprezentativních judikátů NS, Codexis export hotov (2026-04-22)
+- [x] **43 reasoning chains právních distillates** v `dataset/reasoning_chains/law/`
+      (2026-04-28). 38 394 slov, 118 642 tokenů, 6-sekční šablona.
+- [x] **Manifest** (`MANIFEST.md` + `.json`) generovaný `scripts/manifest.py`,
+      strukturní validace 43/43 OK, párování se zdroji 43/43 OK.
+- [x] **Training pack** (`dataset/training/law_pack.txt`) připravený pro
+      `train-core-memory --dataset`. 118 726 tokenů, separátor `\n\n---\n\n`.
+- [ ] Ondra review 4 priority distillates (NS-23Cdo2486-2020 → vyřadit?,
+      NS-25Cdo2422-2019 § citace, NS-23Cdo672-2021 P4→P1, NS-26Cdo732-98 komprese)
+- [x] **Programming distillation v2** (2026-04-28) — 24 reasoning chains
+      v `dataset/reasoning_chains/programming/SOL-*.md`. 67 738 tokenů,
+      diverzita 24 patternů (numerika, debugging, color space, tool contract,
+      architectural pivot, security boundary, wrapper escape, silent failure
+      CSS, pipeline graceful-fail, Rust ownership, convention boundary,
+      unicode coverage, init order, cross-platform FFI, validation clamping,
+      test isolation, pattern reuse, ML diff testing, hairpin NAT, naming
+      convention surface, Qwik async event timing, schema cascade, CSS
+      semantic vs structural, reactive invalidation channel). Pack:
+      `dataset/training/programming_pack.txt`. Balanc: law 28 % / programming
+      16 % / sofie identity 14 % / sofie context 41 %. Ratio 1.75:1.
 - [ ] Schema pro Episodic Memory raw judikatura (v0.5.1 prep)
 
 ### v0.5.0 — Core Memory production

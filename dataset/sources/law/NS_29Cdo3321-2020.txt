@@ -1,0 +1,1109 @@
+﻿# NS 29 Cdo 3321/2020 | 3čl | 2022-09-29 | Rc 58/2023 | ECLI:CZ:NS:2022:29.CDO.3321.2020.1
+
+ROZSUDEK
+Nejvyššího soudu
+ze dne 29. 9. 2022
+Insolvenční řízení. Odpovědnost státu za škodu [Odpovědnost státu za újmu]. Ušlý zisk. Daň z přidané hodnoty. Koncentrace řízení
+sp. zn./č. j.:
+29 Cdo 3321/2020-507
+Související legislativa ČR:
+§ 95, § 101 odst. 1 písm. a), § 154 odst. 1, § 205a písm. f), § 211, § 213 odst. 1, 4, 5, § 216, § 219a odst. 2 zákona č. 99/1963 Sb.
+§ 2, § 13 zákona č. 82/1998 Sb.
+§ 2 zákona č. 235/2004 Sb.
+§ 25 odst. 5, § 38, § 136 odst. 4, § 309 odst. 4, § 413 zákona č. 182/2006 Sb.
+§ 7 odst. 4 vyhlášky č. 313/2007 Sb.
+§ 2952 zákona č. 89/2012 Sb.
+Právní věta:
+Důvod požadovat, aby k částce, jež se mu přiznává jako náhrada ušlého zisku, byla připočtena částka odpovídající dani z přidané hodnoty, by poškozený, který je plátcem daně z přidané hodnoty, měl jen tehdy, kdyby soudem přiznané plnění této dani podléhalo. Náhrada škody však není předmětem daně podle § 2 odst. 1 zákona č. 235/2004 Sb., o dani z přidané hodnoty, ve znění pozdějších předpisů, a tedy ani zdanitelným plněním ve smyslu ustanovení § 2 odst. 2 tohoto zákona.
+Pro posouzení nároku nesprávně opomenutého insolvenčního správce na ušlý zisk za odměnu ze zpeněžení je rozhodující, zda podle pravidelného běhu věcí bylo možné (při řádném průběhu daného insolvenčního řízení) takové zpeněžení (a odměnu z něj) očekávat.
+Nejde-li o změnu žaloby (§ 95 o. s. ř.), pak okolnost, že odvolatel uplatnil v průběhu odvolacího řízení nové skutečnosti nebo důkazy, které nastaly (vznikly) po vyhlášení (vydání) rozhodnutí soudu prvního stupně (§ 205a písm. f/ o. s. ř.), může být za podmínek uvedených v 213 odst. 4 části věty za středníkem o. s. ř. důvodem pro zrušení odvoláním napadeného rozhodnutí nebo jeho části (§ 219a odst. 2 o. s. ř.); je však vyloučeno, aby k těmto skutečnostem nebo důkazům odvolací soud při projednání odvolání nepřihlédl jen pro jejich rozsah.
+Nejvyšší soud odmítl dovolání žalobce proti třetímu výroku rozsudku Městského soudu v Praze ze dne 21. 5. 2020, sp. zn. 20 Co 15/2020, zamítl je v rozsahu, v němž směřovalo proti té části prvního výroku rozsudku Městského soudu v Praze ze dne 21. 5. 2020, sp. zn. 20 Co 15/2020, kterou odvolací soud potvrdil rozsudek soudu prvního stupně v zamítavém výroku ohledně částky 474.979,56 Kč s příslušenstvím představovaným zákonným úrokem z prodlení za dobu od 6. 11. 2017 do zaplacení, změnil rozsudek Městského soudu v Praze ze dne 21. 5. 2020, sp. zn. 20 Co 15/2020, v té části prvního výroku, kterou odvolací soud potvrdil rozsudek soudu prvního stupně v zamítavém výroku ohledně částky 1.973.673,09 Kč s příslušenstvím představovaným zákonným úrokem z prodlení za dobu od 6. 11. 2017 do zaplacení, tak, že se rozsudek soudu prvního stupně mění v zamítavém výroku ohledně částky 1.973.673,09 Kč s příslušenstvím představovaným zákonným úrokem z prodlení za dobu od 6. 11. 2017 do zaplacení jen tak, že potud se žaloba zamítá pro tentokrát; jinak se potvrzuje. Současně zrušil rozsudek Městského soudu v Praze ze dne 21. 5. 2020, sp. zn. 20 Co 15/2020, s výjimkou té části prvního výroku, ohledně které rozhodl Nejvyšší soud druhým a třetím výrokem tohoto rozsudku; věc ve zrušeném rozsahu vrátil odvolacímu soudu k dalšímu řízení.
+I.
+Dosavadní průběh řízení
+1. Žalobou ze dne 8. 1. 2018, podanou u Obvodního soudu pro Prahu 2 a změněnou (rozšířenou) podáním datovaným 29. 4. 2019, se žalobce (LIQUIDATORS v. o. s.) domáhal po žalovaném (České republice - Ministerstvu spravedlnosti) zaplacení částky 7.762.949,16 Kč s příslušenstvím tvořeným zákonným úrokem z prodlení za dobu od 6. 11. 2017 do zaplacení, jako náhrady škody způsobené nesprávným úředním postupem. Ten měl spočívat v tom, že předsedkyně Krajského soudu v Ostravě (dále též jen "insolvenční soud") ustanovila v období od 5. 5. 2014 do 24. 7. 2015 v 79 insolvenčních řízeních jako insolvenčního správce jinou osobu než žalobce, aniž pro takový postup byly splněny předpoklady uvedené v § 25 odst. 5 zákona č. 182/2006 Sb., o úpadku a způsobech jeho řešení (insolvenčního zákona). Škodu v podobě ušlého zisku měla představovat odměna, kterou by žalobce obdržel v těchto insolvenčních řízeních jako insolvenční správce, kdyby jím byl ustanoven (nebýt nesprávného postupu předsedkyně insolvenčního soudu). Insolvenční řízení v nichž byl (dle jeho mínění nesprávně) opomenut, a částky, jež mu ušly, konkretizoval žalobce (odvolávaje se na sdělení insolvenčního soudu ze dne 22. 1. 2016, sp. zn. Si 59/2016) v žalobě (č. l. 1-11), ve znění změn provedených podáními z 19. 4. 2019 (č. l. 390-405) a z 29. 4. 2019 (č. l. 417-418) následovně:
+Tabulka č. 1: Již skončená insolvenční řízení řešená konkursem a oddlužením zpeněžením majetkové podstaty, v nichž byl žalobce přeskočen jako první v pořadí:
+ č.  
+ insolvenční řízení  
+ č. j. rozhodnutí o  odměně
+ Odměna (Kč)  
+ DPH (Kč) 21 %  
+ Ušlý zisk (Kč)  
+ 1.  
+ KSOS 22 INS 8097/2014  
+ KSOS 22 INS 8097/2014-  B-14
+ 45.000  
+ 9.450  
+ 54.450  
+ 2.  
+ KSOL 16 INS  27660/2014
+ KSOL 16 INS  27660/2014-B-13
+ 45.000  
+ 9.450  
+ 54.450  
+ 3.  
+ KSOS 31 INS  27916/2014
+ KSOS 31 INS  27916/2014-B-41
+ 104.097,40  
+ 21.860,45  
+ 125.957,85  
+ 4.      
+ KSOL 16 INS  30119/2014    
+ KSOL 16 INS  30119/2014-B-18  KSOL 16 INS  30119/2014-B-19
+ 45.000      
+ 9.450      
+ 54.450      
+
+ CELKEM
+ -
+ 239.097,40
+ 50.210,45
+ 289.307,85
+Tabulka č. 2: Již skončená insolvenční řízení řešená oddlužením plněním splátkového kalendáře, v nichž byl žalobce přeskočen jako první v pořadí:
+ č.    
+ insolvenční  řízení  
+ Počet  měsíců  
+ Odměna    
+ Pauš.  hotové  výdaje
+ Odměna  ze  zpeněžení
+ 21 % DPH  (Kč)  
+ Potenciální  náklad  (Kč)
+ Ušlý zisk (Kč)    
+ 1.  
+ KSOL 10 INS  30451/2014
+ 21  
+ 15.750  
+ 3.150  
+ 111.457,20  
+ 27.375,01  
+ 1.500  
+ 156.232,21  
+ 2.  
+ KSOL 10 INS  15229/2014
+ 27  
+ 20.250  
+ 4.050  
+  -  
+ 5.103  
+ 1.500  
+ 27.903  
+ 3.  
+ KSOL 10 INS  3740/2015
+ 27  
+ 20.250  
+ 4.050  
+  -  
+ 5.103  
+ 1.500  
+ 27.903  
+ 4.  
+ KSOL 16 INS  27867/2014
+ 34  
+ 25.500  
+ 5.100  
+  -  
+ 6.426  
+ 1.500  
+ 35.526  
+ 5.  
+ KSOL 16 INS  5850/2014
+ 46  
+ 34.500  
+ 6.900  
+ 1.440  
+ 8.996,40  
+ 1.500  
+ 50.336,40  
+ 6.  
+ KSOL 16 INS  3451/2015
+ 42  
+ 31.500  
+ 6.300  
+ -  
+ 7.938  
+ 1.500  
+ 44.238  
+ 7.  
+ KSOL 10 INS  9980/2014
+ 57  
+ 64.125  
+ 12.825  
+ 57.316,68  
+ 28.196  
+ 1.500  
+ 160.962,68  
+ 8.  
+ KSOL 10 INS  17514/2015
+ 38  
+ 42.750  
+ 8.550  
+       -  
+ 10.773  
+ 1.500  
+ 60.573  
+ CELKEM
+ 254.625
+ 50.925
+ 170.213,88
+ 99.910,41
+ 12.000
+ 563.674,29
+Tabulka č. 3: Již skončená insolvenční řízení řešená konkursem a oddlužením zpeněžením majetkové podstaty, v nichž byl žalobce přeskočen jako další v pořadí:
+ č.
+ insolvenční řízení
+ č. j. rozhodnutí o odměně
+ Odměna (Kč)
+ DPH (Kč) 21 %
+ Ušlý zisk (Kč)
+ 1.  
+ KSOL 16 INS  36915/2013
+ KSOL 16 INS 36915/2013- B-44  
+ 74.765,04  
+ 15.700,66  
+ 90.465,70  
+ 2.  
+ KSOL 10 INS  12835/2014
+ KSOL 10 INS 12835/2014- B-26  
+ 54.953,37  
+ 11.540,21  
+ 66.493,58  
+  3.    
+ KSOS 36 INS  6813/2015    
+ KSOS 36 INS 6813/2015-B- 8  KSOS 36 INS 6813/2015-B- 11    
+ 22.500      
+ 4.725      
+ 27.725      
+ 4.  
+ KSOL 10 INS  23993/2014
+ KSOL 10 INS 23993/2014- B-111  
+ 472.405,48  
+ 99.205,15  
+ 571.610,63  
+ 5.  
+ KSOS 36 INS  14135/2014
+ KSOS 36 INS 14135/2014- B-13  
+ 51.100  
+ 10.731  
+ 61.831  
+ 6.  
+ KSOS 14 INS  8970/2014
+ KSOS 14 INS 8970/2014-B- 22  
+ 58.000  
+ 12.180  
+ 70.180  
+
+ CELKEM
+ -
+ 733.723,89
+ 154.082,02
+ 887.805,91
+Tabulka č. 4: Již skončená insolvenční řízení řešená oddlužením plněním splátkového kalendáře, v nichž byl žalobce přeskočen jako další v pořadí:
+ č.    
+ insolvenční  řízení  
+ Počet  měsíců  
+ Odměna    
+ Pauš.  hotové  výdaje
+ Odměna  ze zpeněžení  
+ 21 % DPH  (Kč)  
+ Potenciální  náklad  (Kč)
+ Ušlý zisk (Kč)    
+ 1.  
+ KSOS 22 INS  13126/2014
+ 14  
+ 10.500  
+ 2.100  
+ 3.600  
+ 3.402  
+ 1.500  
+ 18.102  
+ 2.  
+ KSOS 31 INS  23971/2014
+ 18  
+ 13.500  
+ 2.700  
+ 52.556,72  
+ 14.438,91  
+ 1.500  
+ 81.695,63  
+ 3.  
+ KSOS 36 INS  17192/2014
+ 43  
+ 32.250  
+ 6.450  
+ 80.764,20  
+ 25.087,48  
+ 1.500  
+ 143.051,68  
+ 4.  
+ KSOS 39 INS  14925/2014
+ 45  
+ 33.750  
+ 6.750  
+ -  
+ 8.505  
+ 1.500  
+ 47.505  
+ 5.  
+ KSOS 25 INS  15189/2014
+ 51  
+ 38.250  
+ 7.650  
+ -  
+ 9.639  
+ 1.500  
+ 54.039  
+ 6.  
+ KSOS 36 INS  17043/2014
+ 44  
+ 49.500  
+ 9.900  
+ 151.215,66  
+ 44.229,29  
+ 1.500  
+ 253.344,95  
+ CELKEM
+ 177.750
+ 35.550
+ 288.136,58
+ 105.301,68
+ 9.000
+ 597.738,26
+Tabulka č. 5: Neskončená insolvenční řízení řešená oddlužením plněním splátkového kalendáře, v nichž byl žalobce přeskočen jako první v pořadí:
+ č.    
+ insolvenční  řízení  
+ Očekávaný  počet  měsíců
+ Odměna    
+ Pauš.  hotové  výdaje
+ Odměna  ze  zpeněžení
+ 21 % DPH  (Kč)  
+ Potenciální  náklad  (Kč)
+ Ušlý zisk  (Kč)  
+ 1.  
+ KSOS 22 INS  11415/2014
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 2.  
+ KSOL 10 INS  6923/2014
+ 66  
+ 49.500  
+ 9.900  
+ 2.250  
+ 12.946,50  
+ 1.500  
+ 73.096,50  
+ 3.  
+ KSOS 33 INS  7945/2014
+ 66  
+ 49.500  
+ 9.900  
+ -  
+ 12.474  
+ 1.500  
+ 70.374  
+ 4.  
+ KSOL 16 INS  9527/2014
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 5.  
+ KSOL 10 INS  13631/2014
+ 64  
+ 48.000  
+ 9.600  
+ -  
+ 12.096  
+ 1.500  
+ 68.196  
+ 6.  
+ KSOS 39 INS  23056/2014
+ 67  
+ 50.250  
+ 10.050  
+ 2.567,39  
+ 13.202,16  
+ 1.500  
+ 74.569,55  
+ 7.  
+ KSOL 16 INS  20788/2014
+ 66  
+ 49.500  
+ 9.900  
+ 56.768,85  
+ 24.395,46  
+ 1.500  
+ 139.064,31  
+ 8.  
+ KSOS 36 INS  23633/2014
+ 65  
+ 48.750  
+ 9.750  
+ 27.621,72  
+ 18.085,56  
+ 1.500  
+ 102.707,28  
+ 9.  
+ KSOL 10 INS  24464/2014
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 10.  
+ KSOL 16 INS  26742/2014
+ 64  
+ 48.000  
+ 9.600  
+ -  
+ 12.096  
+ 1.500  
+ 68.196  
+ 11.  
+ KSOL 16 INS  26363/2014
+ 64  
+ 48.000  
+ 9.600  
+ -  
+ 12.096  
+ 1.500  
+ 68.196  
+ 12.  
+ KSOL 16 INS  30518/2014
+ 63  
+ 47.250  
+ 9.450  
+ -  
+ 11.907  
+ 1.500  
+ 67.107  
+ 13.  
+ KSOS 34 INS  2169/2015
+ 66  
+ 49.500  
+ 9.900  
+ 63.000  
+ 25.704  
+ 1.500  
+ 146.604  
+ 14.  
+ KSOL 10 INS  3281/2015
+ 63  
+ 47.250  
+ 9.450  
+ -  
+ 11.907  
+ 1.500  
+ 67.107  
+ 15.  
+ KSOS 37 INS  7603/2015
+ 67  
+ 50.250  
+ 10.050  
+ -  
+ 12.663  
+ 1.500  
+ 71.463  
+ 16.  
+ KSOL 16 INS  552/2015
+ 63  
+ 47.250  
+ 9.450  
+ -  
+ 11.907  
+ 1.500  
+ 67.107  
+ 17.  
+ KSOS 25 INS  9131/2015
+ 64  
+ 48.000  
+ 9.600  
+ 23.009,25  
+ 16.927,95  
+ 1.500  
+ 96.037,20  
+ 18.  
+ KSOS 33 INS  11863/2015
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 19.  
+ KSOL 16 INS  4854/2015
+ 64  
+ 48.000  
+ 9.600  
+ -  
+ 12.096  
+ 1.500  
+ 68.196  
+ 20.  
+ KSOL 16 INS  10444/2015
+ 63  
+ 47.250  
+ 9.450  
+ -  
+ 11.907  
+ 1.500  
+ 67.107  
+ 21.  
+ KSOL 10 INS  14474/2015
+ 64  
+ 48.000  
+ 9.600  
+ -  
+ 12.096  
+ 1.500  
+ 68.196  
+ 22.  
+ KSOL 10 INS  12810/2015
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 23.  
+ KSOS 36 INS  8980/2015
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 24.  
+ KSOS 36 INS  16750/2015
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 25.  
+ KSOL 10 INS  15468/2015
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ CELKEM
+ 1.214.250
+ 242.850
+  175.217,21
+ 342.786,63
+ 37.500
+ 1.937.603,84
+Tabulka č. 6: Neskončená insolvenční řízení řešená společným oddlužením manželů plněním splátkového kalendáře, v nichž byl žalobce přeskočen jako první v pořadí:
+ č.    
+ insolvenční  řízení  
+ Očekávaný  počet  měsíců
+ Odměna    
+ Pauš.  hotové  výdaje
+ Odměna  ze  zpeněžení
+ 21 % DPH  (Kč)  
+ Potenciální  náklad  (Kč)
+ Ušlý zisk  (Kč)  
+ 1.  
+ KSOL 16 INS  9481/2014
+ 64  
+ 72.000  
+ 14.400  
+ -  
+ 18.144  
+ 1.500  
+ 103.044  
+ 2.  
+ KSOS 31 INS  15128/2014
+ 64  
+ 72.000  
+ 14.400  
+ -  
+ 18.144  
+ 1.500  
+ 103.044  
+ 3.  
+ KSOL 16 INS  19766/2014
+ 69  
+ 77.625  
+ 15.525  
+ -  
+ 19.561,50  
+ 1.500  
+ 111.211,50  
+ 4.  
+ KSOS 40 INS  28068/2014
+ 64  
+ 72.000  
+ 14.400  
+ -  
+ 18.144  
+ 1.500  
+ 103.044  
+ 5.  
+ KSOS 33 INS  9621/2015
+ 65  
+ 73.125  
+ 14.625  
+ -  
+ 18.724,50  
+ 1.500  
+ 104.677,50  
+ 6.  
+ KSOS 39 INS  9207/2015
+ 66  
+ 74.250  
+ 14.850  
+ -  
+ 18.711  
+ 1.500  
+ 106.311  
+ 7.  
+ KSOS 33 INS  7626/2015
+ 67  
+ 75.375  
+ 15.075  
+ 78.431,49  
+ 35.465,11  
+ 1.500  
+ 202.846,60  
+ CELKEM
+  516.375
+ 103.275
+ 78.431,49
+ 146.597,11
+ 10.500
+ 834.178,60
+Tabulka č. 7: Neskončená insolvenční řízení řešená konkursem:
+ č.    
+ insolvenční řízení    
+ Odměna (Kč)  za přezkum  
+ Minimální (dosud  známá) odměna  (Kč) ze zpeněžení
+ 21 % DPH  (Kč)  
+ Ušlý zisk (Kč)    
+ 1.
+ KSOL 10 INS 280/2014
+   58.000
+ 167.297,76
+ 47.312,53
+  272.610,29
+ 2.
+ KSOS 33 INS 16495/2015
+    7.000
+ 609.450,09
+ 129.454,53
+  745.904,62
+ CELKEM
+   65.000
+ 776.747,85
+ 176.767,06
+ 1.018.514,91
+Tabulka č. 8: Neskončená insolvenční řízení řešená oddlužením plněním splátkového kalendáře, v nichž byl žalobce přeskočen jako další v pořadí:
+ č.    
+ insolvenční  řízení  
+ Očekávaný  počet  měsíců
+ Odměna    
+ Pauš.  hotové  výdaje
+ Odměna  ze  zpeněžení
+ 21 % DPH  (Kč)  
+ Potenciální  náklad  (Kč)
+ Ušlý zisk  (Kč)  
+ 1.  
+ KSOS 39 INS  10103/2014
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 2.  
+ KSOS 36 INS  10678/2014
+ 66  
+ 49.500  
+ 9.900  
+ -  
+ 12.474  
+ 1.500  
+ 70.374  
+ 3.  
+ KSOS 40 INS  35825/2013
+ 69  
+ 51.750  
+ 10.350  
+ -  
+ 13.041  
+ 1.500  
+ 73.641  
+ 4.  
+ KSOS 14 INS  13451/2014
+ 66  
+ 49.500  
+ 9.900  
+ -  
+ 12.474  
+ 1.500  
+ 70.374  
+ 5.  
+ KSOS 31 INS  3474/2014
+ 63  
+ 47.250  
+ 9.450  
+ -  
+ 11.907  
+ 1.500  
+ 67.107  
+ 6.  
+ KSOS 40 INS  18749/2014
+ 64  
+ 48.000  
+ 9.600  
+ -  
+ 12.096  
+ 1.500  
+ 68.196  
+ 7.  
+ KSOS 22 INS  22679/2014
+ 64  
+ 48.000  
+ 9.600  
+ -  
+ 12.096  
+ 1.500  
+ 68.196  
+ 8.  
+ KSOS 34 INS  22463/2014
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 9.  
+ KSOS 34 INS  13618/2014
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 10.  
+ KSOS 39 INS  20263/2014
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 11.  
+ KSOS 25 INS  25248/2014
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 12.  
+ KSOS 25 INS  16218/2014
+ 65  
+ 48.750  
+ 9.750  
+ -  
+ 12.285  
+ 1.500  
+ 69.285  
+ 13.  
+ KSOS 40 INS  29771/2014
+ 66  
+ 49.500  
+ 9.900  
+ -  
+ 12.474  
+ 1.500  
+ 70.374  
+ 14.  
+ KSOS 39 INS  32444/2014
+ 66  
+ 49.500  
+ 9.900  
+ -  
+ 12.474  
+ 1.500  
+ 70.374  
+ 15.  
+ KSOS 22 INS  927/2015
+ 64  
+ 48.000  
+ 9.600  
+ -  
+ 12.096  
+ 1.500  
+ 68.196  
+ 16.  
+ KSOS 40 INS  4125/2015
+ 64  
+ 48.000  
+ 9.600  
+ -  
+ 12.096  
+ 1.500  
+ 68.196  
+ CELKEM
+  781.500
+ 156.300
+ -
+ 196.938
+ 24.000
+ 1.110.738
+Tabulka č. 9: Neskončená insolvenční řízení řešená společným oddlužením manželů plněním splátkového kalendáře, v nichž byl žalobce přeskočen jako další v pořadí:
+ č.    
+ insolvenční  řízení  
+ Očekávaný  počet  měsíců
+ Odměna    
+ Pauš.  hotové  výdaje
+ Odměna  ze  zpeněžení
+ 21 % DPH  (Kč)  
+ Potenciální  náklad  (Kč)
+ Ušlý zisk  (Kč)  
+ 1.  
+ KSOS 40 INS  7128/2014
+ 65  
+ 73.125  
+ 14.625  
+  -  
+ 18.724,50  
+ 1.500  
+ 104.677,50  
+ 2.  
+ KSOS 22 INS  20088/2014
+ 64  
+ 72.000  
+ 14.400  
+  -  
+ 18.144  
+ 1.500  
+ 103.044  
+ 3.  
+ KSOS 39 INS  27067/2014
+ 66  
+ 74.250  
+ 14.850  
+  -  
+ 18.711  
+ 1.500  
+ 106.311  
+ 4.  
+ KSOS 31 INS  25754/2014
+ 64  
+ 72.000  
+ 14.400  
+  -  
+ 18.144  
+ 1.500  
+ 103.044  
+ 5.  
+ KSOS 40 INS  2458/2015
+ 66  
+ 74.250  
+ 14.850  
+  -  
+ 18.711  
+ 1.500  
+ 106.311  
+ CELKEM
+ 365.625
+ 73.125
+  -
+ 92.137,50
+ 7.500
+ 523.387,50
+2. Částku odpovídající 21% dani z přidané hodnoty uvádí žalobce (jako plátce daně z přidané hodnoty) v tabulkách i u těch insolvenčních řízení, v nichž insolvenční správce plátcem této daně není nebo nebyl. Částka označovaná v tabulkách jako potenciální náklad je součtem odhadovaných fixních a variabilních nákladů, jež by žalobce (podle svého mínění) v těchto insolvenčních řízeních vynaložil.
+3. Rozsudkem ze dne 17. 5. 2019, č. j. 37 C 9/2018-427, obvodní soud:
+[1] Uložil žalovanému zaplatit žalobci do 15 dnů od právní moci rozhodnutí částku 493.772,40 Kč s příslušenstvím tvořeným zákonným úrokem z prodlení za dobu od 6. 11. 2017 do zaplacení (bod I. výroku).
+[2] Zamítl žalobu co do částky 7.269.176,76 Kč s příslušenstvím tvořeným zákonným úrokem z prodlení za dobu od 6. 11. 2017 do zaplacení (bod II. výroku).
+[3] Uložil žalobci zaplatit žalovanému do 15 dnů od právní moci rozhodnutí na náhradě nákladů řízení částku 3.432 Kč (bod III. výroku).
+4. Obvodní soud - vycházeje z ustanovení § 1 odst. 1, § 5, § 13 odst. 1 a § 30 zákona č. 82/1998 Sb., o odpovědnosti za škodu způsobenou při výkonu veřejné moci rozhodnutím nebo nesprávným úředním postupem a o změně zákona České národní rady č. 358/1992 Sb., o notářích a jejich činnosti (notářský řád), z ustanovení § 25 odst. 5 insolvenčního zákona a ze závěrů obsažených v nálezu Ústavního soudu ze dne 6. 9. 2016, sp. zn. IV. ÚS 3141/15, uveřejněném pod číslem 164/2016 Sbírky nálezů a usnesení Ústavního soudu [nález je (stejně jako další rozhodnutí Ústavního soudu zmíněná níže) dostupný i na webových stránkách Ústavního soudu], a v "rozhodnutí" Nejvyššího soudu ze dne 22. 12. 2016, "sp. zn." 29 NSČR 130/2014 [správně jde o usnesení sen. zn. 29 NSČR 130/2014, uveřejněné pod číslem 47/2018 Sb. rozh. obč. (dále jen "R 47/2018"), které je (stejně jako další rozhodnutí Nejvyššího soudu zmíněná níže) dostupné i na webových stránkách Nejvyššího soudu] - dospěl po provedeném dokazování k následujícím závěrům:
+5. Pro úspěšnost žaloby na náhradu škody proti státu je nutné kumulativní splnění tří podmínek, a to:
+[1] existence nezákonného rozhodnutí či nesprávného úředního postupu,
+[2] vznik škody na straně žalobce a
+[3] příčinná souvislost mezi nesprávným úředním postupem či nezákonným rozhodnutím a vznikem škody na straně žalobce.
+6. Námitka promlčení, vznesená žalovaným, není důvodná, když žalobkyně se o vzniku škody mohla dozvědět nejdříve z dopisu insolvenčního soudu ze dne 22. 1. 2016.
+7. Opatření předsedkyně insolvenčního soudu nemají podle nálezu Ústavního soudu sp. zn. IV. ÚS 3141/15, který jedno z nich zrušil, povahu rozhodnutí a nejsou proti nim přípustné opravné prostředky. Jde o úkony hybridní povahy na pomezí státní správy a rozhodovací činnosti soudu. U všech opatření, jež jsou předmětem sporu (identických co do důvodů, pro které žalobce nebyl ustanoven insolvenčním správcem), tak šlo o nesprávný úřední postup předsedkyně insolvenčního soudu a první předpoklad odpovědnosti za škodu je naplněn.
+8. Při posuzování dalších předpokladů odpovědnosti za škodu rozdělil obvodní soud insolvenční řízení, v nichž měl být žalobce ustanoven (dle žaloby) insolvenčním správcem, do následujících skupin:
+[1] Skončená insolvenční řízení, v nichž úpadek dlužníka byl řešen konkursem a oddlužením a v nichž žalobce byl přeskočen jako první v pořadí (odstavce 66. a 68. odůvodnění) [dále jen "skupina č. 1"]. Insolvenční řízení zahrnutá do skupiny č. 1 odpovídají těm, jež jsou identifikována v tabulkách č. 1 a 2 shora (celkem 12 insolvenčních řízení). Zjištění, jež insolvenční soud u těchto insolvenčních řízení učinil o odměně, odpovídají údajům v tabulkách č. 1 a 2, s výjimkou insolvenčního řízení sp. zn. KSOL 10 INS 9980/2014 (tabulka č. 2, poř. č. 7), kde žalobce uvedl (zřejmě v důsledku chyby v počtech) odměnu ve výši 64.125 Kč [podle zjištění obvodního soudu činila odměna 65.125 Kč (srov. odstavec 34. odůvodnění)].
+[2] Skončená insolvenční řízení, v nichž žalobce byl přeskočen jako další v pořadí (odstavce 67. a 69. odůvodnění) [dále jen "skupina č. 2"]. Insolvenční řízení zahrnutá do skupiny č. 2 odpovídají těm, jež jsou identifikována v tabulkách č. 3 a 4 shora (celkem 12 insolvenčních řízení).
+[3] Neskončená insolvenční řízení, v nichž úpadek dlužníka byl řešen konkursem a oddlužením plněním splátkového kalendáře a v nichž žalobce byl přeskočen jako první v pořadí (odstavce 71. a 73. odůvodnění) [dále jen "skupina č. 3"]. Insolvenční řízení zahrnutá do skupiny č. 3 odpovídají těm, jež jsou identifikována v tabulkách č. 5 a 6 shora (celkem 32 insolvenčních řízení).
+[4] Neskončená insolvenční řízení, v nichž úpadek dlužníka byl řešen konkursem a oddlužením plněním splátkového kalendáře a v nichž žalobce byl přeskočen jako další v pořadí (odstavce 70., 72. a 74. odůvodnění) [dále jen "skupina č. 4"]. Insolvenční řízení zahrnutá do skupiny č. 4 odpovídají těm, jež jsou identifikována v tabulkách č. 7 až 9 shora (celkem 23 insolvenčních řízení). Přitom u 2 insolvenčních řízení uvedených v tabulce č. 7 (Neskončená insolvenční řízení řešená konkursem) přijal insolvenční soud závěr, že žalobce v nich byl přeskočen jako další v pořadí (žalobce u nich tento údaj neuváděl) na základě zjištění obsažených v odstavcích 42. a 43. odůvodnění).
+9. Za ušlý zisk je považována pouze ta újma, jež poškozenému vznikla tím, že v důsledku škodné události nedošlo k takovému rozmnožení jeho majetkových hodnot, jež se dalo očekávat s ohledem na pravidelný běh událostí. Nepostačuje přitom pouhá pravděpodobnost zvýšení majetkového stavu v budoucnu, ale poškozeným musí být postaveno najisto, že nebýt škodní události, jeho majetkový stav by se zvýšil. Vymezení ušlého zisku pak musí být podloženo existujícími či reálně dosažitelnými okolnostmi, z nichž lze usuzovat, že škodní událost skutečně zasáhla do průběhu konkrétního děje vedoucího k určitému zisku (srov. rozsudek Nejvyššího soudu ze dne 13. 11. 2012, sp. zn. 28 Cdo 5171/2008).
+10. V případě skupiny č. 1 je dána příčinná souvislost; nebýt nesprávného úředního postupu, žalobce by byl ustanoven insolvenčním správcem a náležela by mu odměna přiznaná insolvenčním soudem. Rovněž bylo pravomocně rozhodnuto o odměně insolvenčního správce, a došlo tak ke vzniku škody odpovídající této odměně. Škodou však není daň z přidané hodnoty, hotové výdaje, ani odměna za zpeněžení majetku.
+11. Daň z přidané hodnoty není škodou proto, že žalobce neodvádí daň z přiznané náhrady škody. Hotové výdaje by mohly být škodou, jen kdyby žalobci v souvislosti s předmětnými insolvenčními řízeními reálně vznikly nějaké výdaje, což se nestalo. Odměnu za zpeněžení majetku pak nelze přiznat, neboť postup každého insolvenčního správce při zpeněžování je individuální, u žalobce v předmětných řízeních nadto pouze teoretický, když v nich nečinil žádné úkony. Proto nelze vyjít z toho, že by měl mít žalobce nárok na stejnou odměnu jako ustanovený insolvenční správce. Žalobce navíc přes poučení podle § 118a odst. 3 zákona č. 99/1963 Sb., občanského soudního řádu (dále též jen "o. s. ř."), neprokázal, že by mu vznikl ušlý zisk týkající se odměny za zpeněžení majetku v žalované výši.
+12. V případě skupiny č. 2 není dána příčinná souvislost. O vztah příčinné souvislosti jde jen tehdy, vznikla-li škoda následkem nesprávného úředního postupu, tedy je-li nesprávný úřední postup a škoda ve vzájemném poměru příčiny a následku, a tudíž je doloženo, že nebýt nesprávného úředního postupu, ke škodě by nedošlo. V řízeních, v nichž nebyl žalobce přeskočen jako první, chybí příčinná souvislost, když nebýt nesprávného úředního postupu, byl by insolvenčním správcem ustanoven první přeskočený ve stanoveném seznamu a jedině jemu by mohla vzniknout škoda.
+13. U insolvenčních řízení spadajících do skupiny č. 3 sice byl prokázán nesprávný úřední postup, insolvenční soud však dosud nerozhodl pravomocně o odměně insolvenčního správce, takže otázka existence škody a její výše není postavena najisto a žaloba je proto v této části předčasná.
+14. U insolvenčních řízení spadajících do skupiny č. 4 sice byl prokázán nesprávný úřední postup, žaloba je ale potud opět předčasná, neboť dosud nebylo rozhodnuto o odměně insolvenčního správce a není tudíž najisto postavena otázka vzniku škody. Nadto není dána příčinná souvislost mezi nesprávným úředním postupem a (zatím neexistující) škodou, jež by mohla vzniknout pouze prvnímu insolvenčnímu správci přeskočenému podle stanoveného seznamu.
+15. Škoda, jež žalobci vznikla tím, že nebyl ustanoven insolvenčním správcem v pravomocně skončených insolvenčních řízeních, v nichž byl přeskočen jako první v pořadí (skupina č. 1), pak celkem činí 493.772,40 Kč.
+16. K odvolání žalobce (proti zamítavému výroku o věci samé a výroku o nákladech řízení) i žalovaného (proti vyhovujícímu výroku o věci samé a výroku o nákladech řízení) Městský soud v Praze rozsudkem ze dne 21. 5. 2020, č. j. 20 Co 15/2020-515:
+[1] Potvrdil rozsudek obvodního soudu ve vyhovujícím výroku o věci samé a v zamítavém výroku o věci samé ohledně částky 7.098.962,88 Kč s příslušenstvím (první výrok).
+[2] Změnil rozsudek soudu prvního stupně v zamítavém výroku o věci samé (jeho zbývající části) tak, že žalovanému uložil zaplatit žalobci do 15 dnů od právní moci rozhodnutí dalších 170.213,88 Kč s příslušenstvím tvořeným zákonným úrokem z prodlení za dobu od 6. 11. 2017 do zaplacení (druhý výrok).
+[3] Uložil žalobci zaplatit žalovanému do 15 dnů od právní moci rozhodnutí na náhradě nákladů řízení před soudy obou stupňů částku 4.227,90 Kč.
+17. Odvolací soud - vycházeje z ustanovení § 25 odst. 5 insolvenčního zákona, z ustanovení § 13 odst. 1 zákona č. 82/1998 Sb., z vyhlášky č. 313/2007 Sb., o odměně insolvenčního správce, o náhradách jeho hotových výdajů, o odměně členů a náhradníků věřitelského výboru a o náhradách jejich nutných výdajů (dále jen "vyhláška o odměně"), z ustanovení § 2 odst. 1 zákona č. 235/2004 Sb., o dani z přidané hodnoty, a dále ze závěrů nálezu Ústavního soudu sp. zn. IV. ÚS 3141/15 a z R 47/2018 - dospěl po přezkoumání napadeného rozhodnutí k následujícím závěrům:
+18. Zčásti opodstatněným je pouze odvolání žalobce.
+19. Podání žalobce označené jako "aktualizace vyčíslení náhrady škody" vyhodnotil odvolací soud jako změnu žaloby, kterou nepřipustil podle § 95 odst. 2 o. s. ř., ve spojení s § 211 o. s. ř., jelikož výsledky řízení před obvodním soudem nemohou být podkladem pro rozhodnutí o změněném návrhu a podání je neurčité a nepřehledné.
+20. Odvolací soud se v zásadě ztotožnil se závěry obvodního soudu. Opatření, jimiž byl ustanoven (mimo pořadí) jiný insolvenční správce (na úkor žalobce) bez řádného odůvodnění, je nesprávným úředním postupem a ve skončených řízeních, v nichž měl být žalobce ustanoven insolvenčním správcem jako první v pořadí, představuje jeho ušlý zisk odměna, která by mu náležela za výkon funkce podle vyhlášky o odměně. Ušlým ziskem pak není částka odpovídající dani z přidané hodnoty, jelikož náhrada škody dani nepodléhá. Smyslem paušální náhrady výdajů insolvenčního správce je pokrytí nákladů, které v rámci své činnosti vynaložil v insolvenčním řízení. Žalobce takové náklady v uvedených řízeních nevynaložil, takže mu nemůže náležet ani jejich náhrada z titulu ušlého zisku nebo skutečné škody. Proto není opodstatněná ani kvantitativně neurčitá výhrada žalovaného, že by odměna žalobce měla být snížena o náklady, které by na ni musel vynaložit jako ustanovený insolvenční správce.
+21. Odvolací soud neměl za důvodnou ani námitku žalovaného, že by ušlý zisk měl být zkoumán na základě celkových výsledků hospodaření žalobce v rozhodném období. K tomu není žádný důvod, neboť je jisté, že při správném úředním postupu by žalobce v insolvenčních řízeních, v nichž přicházel v úvahu jako první v pořadí, byl ustanoven insolvenčním správcem a vznikl by mu nárok na odměnu vyplacenou fakticky ustanovenému insolvenčnímu správci; potud mu tedy zjevně ušel zisk. Neopodstatněná je i námitka žalovaného ohledně běhu úroku z prodlení, jelikož z žádosti žalobce v rámci předběžného projednání nároku je zřejmá uplatněná výše nároku podle jednotlivých insolvenčních řízení.
+22. Pro insolvenční řízení, v nichž žalobce nebyl přeskočen jako první v pořadí (skupiny č. 2 a č. 4), měl odvolací soud předpoklad ušlého zisku za ryze spekulativní, s tím, že nárok na ustanovení insolvenčním správcem měla především první přeskočená osoba (první insolvenční správce) v pořadí podle § 25 odst. 2 insolvenčního zákona.
+23. Odvolací soud se ztotožnil též s názorem obvodního soudu na předčasnost žaloby ve vztahu k dosud neskončeným insolvenčním řízením (skupiny č. 3 a č. 4) s dosud neznámou konečnou výší odměny insolvenčního správce. Určení ušlého zisku postupem podle § 136 o. s. ř. není na místě, neboť jeho skutečnou výši bude možné přesně zjistit po skončení dotčených řízení. Vědomost o škodě zahrnuje i vědomost o její výši; dokud není výše ušlého zisku zřejmá, nemůže dojít ani k jeho promlčení ve smyslu § 32 odst. 1 zákona č. 82/1998 Sb.
+24. Odvolací soud nesouhlasil s obvodním soudem pouze co do posouzení nároku žalobce na náhradu ušlého zisku z odměny za zpeněžení majetku ve skončených insolvenčních řízeních. Při pravidelném běhu věcí lze v řízeních předpokládat shodný postup insolvenčních správců, a není proto důvod nepřiznat žalobci náhradu škody i v tomto rozsahu; potud proto rozsudek obvodního soudu změnil (částka 170.213,88 Kč je součtem odměn ze zpeněžení v tabulce č. 2).
+II.
+Dovolání a vyjádření k němu
+25. Proti rozsudku odvolacího soudu podali dovolání oba účastníci řízení.
+26. Žalobce směřuje dovolání proti té části prvního výroku, kterou odvolací soud potvrdil rozsudek soudu prvního stupně v zamítavém výroku o věci samé a proti třetímu výroku (o nákladech řízení před soudy obou stupňů). Přípustnost dovolání vymezuje ve smyslu ustanovení § 237 o. s. ř. argumentem, že napadené rozhodnutí závisí na vyřešení právních otázek, které v rozhodování dovolacího soudu dosud nebyly vyřešeny. Konkrétně jde o tyto otázky:
+[1] Náleží insolvenčnímu správci, který v důsledku nezákonného opatření předsedy insolvenčního soudu nebyl ustanoven do funkce v insolvenčním řízení, v němž je úpadek dlužníka řešen oddlužením plněním splátkového kalendáře, jako náhrada ušlého zisku také paušální částka náhrady hotových výdajů?
+[2] Má být poškozenému, který je plátcem daně z přidané hodnoty, poskytnuta náhrada škody včetně částky odpovídající dani z přidané hodnoty?
+[3] Lze zamítnout žalobu na náhradu škody pro neunesení důkazního břemene žalobcem jen proto, že žalovaný vytvořil svým protiprávním chováním natolik nepřehlednou situaci, že žalobce objektivně nemá možnost zjistit rozhodné skutečnosti?
+[4] Kdy vzniká insolvenčnímu správci, který v důsledku nezákonného opatření předsedy insolvenčního soudu nebyl ustanoven do funkce v insolvenčním řízení, právo na náhradu ušlého zisku v podobě ušlé odměny a náhrady hotových výdajů?
+27. Žalobce namítá, že napadené rozhodnutí spočívá na nesprávném právním posouzení věci (dovolací důvod dle § 241a odst. 1 o. s. ř.) a požaduje, aby je Nejvyšší soud v dotčeném rozsahu zrušil a věc vrátil odvolacímu soudu k dalšímu řízení, případně aby je změnil tak, že žalobě vyhoví v plném rozsahu.
+28. K položeným otázkám argumentuje žalobce následovně:
+29. Potud žalobce nesouhlasí se závěrem, že součástí ušlého zisku není paušální náhrada hotových výdajů. Poukazuje na to, že v insolvenčních řízeních, v nichž je úpadek dlužníka (nebo dlužníků - manželů) řešen oddlužením plněním splátkového kalendáře, jde ve smyslu § 7 odst. 4 vyhlášky o odměně o paušální částku nezávislou na skutečných hotových výdajích. Žalobce zdůrazňuje, že mezi složkami "fixního měsíčního příjmu" insolvenčního správce v těchto typech insolvenčních řízení není ekonomicky žádného rozdílu, bez zřetele k tomu, že se formálně člení na odměnu (na straně jedné) a na náhradu hotových výdajů (na straně druhé). Je-li ušlý zisk rozdílem mezi očekávanými (leč nenaplněnými) příjmy a výdaji, pak je nutné zohlednit i paušální náhradu hotových výdajů.
+K otázce č. 2 (částka odpovídající dani z přidané hodnoty jako součást ušlého zisku)
+30. Žalobce nesouhlasí se závěrem, že mu (jako plátci daně z přidané hodnoty) nenáleží částka odpovídající dani z přidané hodnoty, jelikož přiznaná náhrada škody této dani nepodléhá. Míní, že jako plátce daně z přidané hodnoty by získával jakákoliv plnění v daných insolvenčních řízeních "navýšená" o předmětnou daň. Tu by následně přiznal a zaplatil a stejným způsobem zamýšlí postupovat i ohledně přisouzené náhrady škody.
+K otázce č. 1 (paušální částka náhrady hotových výdajů jako ušlý zisk)
+K otázce č. 3 (důkazní břemeno)
+31. Žalobce nemá za správný ani závěr soudu o nedostatku příčinné souvislosti ve vazbě na (jím označená) insolvenční řízení, v nichž byl přeskočen jako další v pořadí, k čemuž v podrobnostech argumentuje takto:
+32. Daný "ilegální" stav (míněn nesprávný úřední postup) vytvořil žalovaný (prostřednictvím předsedkyně insolvenčního soudu), přičemž platí, že nikdo nesmí těžit ze svého nepoctivého nebo protiprávního činu ani z protiprávního stavu, který vyvolal nebo nad kterým má kontrolu [§ 6 odst. 2 zákona č. 89/2012 Sb., občanského zákoníku (dále též jen "o. z.")]. Není možné, aby se žalovaný "vyvlékl" z odpovědnosti za škodu jen proto, že vytvořil natolik nepřehlednou a neprůhlednou situaci, že objektivně není v silách žalobce ani soudu rekonstruovat, v jakých řízeních by žalobce byl ustanoven insolvenčním správcem, kdyby předsedkyně insolvenčního soudu dodržovala zákon.
+33. Žalobce neměl přístup k informacím, z nichž by se dalo zpětně zjistit, jaké případy mu měly být přiděleny (nebýt protiprávních opatření), přičemž žalovaný se v rozporu s povinností tzv. sekundárního břemene tvrzení (srov. v literatuře Lavický, P.: Důkazní břemeno v civilním řízení soudním. Praha, Leges, 2017, str. 86 a násl.) omezil na pouhé popírání žalobcových tvrzení, aniž je jakkoliv doplnil. Žalobce přitom označil 79 konkrétních insolvenčních řízení, v nichž byl opomenut, podle seznamu, který mu poskytla sama předsedkyně insolvenčního soudu. Žalovaného tíží povinnost uvést, v jakých jiných insolvenčních řízeních měl být dovolatel ustanoven do funkce, má-li za to, že v předmětných insolvenčních řízeních (těch, v nichž podle soudů byl žalobce "přeskočen" jako další v pořadí) ustanoven být neměl. To, že žalovaný neunesl sekundární břemeno tvrzení, má za následek, že účinně nepopřel tvrzení žalobce, z nichž soudy musí vyjít, aniž by je učinily předmětem dokazování; srov. též "usnesení" (správně rozsudek) Nejvyššího soudu ze dne 16. 12. 2011, sp. zn. 22 Cdo 883/2010.
+34. Pro případ, že by žalovaný založil svou obranu na tom, že ani on není schopen rekonstruovat řádný průběh přidělování věcí insolvenčním správcům, žalobce připomíná závěry literatury na téma zmaření důkazního břemene protistranou, s tím, že ty dopadají i na situace, kdy některá ze stran má zvláštní nebo dokonce právní povinnost zachytit skutkový stav; potud odkazuje na díla Macur, J.: Dělení důkazního břemene v civilním soudním sporu, Brno, Masarykova univerzita, 1996, str. 79-84, a Svoboda, K.: Dokazování. Praha, Wolters Kluwer ČR, a. s., 2009, str. 31.
+35. Žalobce rovněž namítá, že obvodní soud zamítl jeho návrh na provedení důkazu znaleckým posudkem za účelem zjištění, v jakých insolvenčních řízeních by byl jmenován insolvenčním správcem, kdyby nedošlo k nesprávnému úřednímu postupu, ač žalobce neměl objektivně možnost zjistit, v jakých insolvenčních řízeních měl být ustanoven insolvenčním správcem.
+36. I v insolvenčních řízeních, v nichž byl přeskočen jako nikoliv první v pořadí, byl zařazen na konec seznamu (stejně jako fakticky každý další insolvenční správce). Proto se "jeví spravedlivým" přiznat náhradu škody v podobě ušlého zisku všem přeskočeným insolvenčním správcům, případně ji mezi ně poměrně rozdělit.
+K otázce č. 4 (vznik nároku na náhradu škody)
+37. Nesprávný je podle žalobce rovněž závěr, že ohledně insolvenčních řízení, jež dosud neskončila, je žaloba předčasná, jelikož škoda dosud nevznikla a postup podle § 136 o. s. ř. není namístě, neboť výši škody (ušlý zisk) bude možné přesně zjistit po jejich skončení. Žalobce polemizuje s názorem, že není-li výše škody dosud zřejmá, nemůže dojít k promlčení nároku. Míní, že je-li poškozenému v důsledku protiprávního jednání znemožněno vykonávat výdělečnou činnost, není podmínkou vzniku nároku na náhradu škody to, že onu činnost provede a dokončí někdo jiný a dostane za ni zaplaceno. Z hlediska vzniku práva na náhradu škody v podobě ušlého zisku je rozhodné pouze to, že poškozený by dosáhl zisku, nikoli to, že výdělečnou činnost uskuteční a dokončí (místo poškozeného) někdo jiný. Předmětná insolvenční řízení navíc již "běží", insolvenčnímu správci v nich vzniká nárok na odměnu nebo na náhradu paušálních výdajů a soudy tak mohly přiznat žalobci náhradu škody vyčíslenou ke dni vyhlášení rozsudku. V této souvislosti žalobce vytýká odvolacímu soudu i to, že nepřipustil změnu žaloby dle § 95 odst. 2 a § 211 o. s. ř., ač šlo o pouhou změnu výše uplatněného nároku.
+38. S odkazem na závěry obsažené v rozsudku Nejvyššího soudu ze dne 20. 3. 2012, sp. zn. 32 Cdo 4762/2010, a v nálezu Ústavního soudu ze dne 24. 7. 2014, sp. zn. II. ÚS 1430/13, uveřejněném pod číslem 143/2014 Sbírky nálezů a usnesení Ústavního soudu, pak dovolatel usuzuje, že i kdyby měla zůstat spornou konkrétní výše ušlého zisku, zůstává povinností soudu určit ji postupem podle § 136 o. s. ř. Vzhledem k tomu, že činnost (a odměňování) insolvenčního správce je podrobně regulována zákonem a podléhá kontrole insolvenčního soudu a věřitelských orgánů, bylo možné ušlý zisk určit s ohledem na již přiznané částky insolvenčním správcům v předmětných řízeních, nebo ji určit ve výši, kterou lze - podle právní úpravy - spolehlivě očekávat.
+39. Žalovaný má ve vyjádření dovolání žalobce za neopodstatněné a navrhuje je zamítnout. K otázce č. 1 poukazuje na to, že paušální částka náhrady hotových výdajů má krýt hotové výdaje vynaložené insolvenčním správcem a nemůže být ušlým ziskem. K otázce č. 2 žalovaný uvádí, že povinnost odvést daň z přidané hodnoty nastává ve spojení s poskytnutím služby; tu žalobce neposkytl a předmětná daň není ziskem. U otázky č. 3 má žalovaný úvahy o přenesení důkazního břemene za spekulativní a neopodstatněné, s tím, že zákon jej nezavazuje vést přehled o tom, v jakých insolvenčních řízeních měl být žalobce ustanoven insolvenčním správcem. Výklad o sekundárním břemenu tvrzení má za extenzivní. U otázky č. 4 má žalovaný za správné závěry soudů o předčasnosti žaloby.
+40. Žalovaný směřuje dovolání proti té části prvního výroku napadeného rozhodnutí, kterou odvolací soud potvrdil rozsudek soudu prvního stupně ve vyhovujícím výroku o věci samé a proti druhému výroku (jímž mu odvolací soud uložil zaplatit žalobci dalších 170.213,88 Kč s příslušenstvím). Přípustnost dovolání vymezuje ve smyslu ustanovení § 237 o. s. ř. argumentem, že napadené rozhodnutí závisí na vyřešení právních otázek, které v rozhodování dovolacího soudu dosud nebyly vyřešeny. Konkrétně má jít o tyto otázky:
+[1] Lze zrušit "skončené, nevratné" jednání, tj. úřední postup, jehož účinky již nastaly?
+[2] Vzniká nárok na náhradu škody podle zákona č. 82/1998 Sb. v příčinné souvislosti s opatřením předsedy insolvenčního soudu o určení insolvenčního správce, vydaným v rozporu se zákonem?
+[3] Je odměna za zpeněžení majetku přiznaná insolvenčnímu správci ustanovenému v insolvenčním řízení, v němž měl být ustanoven insolvenčním správcem žalobce, ve stejné výši ušlým ziskem žalobce, respektive splňuje výše této odměny "definici" ušlého zisku ve smyslu konstantní judikatury dovolacího soudu?
+[4] Je odměna, kterou insolvenční správce nezískal v souvislosti s porušením jeho práva na spravedlivý proces ve smyslu článku 36 Listiny základních práv a svobod spočívajícího v jeho přeskočení při ustanovení insolvenčního správce do příslušného insolvenčního řízení, ušlým ziskem v celé výši, tedy bez odečtení poměrné části fixních nákladů vynakládaných insolvenčním správcem na jeho činnost?
+41. Žalovaný namítá, že napadené rozhodnutí spočívá na nesprávném právním posouzení věci (dovolací důvod dle § 241a odst. 1 o. s. ř.) a požaduje, aby je Nejvyšší soud v dotčeném rozsahu zrušil a věc vrátil odvolacímu soudu k dalšímu řízení.
+42. K položeným otázkám argumentuje žalovaný následovně:
+K otázce č. 1 ("zrušení" nesprávného úředního postupu) a k otázce č. 2 (k povaze nároku podle zákona č. 82/1998 Sb.)
+43. Žalovaný nesouhlasí se závěrem, podle kterého je opatření předsedy insolvenčního soudu o ustanovení insolvenčního správce nesprávným úředním postupem, namítaje, že to, že Ústavní soud (v důvodech nálezu sp. zn. IV. ÚS 3141/15) konstatoval, že (nezákonně vydané) opatření není rozhodnutím, samo o sobě nekvalifikuje opatření jako nesprávný úřední postup. Dovozuje, že úřední postup je procesem spočívajícím v činnosti nebo nečinnosti, jenž proto nelze nijak zrušit; lze pouze konstatovat jeho nezákonnost, případně zakázat jeho další pokračování. Jestliže Ústavní soud opatření zrušil, pak je nemohl kvalifikovat jako úřední postup. Jelikož nejde ani o rozhodnutí, jde o "jiný akt" vykazující znaky rozhodnutí. Povahu nesprávného úředního postupu opatření pak nelze dovozovat ani z R 47/2018, když v jeho důvodech sice Nejvyšší soud uvedl, že opatření je nesprávným úředním postupem, učinil tak ale pouze formou obiter dicta; předmětná otázka tak nebyla dovolacím soudem dosud vyřešena.
+K otázce č. 3 (k určení ušlého zisku u odměny insolvenčního správce ze zpeněžení majetku)
+44. U této otázky se žalovaný ztotožňuje s názorem insolvenčního soudu, že postup insolvenčního správce se může v každém insolvenčním řízení lišit (např. insolvenční správci mohou přistoupit ke zpeněžení majetku různou formou nebo není jisté, že by do majetkové podstaty zahrnuli totožný majetek). Vzhledem k tomu, že výše škody (ušlého zisku) musí být postavena najisto, nelze mít za to, že je totožná s odměnou za zpeněžení majetku přiznanou insolvenčnímu správci ustanovenému namísto žalobce.
+K otázce č. 4 (k určení ušlého zisku u odměny insolvenčního správce)
+45. Potud žalovaný namítá, že odměna insolvenčního správce nemůže být ušlým ziskem v celé výši. Ve smyslu konstantní judikatury se ušlým ziskem rozumí újma spočívající v tom, že u poškozeného nedojde v důsledku škodné události k rozmnožení majetkových hodnot, ač se to dalo očekávat s ohledem na pravidelný běh věcí. K tomu, aby insolvenčnímu správci vznikl nárok na odměnu, je třeba vedle hotových výdajů zapotřebí vynaložit řadu dalších nákladů, jako jsou mzdy zaměstnancům, nájemné a náklady spojené s údržbou prostor, v nichž vykonává svou činnost, platby za energie, telefon či internet. Tyto (fixní) náklady hradí insolvenční správce bez ohledu na to, zda byl v insolvenčním řízení ustanoven. Prostředky na ně získává z odměny; odměnu (ušlý zisk) je proto třeba snížit právě o náklady za činnost vykonanou na její dosažení.
+III.
+Přípustnost dovolání
+46. S přihlédnutím k době vydání napadeného rozhodnutí je pro dovolací řízení rozhodný občanský soudní řád v aktuálním znění (srov. bod 2., článek II, část první zákona č. 296/2017 Sb., kterým se mění zákon č. 99/1963 Sb., občanský soudní řád, ve znění pozdějších předpisů, zákon č. 292/2013 Sb., o zvláštních řízeních soudních, ve znění pozdějších předpisů, a některé další zákony).
+47. Nejvyšší soud se nejprve zabýval přípustností podaných dovolání.
+48. Dovolání nesměřují proti žádnému z usnesení vypočtených v § 238a o. s. ř., takže zbývá určit, zda jsou přípustná podle § 237 o. s. ř.
+49. Žalobce výslovně podal dovolání i proti třetímu výroku napadeného rozhodnutí (o nákladech řízení před soudy obou stupňů). V tomto rozsahu však přípustnost dovolání vylučuje ustanovení § 238 odst. 1 písm. h/ o. s. ř. Nejvyšší soud proto potud odmítl dovolání bez dalšího podle § 243c odst. 1 o. s. ř. jako objektivně nepřípustné.
+50. Ve zbývajícím rozsahu (v němž pro daný případ neplatí žádné z omezení přípustnosti dovolání podle § 237 o. s. ř., vypočtených v § 238 o. s. ř.) shledává Nejvyšší soud žalobcovo dovolání přípustným podle § 237 o. s. ř., když v posouzení žalobcem předestřených právních otázek jde o věc dovolacím soudem neřešenou.
+51. U dovolání žalovaného nemá Nejvyšší soud důvod připustit dovolání pro zodpovězení otázek č. 1 a 2 (týkajících se povahy opatření). Na tyto otázky totiž Nejvyšší soud již odpověděl (po vydání napadeného rozhodnutí) v rozsudku ze dne 31. 5. 2021, sp. zn. 29 Cdo 141/2021. V něm Nejvyšší soud uzavřel, že nemá žádných pochyb o tom, že opatření, kterým předseda insolvenčního soudu určuje osobu insolvenčního správce v rozporu s § 25 odst. 2 až 5 insolvenčního zákona, je podle § 5 písm. b/ zákona č. 82/1998 Sb. nesprávným úředním postupem, za nějž může (v případě splnění dalších podmínek) odpovídat stát. Tamtéž dodal, že způsob ustanovování insolvenčních správců podle insolvenčního zákona se zpravidla (s výjimkou uvedenou v § 25 odst. 1 insolvenčního zákona) děje dvoufázově, kdy předseda soudu určí opatřením osobu ze seznamu insolvenčních správců postupem podle § 25 odst. 2 až 4 insolvenčního zákona (či v zákonem stanovených případech postupem podle § 25 odst. 5 insolvenčního zákona) a insolvenční soud následně dle tohoto opatření ustanoví osobu insolvenčního správce usnesením. Ustanovení § 25 odst. 2 až 5 insolvenčního zákona upravuje pravidla pro počínání předsedy insolvenčního soudu, tedy postup, kterým má předseda soudu jako představitel státní správy soudu vykonat podpůrnou činnost ve vztahu k jednotlivým insolvenčním řízením. Taková opatření nejsou rozhodnutím (viz i § 4 odst. 3 vyhlášky) a zásadně představují pouze administrativní úkon předsedy insolvenčního soudu, jenž ze seznamu insolvenčních správců určí dalšího v pořadí zapsaného insolvenčního správce. Na uvedeném nic nemění ani (v zákonem stanovených případech) ojediněle přijímané opatření podle § 25 odst. 5 insolvenčního zákona, jež je výjimkou z obecného postupu určování insolvenčních správců; takové opatření též není rozhodnutím.
+52. Ve zbývajícím rozsahu (tedy pro účely zodpovězení otázek č. 3 a 4) shledává Nejvyšší soud dovolání žalovaného rovněž přípustným, když potud jde o otázky dovolacím soudem neřešené.
+IV.
+Důvodnost dovolání
+53. Nejvyšší soud se - v hranicích právních otázek vymezených dovoláními - zabýval tím, zda je dán dovolací důvod uplatněný dovolateli, tedy správností právního posouzení věci odvolacím soudem.
+54. Právní posouzení věci je obecně nesprávné, jestliže odvolací soud posoudil věc podle právní normy, jež na zjištěný skutkový stav nedopadá, nebo právní normu, sice správně určenou, nesprávně vyložil, případně ji na daný skutkový stav nesprávně aplikoval.
+55. Skutkový stav věci, jak byl zjištěn soudy nižších stupňů, dovoláním nebyl (ani nemohl být) zpochybněn a Nejvyšší soud z něj při dalších úvahách vychází.
+56. Pro další úvahy Nejvyššího soudu jsou rozhodná následující ustanovení zákona č. 82/1998 Sb., zákona č. 89/2012 Sb., občanského zákoníku, zákona o dani z přidané hodnoty, insolvenčního zákona, vyhlášky o odměně a občanského soudního řádu:
+§ 2 (zákona č. 82/1998 Sb.)
+Odpovědnosti za škodu podle tohoto zákona se nelze zprostit.
+§ 13 (zákona č. 82/1998 Sb.)
+(1) Stát odpovídá za škodu způsobenou nesprávným úředním postupem. Nesprávným úředním postupem je také porušení povinnosti učinit úkon nebo vydat rozhodnutí v zákonem stanovené lhůtě. Nestanoví-li zákon pro provedení úkonu nebo vydání rozhodnutí žádnou lhůtu, považuje se za nesprávný úřední postup rovněž porušení povinnosti učinit úkon nebo vydat rozhodnutí v přiměřené lhůtě.
+(2) Právo na náhradu škody má ten, jemuž byla nesprávným úředním postupem způsobena škoda.
+§ 2952 (o. z.)
+Hradí se skutečná škoda a to, co poškozenému ušlo (ušlý zisk). Záleží-li skutečná škoda ve vzniku dluhu, má poškozený právo, aby ho škůdce dluhu zprostil nebo mu poskytl náhradu.
+§ 2 (zákona o dani z přidané hodnoty)
+Předmět daně
+(1) Předmětem daně je
+a/ dodání zboží za úplatu osobou povinnou k dani, která jedná jako taková, s místem plnění v tuzemsku,
+b/ poskytnutí služby za úplatu osobou povinnou k dani, která jedná jako taková, s místem plnění v tuzemsku,
+c/ pořízení
+1. zboží z jiného členského státu za úplatu s místem plnění v tuzemsku osobou povinnou k dani, která jedná jako taková, nebo právnickou osobou nepovinnou k dani,
+2. nového dopravního prostředku z jiného členského státu za úplatu osobou nepovinnou k dani,
+d/ dovoz zboží s místem plnění v tuzemsku.
+(2) Zdanitelné plnění je plnění, které
+a/ je předmětem daně a
+b/ není osvobozené od daně.
+§ 25 (insolvenčního zákona)
+(...)
+(5) Nelze-li ustanovit osobu insolvenčního správce postupem podle odstavce 2 nebo je-li to nezbytné se zřetelem k dosavadnímu stavu insolvenčního řízení, k osobě dlužníka a k jeho majetkovým poměrům, jakož i k odborné způsobilosti insolvenčního správce, jeho dosavadní činnosti a k jeho zatížení, může předseda insolvenčního soudu určit insolvenčního správce mimo stanovené pořadí; takový postup vždy odůvodní.
+(...)
+§ 38 (insolvenčního zákona)
+(1) Insolvenční správce má právo na odměnu a náhradu hotových výdajů. V případě konkursu se výše odměny určí z počtu přezkoumaných přihlášek pohledávek a z výtěžku zpeněžení určeného k rozdělení mezi věřitele. V případě oddlužení činí výše odměny z počtu přezkoumaných přihlášek pohledávek 25 % výše stanovené prováděcím právním předpisem pro odměnu z počtu přezkoumaných přihlášených pohledávek v konkursu. Je-li insolvenční správce plátcem daně z přidané hodnoty, náleží mu k odměně a k náhradě hotových výdajů částka odpovídající této dani, kterou je insolvenční správce povinen z odměny a z náhrady hotových výdajů odvést podle zvláštního právního předpisu.
+(2) Odměna a náhrada hotových výdajů insolvenčního správce se uspokojují z majetkové podstaty, a pokud k tomu nestačí, ze zálohy na náklady insolvenčního řízení; není-li jejich uspokojení z těchto zdrojů možné, hradí je stát, nejvýše však 50.000 Kč na odměně insolvenčního správce a 50.000 Kč na náhradě hotových výdajů insolvenčního správce.
+(3) Vyúčtování odměny a hotových výdajů provede insolvenční správce v konečné zprávě, a není-li jí, ve zprávě o své činnosti. Insolvenční soud může podle okolností případu po projednání s věřitelským výborem odměnu insolvenčního správce přiměřeně zvýšit nebo snížit. Důvodem ke snížení odměny je zejména skutečnost, že insolvenční správce porušil některou ze svých povinností nebo že nenavrhl provedení částečného rozvrhu, ačkoliv to stav zpeněžení majetkové podstaty umožňoval.
+(4) Insolvenční soud může v průběhu insolvenčního řízení rozhodnout o vyplacení zálohy odměny a hotových výdajů insolvenčnímu správci, a to i opětovně.
+(...)
+(6) Je-li způsobem řešení úpadku oddlužení plněním splátkového kalendáře, insolvenční správce uloží z měsíčních splátek částku odpovídající jeho odměně a náhradě hotových výdajů za dobu 6 měsíců jako zálohu na úhradu své odměny a náhrady hotových výdajů na zvláštní účet u banky nebo spořitelního a úvěrního družstva zřízený za účelem ukládání těchto záloh.
+(7) Způsob určení odměny, některých hotových výdajů insolvenčního správce a způsob jejich úhrady státem stanoví prováděcí právní předpis.
+§ 136 (insolvenčního zákona)
+(...)
+(4) V rozhodnutí o úpadku rozhodne insolvenční soud také o žádosti dlužníka o prodloužení lhůty k předložení reorganizačního plánu (§ 316 odst. 5 a 6). V rozhodnutí o úpadku, s nímž je spojeno rozhodnutí o povolení oddlužení, uloží insolvenční soud dále dlužníku, aby platil zálohy na odměnu a hotové výdaje insolvenčního správce.
+(...)
+§ 309 (insolvenčního zákona)
+(...)
+(4) Právní mocí rozhodnutí, kterým se konkurs ruší, insolvenční řízení končí.
+§ 413 (insolvenčního zákona)
+Splnění oddlužení vezme insolvenční soud na vědomí rozhodnutím, proti němuž není odvolání přípustné; právní mocí tohoto rozhodnutí insolvenční řízení končí. Současně insolvenční soud rozhodne o odměně insolvenčního správce a jeho nákladech a zprostí insolvenčního správce jeho funkce.
+§ 7 (vyhlášky o odměně)
+Výše náhrady hotových výdajů insolvenčního správce
+(...)
+(4) Insolvenčnímu správci náleží v souvislosti s výkonem jeho činnosti při oddlužení plněním splátkového kalendáře náhrada hotových výdajů ve výši 150 Kč a v případě oddlužení povoleného na základě společného návrhu manželů 225 Kč za každý započatý kalendářní měsíc od rozhodnutí o povolení oddlužení do skončení plnění splátkového kalendáře.
+(...)
+§ 95 (o. s. ř.)
+(1) Žalobce (navrhovatel) může za řízení se souhlasem soudu měnit návrh na zahájení řízení. Změněný návrh je třeba ostatním účastníkům doručit do vlastních rukou, pokud nebyli přítomni jednání, při němž ke změně došlo.
+(2) Soud nepřipustí změnu návrhu, jestliže by výsledky dosavadního řízení nemohly být podkladem pro řízení o změněném návrhu. V takovém případě pokračuje soud v řízení o původním návrhu po právní moci usnesení.
+§ 101 (o. s. ř.)
+(1) K tomu, aby bylo dosaženo účelu řízení, jsou účastníci povinni zejména
+a/ tvrdit všechny pro rozhodnutí věci významné skutečnosti; neobsahuje-li všechna potřebná tvrzení žaloba (návrh na zahájení řízení) nebo písemné vyjádření k ní, uvedou je v průběhu řízení,
+(...)
+§ 154 (o. s. ř.)
+(1) Pro rozsudek je rozhodující stav v době jeho vyhlášení.
+(...)
+§ 205a (o. s. ř.)
+Skutečnosti nebo důkazy, které nebyly uplatněny před soudem prvního stupně, jsou u odvolání proti rozsudku nebo usnesení ve věci samé odvolacím důvodem jen tehdy, jestliže
+(...)
+f/ nastaly (vznikly) po vyhlášení (vydání) rozhodnutí soudu prvního stupně.
+§ 211 (o. s. ř.)
+Pro řízení u odvolacího soudu platí přiměřeně ustanovení o řízení před soudem prvního stupně, pokud není stanoveno něco jiného.
+§ 213 (o. s. ř.)
+(1) Odvolací soud není vázán skutkovým stavem, jak jej zjistil soud prvního stupně.
+(...)
+(4) Odvolací soud doplní dokazování o účastníky navržené důkazy, které dosud nebyly provedeny, ukazuje-li se to potřebné ke zjištění skutkového stavu věci; to neplatí jen tehdy, má-li být provedeno rozsáhlé doplnění dokazování, a jestliže ke skutečnosti, jež jimi má být prokázána, dosud nebylo provedeno žádné nebo zcela nedostatečné dokazování.
+(5) Při zjišťování skutkového stavu odvolací soud nepřihlíží ke skutečnostem nebo důkazům, které byly účastníky řízení uplatněny v rozporu s § 205a nebo § 211a.
+§ 216 (o. s. ř.)
+(...)
+(2) V odvolacím řízení nelze uplatnit nový nárok.
+(...)
+§ 219a (o. s. ř.)
+(...)
+(2) Odvolací soud rozsudek nebo usnesení, jímž bylo rozhodnuto ve věci samé, zruší také tehdy, jestliže ke zjištění skutkového stavu věci je třeba provést další účastníky navržené důkazy, které nemohou být provedeny v odvolacím řízení (§ 213 odst. 3 a 4); ustanovení § 213 odst. 5 tím nesmí být dotčeno.
+57. Ve výše citované podobě, pro věc rozhodné, platí ustanovení zákona č. 82/1998 Sb. a zákona č. 89/2012 Sb., občanského zákoníku, beze změn od 5. 5. 2014 (počátek období vymezeného žalobou). Ustanovení § 2 zákona o dani z přidané hodnoty v citované podobě (pro věc opět rozhodné) platilo v době vydání napadeného rozhodnutí a později nedoznalo změn. Citovaná ustanovení občanského soudního řádu platí v uvedené podobě beze změny od zahájení sporu.
+58. S přihlédnutím k článku II (Přechodné ustanovení) části první zákona č. 31/2019 Sb., kterým se mění zákon č. 182/2006 Sb., o úpadku a způsobech jeho řešení (insolvenční zákon), ve znění pozdějších předpisů, zákon č. 120/2001 Sb., o soudních exekutorech a exekuční činnosti (exekuční řád) a o změně dalších zákonů, ve znění pozdějších předpisů, zákon č. 6/2002 Sb., o soudech, soudcích, přísedících a státní správě soudů a o změně některých dalších zákonů (zákon o soudech a soudcích), ve znění pozdějších předpisů, zákon č. 312/2006 Sb., o insolvenčních správcích, ve znění pozdějších předpisů, a zákon č. 296/2017 Sb., kterým se mění zákon č. 99/1963 Sb., občanský soudní řád, ve znění pozdějších předpisů, zákon č. 292/2013 Sb., o zvláštních řízeních soudních, ve znění pozdějších předpisů, a některé další zákony, a k tomu, že v předmětných insolvenčních řízeních vydal insolvenční soud rozhodnutí o úpadku před 1. 6. 2019, se v nich postupuje podle insolvenčního zákona ve znění účinném do 31. 5. 2019. Ustanovení insolvenčního zákona a vyhlášky o odměně jsou proto citována právě ve znění účinném do 31. 5. 2019 (pro věc rozhodném).
+59. Lze doplnit, že s přihlédnutím k článku II vyhlášky č. 133/2019 Sb., kterou se (s účinností od 1. 6. 2019) mění vyhláška č. 313/2007 Sb., o odměně insolvenčního správce, o náhradách jeho hotových výdajů, o odměně členů a náhradníků věřitelského výboru a o náhradách jejich nutných výdajů, ve znění pozdějších předpisů, není pro insolvenční řízení projednávaná podle insolvenčního zákona ve znění účinném do 31. 5. 2019 beze zbytku vyloučena ani aplikace vyhlášky o odměně ve znění účinném od 1. 6. 2019. Ustanovení § 7 odst. 4 vyhlášky o odměně však bylo s účinností od uvedeného data doplněno jen tak, že za slova "plněním splátkového kalendáře" byla vložena slova "se zpeněžením majetkové podstaty"; toto doplnění pro další úvahy Nejvyššího soudu význam nemá.
+60. Nejvyšší soud k problematice otevřené dovoláními úvodem podotýká (shrnuje), že:
+61. Odpovědnost státu za škodu způsobenou nesprávným úředním postupem je objektivní odpovědností, které se stát nemůže zprostit (§ 2 zákona č. 82/1998 Sb.), jestliže jsou kumulativně splněny tři předpoklady: 1/ nesprávný úřední postup, 2/ vznik škody a 3/ příčinná souvislost mezi vznikem škody a porušením zákonné povinnosti [srov. shodně např. důvody rozsudku velkého senátu občanskoprávního a obchodního kolegia Nejvyššího soudu ze dne 12. 9. 2012, sp. zn. 31 Cdo 1791/2011, uveřejněného pod číslem 7/2013 Sb. rozh. obč. (dále jen "R 7/2013")].
+62. Nesprávným úředním postupem se rozumí porušení pravidel pro počínání státního orgánu při jeho činnosti a zpravidla jde o postup, který s rozhodovací činností nesouvisí. Podle konkrétních okolností může jít o jakoukoliv činnost spojenou s výkonem pravomocí státního orgánu, dojde-li při ní nebo v jejím důsledku k porušení pravidel předepsaných právními normami pro počínání státního orgánu nebo k porušení pořádku určeného povahou a funkcí postupu. O "úřední" postup jde tehdy, jestliže tak postupují osoby, které plní úkoly státního orgánu, a pokud tento postup slouží výkonu státní moci (srov. např. rozsudek Nejvyššího soudu ze dne 27. 2. 2019, sp. zn. 30 Cdo 5134/2017, uveřejněný pod číslem 10/2020 Sb. rozh. obč.).
+63. Vzhledem k tomu, že zákon č. 82/1998 Sb. blíže nedefinuje pojem škody ani neupravuje rozsah její náhrady, vychází se pro účely jejího určení ve smyslu ustanovení § 26 zákona č. 82/1998 Sb. z ustanovení § 2952 o. z., podle nějž se hradí skutečná škoda a to, co poškozenému ušlo (ušlý zisk). Srov. obdobně, pro poměry úpravy obsažené v § 442 odst. 1 obč. zák., např. rozsudek Nejvyššího soudu ze dne 19. 10. 2010, sp. zn. 25 Cdo 2008/2008, uveřejněný pod číslem 49/2011 Sb. rozh. obč. (dále jen "R 49/2011"), a ve vazbě na ustanovení § 2952 o. z. pak též důvody rozsudku Nejvyššího soudu ze dne 29. 9. 2021, sp. zn. 30 Cdo 2678/2020, který byl na jednání občanskoprávního a obchodního kolegia Nejvyššího soudu, jež se konalo 14. 9. 2022, schválen k uveřejnění ve Sbírce soudních rozhodnutí a stanovisek.
+64. Škodou se rozumí újma, která nastala (projevuje se) v majetkové sféře poškozeného (spočívá ve zmenšení jeho majetkového stavu) a je objektivně vyjádřitelná všeobecným ekvivalentem, tj. penězi, takže je napravitelná poskytnutím majetkového plnění, především penězi. Ušlý zisk je pak v podstatě ušlým majetkovým prospěchem a spočívá v nenastalém zvětšení (rozmnožení) majetku poškozeného, které bylo možno (kdyby nebylo škodné události) důvodně očekávat s ohledem na pravidelný běh věcí (srov. např. již stanovisko občanskoprávního kolegia bývalého Nejvyššího soudu ČSSR ze dne 18. 11. 1970, sp. zn. Cpj 87/70, uveřejněné pod číslem 55/1971 Sb. rozh. obč., nebo důvody rozsudku Nejvyššího soudu ze dne 27. 3. 2018, sen. zn. 29 ICdo 17/2016, uveřejněného pod číslem 56/2019 Sb. rozh. obč.). Charakter ušlého zisku má i majetková újma představovaná ztrátou majetkového přínosu, který poškozený mohl očekávat při obvyklém sledu událostí, nebýt nesprávného úředního postupu (srov. rozsudek Nejvyššího soudu ze dne 25. 8. 2010, sp. zn. 25 Cdo 2601/2010, uveřejněný pod číslem 48/2011 Sb. rozh. obč.).
+65. Náhrada (ušlého zisku) se určuje jako rozdíl mezi předpokládaným příjmem (jenž by poškozený získal, nebýt nesprávného úředního postupu) a náklady, které bylo třeba na jeho dosažení vynaložit; srov. obdobně např. již rozsudek Nejvyššího soudu ze dne 29. 4. 2004, sp. zn. 25 Cdo 540/2003, uveřejněný pod číslem 6/2006 Sb. rozh. obč., rozsudek Nejvyššího soudu ze dne 28. 8. 2008, sp. zn. 25 Cdo 1233/2006, uveřejněný v časopise Soudní judikatura, číslo 1, ročníku 2009, pod číslem 4, nebo rozsudek Nejvyššího soudu ze dne 8. 3. 2022, sp. zn. 30 Cdo 2358/2021. Poškozený je povinen vznik škody na své straně prokázat a v řízení o nároku na náhradu škody tak na žalobci leží důkazní břemeno o tom, že škoda vznikla. Aby byl splněn tento zákonný předpoklad, musí škoda existovat nejpozději v době, kdy soud o uplatněném nároku rozhoduje.
+66. Otázka existence příčinné souvislosti je pak otázkou skutkovou, neboť v řízení se zjišťuje, zda škodná událost (zde nesprávný úřední postup) a vzniklá škoda na straně poškozeného jsou ve vzájemném poměru příčiny a následku. Příčinná souvislost se nepředpokládá, nýbrž musí být (rovněž) prokázána; právní posouzení příčinné souvislosti spočívá v určení, mezi jakými skutkovými okolnostmi má být její existence zjišťována (srov. shodně např. opět R 49/2011). Pro posouzení, zda stát odpovídá za tvrzenou škodu, je podstatné, zda škoda vznikla v příčinné souvislosti s nesprávným úředním postupem. O vztah příčinné souvislosti (tzv. kauzální nexus) by šlo, jen kdyby tvrzená škoda vznikla následkem onoho nesprávného úředního postupu (teorie tzv. adekvátní příčinné souvislosti). Srov. dále např. též nález Ústavního soudu ze dne 1. 11. 2007, sp. zn. I. ÚS 312/05, uveřejněný pod číslem 177/2007 Sbírky nálezů a usnesení Ústavního soudu, a v něm označené odkazy na literaturu k teorii adekvátní příčinné souvislosti, jakož i R 7/2013, nebo rozsudek velkého senátu občanskoprávního a obchodního kolegia Nejvyššího soudu ze dne 9. 2. 2022, sp. zn. 31 Cdo 2376/2021. Jestliže škoda nevznikla coby následek nesprávného úředního postupu (byla-li rozhodující příčinou vzniku škody jiná skutečnost), odpovědnost za škodu nenastává; příčinou vzniku škody může být jen ta okolnost, která škodu způsobila a bez níž by škodlivý následek nenastal (srov. např. rozsudek Nejvyššího soudu ze dne 23. 7. 2015, sp. zn. 29 Cdo 1482/2013, uveřejněný pod číslem 45/2016 Sb. rozh. obč.).
+67. Splnění těchto předpokladů musí být v soudním řízení bezpečně prokázáno a nepostačuje pouhý pravděpodobnostní závěr o splnění některého z nich. Důkazní břemeno v tomto směru leží na poškozeném (srov. např. rozsudek Nejvyššího soudu ze dne 31. 8. 2011, sp. zn. 29 Cdo 3213/2009, uveřejněný pod číslem 26/2012 Sb. rozh. obč.).
+68. Ve výše ustaveném právním a judikatorním rámci činí Nejvyšší soud k dovoláním otevřeným právním otázkám následující závěry:
+K otázce č. 1 žalobcova dovolání (paušální částka náhrady hotových výdajů jako ušlý zisk)
+69. Tato otázka se pojí s určováním výše škody (ušlého zisku) a váže se především k té části předmětu sporu, ve které žalobce uspěl (skupina č. 1), leč soudy mu nepřiznaly (u 8 insolvenčních řízení uvedených v tabulce č. 2) paušální hotové výdaje požadované s odkazem na § 7 odst. 4 vyhlášky o odměně (dle tabulky č. 2 v celkové výši 50.925 Kč, snížené o "potenciální náklady" ve výši 12.000 Kč, celkem tedy 38.925 Kč). Žalobce zdůrazňuje, že potud jde o paušální částku nezávislou na skutečných hotových výdajích. Tím se ovšem nemění povaha tohoto nároku, jenž má sloužit (jak patrno z dikce uvedeného ustanovení) jen ke krytí "hotových výdajů" insolvenčního správce (je paušální náhradou za ně). Jde-li o částku, jež má pokrýt (bez ohledu na skutečné hotové výdaje insolvenčního správce) "hotové výdaje" insolvenčního správce, pak nejde o položku, jejímž prostřednictvím by měl být generován "zisk", bez zřetele k tomu, zda skutečné měsíční hotové výdaje insolvenčního správce jsou (nebo by mohly být) v daném insolvenčním řízení nižší (než paušál). Zákon nepředpokládá, že by při stanoveném paušálu (příjmu určenému k úhradě hotových výdajů) měl být prokazován (určován) jinou výší stanovený výdaj (skutečná částka vynaložená insolvenčním správcem na jeho hotových výdajích). I kdyby soud pro účely výpočtu ušlého zisku zahrnul paušální částku uvedenou v § 7 odst. 4 vyhlášky o odměně do celkového ušlého příjmu poškozeného (srov. odstavec 65. shora), odpočet očekávaných hotových výdajů insolvenčního správce by musel být stejný (nikoli nižší, jak prosazuje žalobce). Soudy proto nepochybily, jestliže žalobu v dotčeném rozsahu zamítly (dovolání žalobce potud není důvodné).
+70. Z týchž příčin nemůže obstát požadavek na úhradu částky odpovídající paušálním hotovým výdajům u insolvenčních řízení uvedených ve skupině č. 2 (tabulka č. 4, částka 35.550 Kč, snížená o "potenciální náklady" ve výši 9.000 Kč, celkem tedy 26.550 Kč).
+K otázce č. 2 žalobcova dovolání (částka odpovídající dani z přidané hodnoty jako součást ušlého zisku)
+71. Také tato otázka se pojí s určováním výše škody (ušlého zisku) a váže se (opět) především k té části předmětu sporu, ve které žalobce uspěl (skupina č. 1), leč soudy mu nepřiznaly (jako plátci daně z přidané hodnoty) částku odpovídající 21% dani z přidané hodnoty (podle tabulky č. 1 šlo o částku 50.210,45 Kč a podle tabulky č. 2 o částku 99.910,41 Kč, celkem tedy o částku 150.120,86 Kč).
+72. S žalobcem lze souhlasit jen v tom, že kdyby byl v předmětných insolvenčních řízeních ustanoven insolvenčním správcem (nebýt nesprávného úředního postupu), náležela by mu (jako plátci daně z přidané hodnoty) k odměně a k náhradě hotových výdajů částka odpovídající této dani (srov. § 38 odst. 1 poslední větu insolvenčního zákona), jelikož výplata těchto částek by byla předmětem daně z přidané hodnoty ve smyslu § 2 odst. 1 písm. b/ zákona o dani z přidané hodnoty, a tedy zdanitelným plněním ve smyslu § 2 odst. 2 zákona o dani z přidané hodnoty (jak ve znění účinném na počátku období vymezeného žalobou, tak ve znění účinném v době vydání napadeného rozhodnutí). Částka odpovídající dani z přidané hodnoty se insolvenčnímu správci, který je plátcem daně z přidané hodnoty, přiznává k odměně a k náhradě hotových výdajů právě proto, aby na tom z hlediska svého příjmu nebyl hůře, než insolvenční správce, který plátcem této daně není (aby jeho příjem byl v konečném výsledku stejný, jako příjem insolvenčního správce, který není plátcem daně z přidané hodnoty). Jde tedy opět o položku, jež se objevuje na obou stranách rovnice pro účely výpočtu ušlého zisku (srov. odstavec 65. shora). Povinnost odvádět daň z přidané hodnoty u insolvenčních řízení, z nichž mu ušel zisk, žalobce neměl (právě proto, že byl opomenut, neobdržel na odměně a paušální částce náhrady hotových výdajů ničeho). Důvod požadovat, aby k částce, jež se mu přiznává jako náhrada ušlého zisku, byla připočtena částka odpovídající dani z přidané hodnoty, by žalobce (poškozený), který je plátcem daně z přidané hodnoty, měl jen tehdy, kdyby soudem přiznané plnění této dani podléhalo. Tak tomu ale není (jak správně rozpoznaly oba soudy). Náhrada škody není předmětem daně podle § 2 odst. 1 zákona o dani z přidané hodnoty, a tedy ani zdanitelným plněním ve smyslu ustanovení § 2 odst. 2 zákona o dani z přidané hodnoty. Dovolání žalobce tak není důvodné ani v této části.
+73. Z týchž příčin nemůže obstát požadavek na úhradu částky odpovídající dani z přidané hodnoty u insolvenčních řízení uvedených ve skupině č. 2 (tabulka č. 3, částka 154.082,02 Kč, tabulka č. 4, částka 105.301,68 Kč).
+K otázce č. 3 žalobcova dovolání (důkazní břemeno)
+74. Tato otázka se týká úsudku soudů o nedostatku příčinné souvislosti v souvislosti s požadavkem na úhradu ušlého zisku za insolvenční řízení, v nichž byl žalobce přeskočen jako další v pořadí (skupina č. 2). Žalobce v tomto ohledu klade akcent na tzv. vysvětlovací povinnost žalovaného.
+75. K "vysvětlovací povinnosti" účastníka sporného řízení Nejvyšší soud úvodem poznamenává, že již v rozsudku svého velkého senátu občanskoprávního a obchodního kolegia ze dne 20. 6. 2012, sp. zn. 31 Cdo 619/2011, uveřejněném pod číslem 115/2012 Sb. rozh. obč. (dále jen "R 115/2012"), vysvětlil, že rozsah důkazní povinnosti je ve sporném řízení zásadně určen rozsahem povinnosti tvrdit skutečnosti, neboť aby mohl účastník nějakou skutečnost prokázat, musí ji nejdříve tvrdit. V tomto smyslu právní teorie hovoří o břemenu tvrzení, jímž rozumí procesní odpovědnost účastníka řízení za to, že za řízení netvrdil všechny rozhodné skutečnosti významné pro rozhodnutí a že z tohoto důvodu muselo být rozhodnuto o věci samé v jeho neprospěch. Smyslem břemene tvrzení je umožnit soudu rozhodnout o věci samé i v takových případech, kdy určitá skutečnost, významná podle hmotného práva pro rozhodnutí věci, pro nečinnost účastníků (v důsledku nesplnění povinnosti uložené účastníkům § 101 odst. 1 písm. a/ o. s. ř.) nemohla být prokázána, neboť vůbec nebyla účastníky tvrzena. K tomu, aby účastník v řízení dostál své povinnosti tvrzení, slouží poučení podle § 118a odst. 1 o. s. ř. Poučovací povinnost ve smyslu § 118a odst. 3 o. s. ř. se pak uplatňuje tam, kde je namístě učinit závěr, že účastník, jemuž je ku prospěchu prokázání určité (pro věc rozhodné) skutečnosti, nesplnil svou důkazní povinnost, respektive dosud provedenými důkazy neunesl důkazní břemeno o takové skutečnosti, takže nenabídne-li (po poučení dle § 118a odst. 3 o. s. ř.) důkazy způsobilé takovou skutečnost prokázat, budou jej stíhat procesní následky spočívající v neunesení důkazního břemene o takové skutečnosti (srov. rozsudek velkého senátu občanskoprávního a obchodního kolegia Nejvyššího soudu ze dne 4. 9. 2013, sp. zn. 31 Cdo 4616/2010, uveřejněný pod číslem 98/2013 Sb. rozh. obč., nebo opět R 115/2012).
+76. K závěrům o povinnosti tvrzení Nejvyšší soud dále v rozsudku sp. zn. 22 Cdo 883/2010 dodal, že v některých případech strana zatížená důkazním břemenem objektivně nemá a nemůže mít k dispozici informace o skutečnostech, významných pro rozhodnutí ve sporu, avšak protistrana má tyto informace k dispozici. Jestliže strana zatížená důkazním břemenem přednese alespoň "opěrné body" skutkového stavu a zvýší tak pravděpodobnost svých skutkových tvrzení, nastupuje vysvětlovací povinnost protistrany; nesplnění této povinnosti bude mít za následek hodnocení důkazu v neprospěch strany, která vysvětlovací povinnost nesplnila. Potud Nejvyšší soud v označeném rozhodnutí odkázal na dílo: Macur, J.: Důkazní břemeno v civilním soudním řízení. Masarykova univerzita v Brně, 1995, str. 121 a násl., jakož i na dílo: Macur, J.: Kompenzace informačního deficitu procesní strany v civilním soudním sporu. Masarykova univerzita v Brně, 2000 (dále jen "Macur"). K závěrům tohoto rozsudku se Nejvyšší soud dále přihlásil např. v důvodech rozsudku ze dne 30. 11. 2016, sp. zn. 29 Cdo 1430/2014, uveřejněného pod číslem 63/2018 Sb. rozh. obč., rozsudku ze dne 16. 12. 2020, sp. zn. 27 Cdo 1238/2019, nebo rozsudku ze dne 31. 3. 2022, sen. zn. 29 ICdo 14/2020.
+77. Z judikatury Ústavního soudu lze poukázat např. na nález Ústavního soudu ze dne 28. 2. 2008, sp. zn. I. ÚS 987/07, uveřejněný pod číslem 42/2008 Sbírky nálezů a usnesení Ústavního soudu, v němž Ústavní soud uvedl, že procesualistika samozřejmě zásadně uznává, že není povinností procesní strany poskytovat důkazní materiál proti sobě samotné. Tento přístup se však může prosadit pouze v řízení ovládaném zásadou projednací, a nikoliv ještě vždy: průlom do tohoto principu představuje tzv. vysvětlovací povinnost strany nezatížené důkazním břemenem, na jejímž základě procesní strana, nezatížená (subjektivním) břemenem důkazním a břemenem tvrzení, podrobně vysvětluje a objasňuje skutečnosti, o nichž má dostatečné informace, ačkoliv tyto skutečnosti by měl ve vlastním zájmu ve svých skutkových tvrzeních podrobně přednést její odpůrce; ten však potřebnými informacemi nedisponuje a nemá ani reálnou možnost získat je jiným způsobem než na základě substancovaného přednesu druhé procesní strany (srov. Macur str. 96). Vysvětlovací povinnost procesní strany nezatížené důkazním břemenem vychází z ústavního hlediska z principu rovnosti zbraní, který se nutně musí vztahovat i na shromažďování skutkového materiálu v řízení ovládaném zásadou projednací. Shromažďování skutkového materiálu iniciativou procesních stran může plnit svoji funkci jenom za předpokladu, že obě strany mají stejnou možnost přístupu k informacím důležitým pro objasnění rozhodných skutečností. Jestliže jedna z procesních stran nemá reálnou možnost získat potřebné informace a je tedy postižena "informačním deficitem", je ohroženo nebo porušeno její právo na spravedlivý proces. Z objektivního hlediska je informačním deficitem procesní strany zase ohrožena nebo porušena základní společenská funkce civilního procesu, spočívající v poskytování ochrany skutečným subjektivním hmotným právům, jež vyplývají z pravdivě zjištěného skutkového stavu (srov. Macur str. 61 a násl.).
+78. Promítnuto do poměrů projednávané věci lze uzavřít, že žalobce nejpozději při jednání obvodního soudu konaném 25. 10. 2018 rámcově přednesl [v návaznosti na tvrzení, jež předtím uplatnil podáním datovaným 1. 8. 2018 (srov. č. l. 112)] "opěrné body" skutkového stavu způsobem, z nějž plyne, že požadavek na úhradu ušlého zisku nepojí výlučně s částkami vzešlými z insolvenčních řízení, v nichž byl přeskočen jako další v pořadí [maje za to, že v rozhodném období byl přeskočen (aniž zná počet) vícekráte (než je počet věcí, které sám identifikoval) jako první v pořadí]; srov. protokol o jednání č. l. 360 až 363. Za této procesní situace nastoupila vysvětlovací povinnost žalovaného. Není-li žalovaný sám schopen postavit najisto, v kolika případech by žalobce v rozhodném období při správném postupu byl ustanoven insolvenčním správcem jako první v pořadí, pak to ovšem bude on, jemuž k tíži půjde v procesní rovině nesplnění povinnosti tvrzení.
+79. Právní posouzení této otázky oběma soudy tedy není správné a dovolání je potud (v rozsahu částky 733.723,89 Kč u tabulky č. 3 a částek 177.750 Kč a 288.136,58 Kč u tabulky č. 4, celkem tedy v rozsahu částky 1.199.610,47 Kč) opodstatněné.
+80. Z týchž příčin nemohou obstát ty závěry obou soudů u insolvenčních řízení zahrnutých do skupiny č. 4 (tabulky č. 7, 8 a 9), které spočívají na nedostatku příčinné souvislosti (byť primárním důvodem nevyhovění žaloby u skupiny č. 4 byla předčasnost žaloby).
+K otázce č. 4 žalobcova dovolání (vznik nároku na náhradu škody)
+81. U této otázky žalobce polemizuje s úsudkem, že u neskončených insolvenčních řízení (skupina č. 3 a 4) mu škoda dosud nevznikla, maje jej za nesprávný.
+82. Potud ovšem Nejvyšší soud poukazuje na to, že tvrzená škoda v podobě ušlého zisku mohla žalobci nejdříve vzniknout dnem, kdy by mu při pravidelném chodu věcí v oněch insolvenčních řízeních vznikl nárok na odměnu (lhostejno jak strukturovanou). Při oddlužení (lhostejno jakým způsobem provedenému) však ve shodě s ustanoveními § 38 odst. 3 a § 413 insolvenčního zákona vzniká insolvenčnímu správci nárok na odměnu až v souvislosti se skončením insolvenčního řízení; do té doby dostává pouze zálohy na odměnu a hotové výdaje (srov. § 136 odst. 4 insolvenčního zákona). Při řešení úpadku konkursem pak insolvenční soud rozhoduje o odměně zásadně v rozhodnutí o schválení konečné zprávy (§ 304 insolvenčního zákona), tedy ještě před vydáním rozhodnutí, jímž se při tomto způsobu řešení úpadku končí insolvenční řízení (§ 309 odst. 4 insolvenčního zákona).
+83. Dovolací argumentace tak v uvedeném rozsahu neobstojí. Dovolání je přesto v popsaném rozsahu zčásti opodstatněné. Žalobce v průběhu odvolacího řízení doplnil (podáním datovaným 14. 5. 2020, č. l. 483-490) svá tvrzení o nové skutečnosti (jež měly nastat po vydání rozsudku obvodního soudu). Konkrétně uvedl (poměřováno obsahem jeho podání), že z insolvenčních řízení identifikovaných v tabulkách č. 5 až 9 shora již skončilo dalších 35 insolvenčních řízení, a to:
+[1] insolvenční řízení uvedená v tabulce č. 5 pod poř. č. 1 až 12, 18, 19 a 21;
+[2] insolvenční řízení uvedená v tabulce č. 6 pod poř. č. 1, 2 a 4;
+[3] insolvenční řízení uvedené v tabulce č. 7 pod poř. č. 2;
+[4] insolvenční řízení uvedená v tabulce č. 8 pod poř. č. 1 až 12;
+[5] insolvenční řízení uvedená v tabulce č. 9 pod poř. č. 1 až 4.
+84. K těmto svým tvrzením žalobce tamtéž nabídl listinné důkazy.
+85. Odvolací soud (jak patrno i z napadeného rozhodnutí, srov. odstavec 8. odůvodnění), při odvolacím jednání reagoval na uvedené podání tak, že nepřipustil "změnu žaloby", maje sice za to, že šlo o skutečnosti nastalé po vyhlášení rozsudku obvodního soudu, že však výsledky řízení před obvodním soudem nemohou být podkladem pro rozhodnutí o změněném návrhu a podání je neurčité a nepřehledné.
+86. S názorem odvolacího soudu na kvalitu onoho podání lze souhlasit jen potud, že žalobce v něm (v průběhu řízení nikoli poprvé) opustil strukturu vyčíslení škody [v daném případě strukturu vyčíslení škody uplatněnou před rozhodnutím obvodního soudu v podání z 29. 4. 2019 (č. l. 417-418)]; o neurčité podání však nejde.
+87. O změnu žaloby (§ 95 o. s. ř.) jde tehdy, domáhá-li se žalobce něčeho jiného než v původní žalobě, nebo požaduje-li na základě stejného skutkového základu více, než požadoval v původní žalobě, jakož i v případě, že žalobce sice i nadále požaduje stejné plnění (stejné kvality a stejného rozsahu), ale na základě jiného skutkového stavu (skutkového základu věci), než jak ho vylíčil v původní žalobě [v judikatuře srov. např. rozsudek Nejvyššího soudu ze dne 30. 8. 2001, sp. zn. 21 Cdo 2502/2000, uveřejněný pod číslem 21/2003 Sb. rozh. obč., a v literatuře např. Drápal, L., Bureš, J. a kol.: Občanský soudní řád I. § 1 až 200za. Komentář. 1. vydání. Praha, C. H. Beck, 2009, str. 622]. Poměřováno těmito závěry doplněním tvrzení, z nichž žalobce usuzoval pro označená insolvenční řízení na vznik škody, o údaj, že některá z těchto řízení již skončila (což bylo možné očekávat), ke změně žaloby nedošlo.
+88. V návaznosti na tvrzení o skončení některých insolvenčních řízení žalobce v podání ze 14. 5. 2020 pro některá z nově skončených insolvenčních řízení změnil i vyčíslení výše tvrzené škody (ušlého zisku). To se ale týkalo pouze:
+[1] insolvenčních řízení uvedených v tabulce č. 5 pod poř. č. 9, 10, 18, 19 a 21;
+[2] insolvenčního řízení uvedeného v tabulce č. 6 pod poř. č. 4;
+[3] insolvenčních řízení uvedených v tabulce č. 8 pod poř. č. 3 a 4.
+89. U insolvenčních řízení uvedených v tabulce č. 5 šlo o následující změny výše uplatněného ušlého zisku:
+[1] insolvenční řízení poř. č. 9 (KSOL 10 INS 24464/2014) snížení z částky 69.285 Kč na částku 68.196 Kč (-1.089 Kč),
+[2] insolvenční řízení poř. č. 10 (KSOL 16 INS 26742/2014) snížení z částky 69.285 Kč na částku 62.751 Kč (-6.534 Kč),
+[3] insolvenční řízení poř. č. 18 (KSOS 33 INS 11863/2015) snížení z částky 68.196 Kč na částku 61.662 Kč (-6.534 Kč),
+[4] insolvenční řízení poř. č. 19 (KSOL 16 INS 4854/2015) snížení z částky 68.196 Kč na částku 54.039 Kč (-14.157 Kč),
+[5] insolvenční řízení poř. č. 21 (KSOL 10 INS 14474/2015) snížení z částky 68.196 Kč na částku 61.662 Kč (-6.534 Kč).
+90. U insolvenčního řízení uvedeného v tabulce č. 6 pod poř. č. 4 (KSOS 40 INS 28068/2014) šlo o změnu výše uplatněného ušlého zisku zvýšením z částky 103.044 Kč na částku 119.451 Kč (+16.407 Kč).
+91. U insolvenčních řízení uvedených v tabulce č. 8 šlo o následující změny výše uplatněného ušlého zisku:
+[1] insolvenční řízení poř. č. 3 (KSOS 40 INS 35825/2013) snížení z částky 73.641 Kč na částku 71.463 Kč (-2.178 Kč),
+[2] insolvenční řízení poř. č. 4 (KSOS 14 INS 13451/2014) snížení z částky 70.374 Kč na částku 67.107 Kč (-3.267 Kč).
+92. Z osmi insolvenčních řízení, v nichž došlo ke změnám výše uplatněného ušlého zisku, došlo v sedmi z nich v souhrnu k celkovému snížení o částku 40.293 Kč a v jednom ke zvýšení o částku 16.407 Kč, takže žalobce požadoval v odvolacím řízení částku o 23.886 Kč nižší, než byla částka, kterou uplatnil v řízení před obvodním soudem. Částečné zpětvzetí žaloby (§ 96 o. s. ř.) není rovněž změnou žaloby ve smyslu § 95 o. s. ř. (srov. usnesení Nejvyššího soudu ze dne 25. 9. 2002, sp. zn. 29 Odo 247/2001, uveřejněné pod číslem 39/2003 Sb. rozh. obč.). Lze doplnit, že ustanovení § 216 odst. 2 o. s. ř. by nebránilo projednání takto upraveného žalobního nároku ani tehdy, kdyby nárok spojený s insolvenčním řízením, v němž došlo ke zvýšení ušlého zisku o částku 16.407 Kč, byl posuzován jako samostatný skutek.
+93. Nejde-li o změnu žaloby (§ 95 o. s. ř.), pak okolnost, že odvolatel uplatnil v průběhu odvolacího řízení nové skutečnosti nebo důkazy, které nastaly (vznikly) po vyhlášení (vydání) rozhodnutí soudu prvního stupně (§ 205a písm. f/ o. s. ř.), může být za podmínek uvedených v § 213 odst. 4 části věty za středníkem o. s. ř. důvodem pro zrušení odvoláním napadeného rozhodnutí nebo jeho části (§ 219a odst. 2 o. s. ř.); je však vyloučeno, aby k těmto skutečnostem nebo důkazům odvolací soud při projednání odvolání nepřihlédl jen pro jejich rozsah. Odvolací soud, který se tímto pravidlem neřídil (k podání žalobce ze 14. 5. 2020 nepřihlédl a nezabýval se ani k němu připojenými listinnými důkazy), v rozsahu oněch nově skončených insolvenčních řízení zatížil odvolací řízení vadou, která mohla mít za následek nesprávné rozhodnutí ve věci a ke které Nejvyšší soud přihlíží u přípustného dovolání z úřední povinnosti (§ 242 odst. 3 o. s. ř.). Srov. i stanovisko pléna Ústavního soudu ze dne 15. 11. 2016, sp. zn. Pl. ÚS-st. 43/16, uveřejněné ve svazku 83, ročníku 2016, Sbírky nálezů a usnesení Ústavního soudu, str. 933.
+94. Z tabulky č. 5 se předmětná vada týká 15 insolvenčních řízení, za něž bylo (před úpravami provedenými podáním žalobce ze 14. 5. 2020) požadováno v souhrnu celkem 1.145.038,64 Kč.
+95. Z tabulky č. 6 se předmětná vada týká 3 insolvenčních řízení, za něž bylo (před úpravami provedenými podáním žalobce ze 14. 5. 2020) požadováno v souhrnu celkem 309.132 Kč.
+96. Z tabulky č. 7 se předmětná vada týká 1 insolvenčního řízení, za které bylo požadováno 745.904,62 Kč.
+97. Z tabulky č. 8 se předmětná vada týká 12 insolvenčních řízení, za něž bylo (před úpravami provedenými podáním žalobce ze 14. 5. 2020) požadováno v souhrnu celkem 833.598 Kč.
+98. Z tabulky č. 9 se předmětná vada týká 4 insolvenčních řízení, za něž bylo požadováno v souhrnu celkem 417.076,50 Kč.
+99. Celkový souhrn částek odpovídajících oněm (celkem 35) nově skončeným insolvenčním řízením činí 3.450.749,76 Kč. V tomto rozsahu je důvod napadené rozhodnutí zrušit.
+100. Neskončeno i podle žalobcovy specifikace ze 14. 5. 2020 zůstalo ke dni vydání napadeného rozhodnutí:
+[1] Z tabulky č. 5 celkem 10 insolvenčních řízení (poř. č. 13 až 17, 20 a 22 až 25), za něž bylo požadováno v souhrnu celkem 792.565,20 Kč.
+[2] Z tabulky č. 6 celkem 4 insolvenční řízení (poř. č. 3 a 5 až 7), za něž bylo požadováno v souhrnu celkem 525.046,60 Kč.
+[3] Z tabulky č. 7 jen 1 insolvenční řízení (poř. č. 1), za něž bylo požadováno celkem 272.610,29 Kč.
+[4] Z tabulky č. 8 celkem 4 insolvenční řízení (poř. č. 13 až 16), za něž bylo požadováno v souhrnu celkem 277.140 Kč.
+[5] Z tabulky č. 9 jen 1 insolvenční řízení (poř. č. 5), za něž bylo požadováno celkem 106.311 Kč.
+101. Celkový souhrn částek odpovídajících oněm (celkem 20) neskončeným insolvenčním řízením činí 1.973.673,09 Kč. V tomto rozsahu byl důvod zamítnout žalobu pro předčasnost (pro tentokrát).
+K otázce č. 3 dovolání žalovaného (k určení ušlého zisku u odměny insolvenčního správce ze zpeněžení majetku)
+102. U této otázky žalovaný brojí proti určení (části) ušlého zisku v závislosti na výsledcích zpeněžování v konkrétním insolvenčním řízení, maje za to, že pravdu měl insolvenční soud, jestliže tuto část nároku (odpovídající částce 170.213,88 Kč s příslušenstvím, o kterou rozšířil vyhovující výrok odvolací soud) žalobci nepřiznal. V tomto rozsahu však dovolání důvodné není. S přihlédnutím k tomu, co bylo řečeno o povaze ušlého zisku v odstavcích 64. a 65. shora, Nejvyšší soud uvádí, že pro posouzení nároku nesprávně opomenutého insolvenčního správce na ušlý zisk za odměnu ze zpeněžení je rozhodující, zda podle pravidelného běhu věcí bylo možné (při řádném průběhu daného insolvenčního řízení) takové zpeněžení (a odměnu z něj) očekávat. V řízení pak nevyšlo najevo nic, z čeho by bylo možné usuzovat, že insolvenční řízení, z nichž byla tato odměna odvozována (ta, jež jsou identifikována v tabulce č. 2 shora pod poř. č. 1, 5 a 7) svým průběhem z "pravidelného běhu věcí" vybočovala (takovou námitku neuplatnil ani žalovaný).
+K otázce č. 4 dovolání žalovaného (k určení ušlého zisku u odměny insolvenčního správce)
+103. Potud žalovaný namítá, že odměna insolvenčního správce nemůže být ušlým ziskem v celé své výši; odměnu je třeba snížit o náklady za činnost vykonanou na její dosažení. V dotčeném směru Nejvyšší soud připomíná, že náhrada (ušlého zisku) se určuje jako rozdíl mezi předpokládaným příjmem (jenž by poškozený získal, nebýt nesprávného úředního postupu) a náklady, které bylo třeba na jeho dosažení vynaložit (srov. odstavec 65. shora). Přitom je zjevné, že náklady potřebnými na dosažení odměny insolvenčního správce nejsou jen hotové výdaje kryté paušální částkou (o nichž bylo pojednáno výše při odpovědích na dovolací otázky žalobce), nýbrž i výdaje, o nichž se předpokládá, že si je bude insolvenční správce hradit z odměny. Srov. k tomu mutatis mutandis (v poměrech výkladu zákona č. 328/1991 Sb., o konkursu a vyrovnání, ve znění účinném do 31. 12. 2007) např. usnesení Nejvyššího soudu ze dne 28. 4. 2022, sp. zn. 29 Cdo 1368/2020, jež mezi náklady (výdaje), které si má správce (v poměrech této věci insolvenční správce) hradit ze své odměny řadí i nájemné nebo podnájemné, jež platí za pronájem nebo podnájem nebytových prostor, v nichž má sídlo [s vědomím toho, že takové sídlo neslouží (nemá sloužit) pouze k práci v rámci insolvenčního řízení jednoho (jediného) dlužníka]. Stejně tak lze mít za obvyklý (na vrub odměny účtovaný) např. náklad na mzdy zaměstnanců insolvenčního správce (má-li je), s jejichž činností insolvenční zákon též počítá (srov. např. § 23, § 40 odst. 2 a 5 insolvenčního zákona).
+104. Ostatně, s jistými náklady na svou činnost počítal v žalobě i sám žalobce; jde o onu položku "potenciální náklad" ve výši 1.500 Kč, o kterou žalobce vždy snižoval celkovou výši náhrady hotových výdajů u těch insolvenčních řízení, u kterých takovou náhradu nárokoval (srov. argumentaci k "potenciálnímu nákladu" v žalobě, č. l. 9-10). Představa, že insolvenční správce dosáhne odměny bez jakýchkoli nákladů potřebných na její dosažení (respektive jen s náklady ve výši paušální částkou stanovené náhrady hotových výdajů) se vzpírá elementární logice (odporuje obvyklé lidské zkušenosti). Právní posouzení věci odvolacím soudem (jenž se potud věcí nezabýval) je tedy potud neúplné a tím i nesprávné.
+105. Nejvyšší soud tedy, aniž nařizoval jednání (§ 243a odst. 1 věta první o. s. ř.), ve shodě s výše podanými odpověďmi na dovoláními položené otázky:
+[1] Rozhodl o dovolání žalobce v části, ve které směřovalo proti potvrzujícímu výroku rozsudku odvolacího soudu ve vztahu k zamítnutí žaloby ohledně částky 7.098.962,88 Kč s příslušenstvím tak, že:
+a/ zamítl dovolání ohledně částky 38.925 Kč s příslušenstvím (náhrada paušálních hotových výdajů požadovaná dle tabulky č. 2 v celkové výši 50.925 Kč, snížená o "potenciální náklady" ve výši 12.000 Kč);
+b/ zamítl dovolání ohledně částky 26.550 Kč s příslušenstvím (náhrada paušálních hotových výdajů požadovaná dle tabulky č. 4 v celkové výši 35.550 Kč, snížená o "potenciální náklady" ve výši 9.000 Kč),
+c/ zamítl dovolání ohledně částky 50.210,45 Kč s příslušenstvím (částka odpovídající dani z přidané hodnoty dle tabulky č. 1),
+d/ zamítl dovolání ohledně částky 99.910,41 Kč s příslušenstvím (částka odpovídající dani z přidané hodnoty dle tabulky č. 2),
+e/ zamítl dovolání ohledně částky 154.082,02 Kč s příslušenstvím (částka odpovídající dani z přidané hodnoty dle tabulky č. 3),
+f/ zamítl dovolání ohledně částky 105.301,68 Kč s příslušenstvím (částka odpovídající dani z přidané hodnoty dle tabulky č. 4),
+g/ změnil rozsudek odvolacího soudu v zamítavém výroku ohledně částky 1.973.673,09 Kč s příslušenstvím v tom duchu, že potud zamítnutí žaloby pro předčasnost (pro tentokrát) vyjádřil výrokem,
+h/ zrušil rozsudek odvolacího soudu v zamítavém výroku ohledně částky 1.199.610,47 Kč s příslušenstvím (jež se váže k insolvenčním řízením, u nichž soudy řešily otázku příčinné souvislosti);
+i/ zrušil rozsudek odvolacího soudu v zamítavém výroku ohledně částky 3.450.749,76 Kč s příslušenstvím (jež se váže k insolvenčním řízením, která skončila v průběhu odvolacího řízení.
+[2] Rozhodl o dovolání žalobce v části, ve které směřovalo proti potvrzujícímu výroku rozsudku odvolacího soudu ve vztahu k vyhovujícímu výroku ohledně částky 493.772,40 Kč s příslušenstvím a proti měnícímu výroku ohledně částky 170.213,88 Kč s příslušenstvím tak, že potud rozsudek odvolacího soudu zrušil.
+106. Dovolání tak bylo (podle § 243d odst. 1 písm. a/ o. s. ř.) v souhrnu zamítnuto ohledně částky 474.979,56 Kč s příslušenstvím (odstavec 105. písm. a/ až f/).
+107. Měnící výrok má oporu v § 243d odst. 1 písm. b/ o. s. ř. a jeho účelem bylo (v souladu s ustálenými zvyklostmi) odlišit tu část předmětu sporu, o které soud rozhodl (tak, že žalobu zamítl) jen pro tentokrát, od těch částí předmětu sporu, u nichž je zamítnutí žaloby definitivní, zřetelně i výrokem (srov. i usnesení Nejvyššího soudu ze dne 5. 12. 2006, sp. zn. 21 Cdo 2091/2005, uveřejněné pod číslem 84/2007 Sb. rozh. obč.).
+108. Zrušující výroky se opírají o ustanovení § 243e odst. 1 a 2 o. s. ř., přičemž vedle výše vymezeného rozsahu zrušovaných výroků o věci samé byly současně zrušeny i závislé výroky o nákladech řízení a věc byla ve zrušeném rozsahu vrácena k dalšímu řízení odvolacímu soudu.
+109. Zbývá dodat, že v rozsahu, v němž soudy zamítaly žalobu "pro tentokrát", nepokládal Nejvyšší soud za vhodné (možné) rozhodnout konečným způsobem o částkách, které potud u měnícího a zrušujícího výroku odpovídají paušální náhradě hotových výdajů nebo dani z přidané hodnoty. Ve zrušeném rozsahu je zkoumání těchto položek v rámci konečného rozhodnutí úkolem odvolacího soudu.
+110. Nejvyšší soud závěrem dodává, že předchozí fáze řízení nebyly prosty nedostatků plynoucích z chyb v psaní či počtech. Tak především je zjevné, že obvodní soud vyhovujícím výrokem přiznal žalobci (chybou v počtech) částku o 50 Kč vyšší. Dovodil-li totiž, že škoda, jež žalobci vznikla tím, že nebyl ustanoven insolvenčním správcem v pravomocně skončených insolvenčních řízeních, v nichž byl přeskočen jako první v pořadí (skupina č. 1), celkem činí 493.772,40 Kč, pak měl zjevně na mysli součet odměn představovaný u tabulky č. 1 částkou 239.097,40 Kč a u tabulky č. 2 částkou 254.625 Kč. Takovému součtu ovšem odpovídá částka 493.722,40 Kč. Odvolací soud nápravu tohoto pochybení nezjednal (pouze přiznanou částku zvýšil o odměnu ze zpeněžení podle tabulky č. 2, takže přesah o 50 Kč zůstal zachován). V důsledku částečně zrušujícího výroku tohoto rozsudku však uvedená okolnost již pozbyla významu.
+111. Nejvyšší soud rovněž podotýká, že s tabulkami shora pracoval (co do částek v nich uvedených) v podobě, ve které na jejich základě rozhodoval o žalobě obvodní soud. V další fázi řízení by však nemělo být přehlédnuto, že:
+[1] Tabulka č. 2 u insolvenčního řízení pod poř. č. 5 obsahovala chybu v počtech ohledně částky odpovídající dani z přidané hodnoty (8.996,40 Kč místo správných 8.694 Kč), což mělo vliv i na celkovou výši požadovaného ušlého zisku.
+[2] Tabulka č. 6 u insolvenčního řízení pod poř. č. 5 obsahovala chybu v počtech (nebo v psaní) ohledně částky odpovídající dani z přidané hodnoty (18.724,50 Kč místo správných 18.427,50 Kč), což mělo vliv i na celkovou výši požadovaného ušlého zisku.
+[3] Tabulka č. 9 u insolvenčního řízení pod poř. č. 1 obsahovala chybu v počtech (nebo v psaní) ohledně částky odpovídající dani z přidané hodnoty (18.724,50 Kč místo správných 18.427,50 Kč), což mělo vliv i na celkovou výši požadovaného ušlého zisku.
+******************************************************************
+
+
+
+Rozsudek - Insolvenční řízení. Odpovědnost státu za škodu [Odpovědnost státu za újmu]. Ušlý zisk. Daň z přidané hodnoty. Koncentrace řízení
+
+
+
+28.04.2026
+
+
+
+
+

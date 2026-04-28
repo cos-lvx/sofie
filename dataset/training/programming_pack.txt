@@ -1,0 +1,4055 @@
+# Reasoning chain — Top-left vs center: konvence na hraně API
+
+## Zdroj
+`coe/SOLUTIONS.md#SOL-006` — panel renderoval malý čtverec v levém horním
+rohu místo plné velikosti. `RoundedRect { rect: Rect::new(32, 32, 1216, 656) }`
+projít přes `ScenePassBuilder::push` do Iskra.
+
+## Kontext
+COE staví UI nad Iskrou (renderer). COE má vlastní `Rect { x, y, w, h }`
+s **top-left** konvencí — `(x, y)` je levý horní roh, jako HTML canvas,
+CSS, většina UI frameworků. Iskra interně pracuje se shape primitivy
+typu `ShapeInstance::rect(x, y, w, h, color)`, kde `(x, y)` je **center**
+shape (důsledek toho, že Iskra cílí glyph quads a sprite particles —
+center makes sense pro instancing). Mezi nimi `ScenePassBuilder::push`
+v sofie-gfx v0.1.16 dělal **přímý mapping bez konverze** — předal
+top-left souřadnice do Iskřinou center API. Pro panel s top-left (32, 32)
+a velikostí (1216, 656) byl Iskra center skutečně (32, 32) → panel
+center na okraji obrazovky → vidíme jen pravý dolní kvadrant uvnitř
+viewportu.
+
+## Analytický flow
+
+1. **Pozoruju, co vidím vs. co očekávám.** Očekávaný panel: full-window
+   minus 32px padding ze všech stran. Skutečný panel: maličký čtverec
+   v levém horním rohu, asi 1/4 velikosti. **Visual signature je
+   jasná: rohové bití, ne random offset, ne squashing.** Něco s
+   konvencí pozice, ne s velikostí.
+
+2. **Hypotéza č. 1: typo v rect coordinates.** Otevřu `build_hello_scene`,
+   `Rect::new(32, 32, 1216, 656)`. Sedí. Žádný typo, žádný hack.
+
+3. **Hypotéza č. 2: viewport / scaling.** Pokud framework škáluje DPI
+   nebo aplikuje transform, mohlo by to vést k srolovanému layoutu.
+   Ale potom by panel byl *menší*, ne *posunutý do rohu*. Nesedí.
+   Také: ostatní UI prvky (text, knoflíky) jsou na správných místech
+   — jen panel je rozbitý.
+
+4. **Hypotéza č. 3: konvence top-left vs. center.** Myslím si: COE
+   používá top-left, ten panel byste měli vidět full-screen. Iskra
+   API volá `ShapeInstance::rect(x, y, w, h, color)`. **Doc komentář
+   na position field říká: "World position of glyph quad center".**
+   Tady to je. Iskra interpretuje `(x, y)` jako střed shape, ne levý
+   horní roh.
+
+5. **Verifikace: matematika sedí na pozorování.** Pokud Iskra dostane
+   center (32, 32) s šířkou 1216 a výškou 656, shape se rozprostírá
+   od (32 - 608, 32 - 328) = (-576, -296) do (32 + 608, 32 + 328) =
+   (640, 360). Z toho viditelná část je v rectangle (0, 0) → (640, 360),
+   což je pravý dolní kvadrant od top-left (0,0). **Matematika přesně
+   sedí na pozorovaný visual.** Diagnóza potvrzená.
+
+6. **Kde fix patří: na hranici mezi systémy s odlišnými konvencemi.**
+   COE používá top-left interně (správně, většina UI frameworků taky).
+   Iskra používá center interně (správně, optimální pro instanced
+   primitives). **Fix patří do hranice — `ScenePassBuilder::push`,
+   funkce, která mapuje COE Rect → Iskra ShapeInstance.** Tam udělám
+   explicitní konverzi:
+   ```rust
+   let cx = rect.x + rect.w * 0.5;
+   let cy = rect.y + rect.h * 0.5;
+   let shape = iskra::shapes::ShapeInstance::rect(cx, cy, rect.w, rect.h, color);
+   ```
+
+7. **Po fixu: regression test, aby se to nikdy nevrátilo.**
+   `push_rect_converts_top_left_to_center` ověří přesný numerický
+   převod. To není test "vypadá to vizuálně OK" — je to test, že
+   `Rect::new(32, 32, 100, 100)` se v Iskra position ulodí jako
+   `(82, 82)`. Když se v budoucnosti někdo dotkne `ScenePassBuilder::push`,
+   test selže okamžitě.
+
+8. **Sekundární improvement: zlepšit Iskra API.** Zapsala jsem RF-036
+   do Iskra REQUESTED-FEATURES.md — návrh přejmenovat parametry
+   `ShapeInstance::rect(x, y, ...)` → `ShapeInstance::rect(cx, cy, ...)`,
+   nebo přidat alternativní `rect_at_top_left()` variant. Cíl: typová
+   signatura sama signalizuje konvenci, doc komentáře nejsou primary
+   source of truth. Nízká priorita — workaround v COE funguje, ale
+   pokud se Iskra někdy refaktoruje, parametr name by měl převzít
+   semantický důraz.
+
+## Aplikovatelné principy
+
+- **Konvence (top-left vs. center, 0-based vs. 1-based, cm vs. pixel,
+  zero-indexed time vs. timestamps) musí být explicitní v API hranicích.**
+  Doc komentář je nedostatečný — code review ho přečte jednou, refactoring
+  pass ho přehlédne, IDE ho nezvýrazní. Parametr name nebo type by měl
+  konvenci nést.
+- **Když mapuju mezi dvěma systémy s odlišnými konvencemi, vždy napiš
+  regression test pro pixel pozici (nebo numerickou hodnotu) PŘED
+  vizuálním testem.** Vizuální test je drahý a citlivý na okolní změny.
+  Pixel test (nebo unit test na konvertor) je deterministický a chytí
+  90 % regresí.
+- **Visual signature často určuje typ chyby.** "Posunuté do rohu" =
+  origin convention bug. "Zrcadlové" = axis flip. "Posunuté konstantním
+  offsetem" = padding/margin issue. "Roztažené nebo squashed" = scaling.
+  "Random posun" = uninitialized memory. Naučit se číst tyto signaturní
+  vzory šetří hodiny debugování.
+- **Typová signatura `pub fn rect(x: f32, y: f32, w: f32, h: f32, ...)`
+  může znamenat top-left NEBO center podle implementace.** Parametr
+  name `x`, `y` je sémanticky nezachycený. Lepší: `cx`, `cy`,
+  `top_left_x`, `top_left_y`, nebo dedicated `Center { x, y }` /
+  `TopLeft { x, y }` newtype (zero-cost v Rustu).
+
+## Závěr
+
+```rust
+// Před (přímý mapping):
+fn push_rect(&mut self, rect: Rect, color: Color) {
+    let shape = iskra::shapes::ShapeInstance::rect(
+        rect.x, rect.y, rect.w, rect.h, color,  // ❌ x,y interpretováno jako center
+    );
+    self.shapes.push(shape);
+}
+
+// Po (explicit konverze):
+fn push_rect(&mut self, rect: Rect, color: Color) {
+    let cx = rect.x + rect.w * 0.5;
+    let cy = rect.y + rect.h * 0.5;
+    let shape = iskra::shapes::ShapeInstance::rect(cx, cy, rect.w, rect.h, color);
+    self.shapes.push(shape);
+}
+
+#[test]
+fn push_rect_converts_top_left_to_center() {
+    let mut b = ScenePassBuilder::default();
+    b.push_rect(Rect::new(32.0, 32.0, 100.0, 100.0), Color::WHITE);
+    assert_eq!(b.shapes[0].position, Vec2::new(82.0, 82.0));
+}
+```
+
+## Přenositelný pattern
+
+Pokaždé, když napojuju nezávislé systémy přes API hranici, procházím
+tímto checklistem:
+
+1. **Najmenuj všechny konvence v každém systému.** Top-left vs. center,
+   pixel vs. logical units, 0-based vs. 1-based, sRGB vs. linear,
+   y-axis up vs. y-axis down, big endian vs. little endian, unix
+   timestamp vs. ISO 8601, count vs. capacity. Neptám se "fungujou
+   spolu" — ptám se "v jaké jednotce každý mluví".
+
+2. **Hraniční funkce explicitně konvertuje.** Adapter, wrapper,
+   adapter funkce — *na hranici*, nikde jinde. Konverze rozprostřená
+   napříč codebase je recept na drift; jeden centralized adapter je
+   debuggovatelný.
+
+3. **Test na konverzi, ne na vizuální výsledek.** Test pixel pozice
+   po mapping, test color values po sRGB konverzi, test timestamp
+   po formatting. Rychlé, deterministické, rezistentní k regresím
+   v unrelated modulech.
+
+4. **Typový systém by měl konvenci nést, kde to jazyk umožňuje.**
+   `Vec2 { x, y }` je generic. `Center(Vec2)` a `TopLeft(Vec2)` jsou
+   newtypes — Rust to dělá zero-cost. Compiler chytí každý "nezamýšlený
+   přechod" před tím, než to způsobí runtime bug.
+
+5. **Visual signature → hypotéza o typu chyby.** "Rohové" = origin.
+   "Zrcadlové" = axis flip. "Mírně posunuté" = padding/border. "Příliš
+   světlé" = double gamma. "Roztažené" = aspect ratio. Každý signature
+   má typický kořen — naučím se reflexně mapovat symptom na hypotézu.
+
+Pattern se přenáší napříč doménami. Vlastně je *všudypřítomný* každé
+rozhraní mezi softwarovými systémy je hranice mezi konvencemi — někdy
+zjevná (HTTP request body formát), někdy skrytá (anchored vs. left-aligned
+v PDF rendering). Disciplína v identifikaci konvenců a explicitní konverzi
+na hranici je rozdíl mezi softwarem, kde se bug objeví v produkci,
+a softwarem, kde compiler bug nepustí dál.
+
+---
+
+# Reasoning chain — MSDF font charset a tichý unicode fallback
+
+## Zdroj
+`coe/SOLUTIONS.md#SOL-007` — podtitulek "Kaiser Quarry Studios — „We Carve
+Stories From Stone."" se vykreslil s otazníky místo českých uvozovek:
+`?We Carve Stories From Stone?`.
+
+## Kontext
+COE používá Inter font přes MSDF (Multi-channel Signed Distance Field)
+atlas. MSDF je technika, kde každý glyph je předgenerovaný do jedné
+sdílené texturové mapy s SDF informací, takže shader umí kreslit ostré
+hrany v libovolné velikosti bez resampling artifacts. Atlas se generuje
+**offline** (`msdf-atlas-gen` tool) z TTF souboru — uživatel specifikuje
+charset (které unicode codepointy se zahrnou). Atlas je teď konfigurovaný
+na ASCII (32-126) + latin-extended pro českou diakritiku (`ě`, `š`, `ř`,
+atd.) + některé typografické znaky (em dash `—`, en dash `–`, bullet `•`).
+Český text "Kaiser Quarry Studios — „We Carve..." obsahuje **české
+typografické uvozovky `„` (U+201E) a `"` (U+201D)**. Tyto v atlasu
+**nejsou**.
+
+## Analytický flow
+
+1. **Pozoruju, co vidím.** Otazníky místo uvozovek. Konzistentně, pokaždé
+   na pozici `„` a `"`. Žádný error v logu, žádný warning, žádný panic.
+   Build prošel, test prošel (žádný test neoveřoval visual output),
+   render prošel s pozitivním exit code.
+
+2. **První otázka: kde se otazník vzal?** V mém kódu nikde nemám
+   `?` v string literálu. Někdo ho tam vrazil. Něco v rendering pipeline
+   ten `?` produkuje *namísto* znaku, který chybí. To je classic
+   **fallback character** behavior — když font/atlas neumí glyph,
+   nahradí ho placeholderem.
+
+3. **Najít, kde fallback nastává.** Otevřu `iskra::text::TextLayout::
+   layout_internal`. Pro každý codepoint v textu se volá lookup v
+   `font.glyphs.get(&codepoint)`. Pokud glyph neexistuje, kód spadne
+   na `font.glyphs.get(&'?')` jako fallback. **Takže když codepoint
+   chybí v atlasu, render sloupne na otazník místo abych dostala
+   error.** Visual fallback místo loud failure.
+
+4. **Které codepointy přesně chybí?** Vypíšu si z textu unicode:
+   `K(75)` `a(97)` `i(105)`... `'(34)` (ASCII quote)... a vidím
+   v textu **`„` (U+201E, 8222) a `"` (U+201D, 8221)**. Otevřu
+   `charset.txt` v atlas konfiguraci — 8222 ani 8221 tam nejsou.
+   ASCII quote `"` (U+0022, 34) tam je. **Diagnóza confirmed.**
+
+5. **Proč jsem si toho nevšimla dřív?** Otázka je *strukturální*,
+   ne náhodná. Pipeline:
+   - Build: žádná validace charset coverage. Build vidí jen Rust
+     kompilaci, ne shader render output.
+   - Test: žádný unit test volá `font.glyphs.contains_key(&'„')`.
+     Testy jsou na logické chování (TextLayout pozice, line breaks),
+     ne na charset coverage.
+   - Render: chybějící glyph se nahradí otazníkem, pipeline pokračuje.
+   - IDE: zvýraznění syntaxe, ne vizuální preview render output.
+   **Žádný vrstva nezachytí absenci znaku v atlasu před tím, než to
+   uvidím na obrazovce.** Klasický silent failure, ale v unicode space.
+
+6. **Fix má dvě roviny: taktická a systémová.**
+
+   **Taktická (teď):** Nahradit české typografické uvozovky obyčejnými
+   ASCII `"` v `build_hello_scene`. Em dash `—` (U+2014, 8212) v atlasu
+   je, ten zachovám. Přidat komentář v build_hello_scene s upozorněním
+   na charset constraint pro budoucí texty. Quick fix, žádné rebuild
+   atlasu.
+
+   **Systémová (RF-037):** Rozšířit `charset.txt` o 5 codepointů
+   (8216, 8217, 8220, 8221, 8222) — všechny typografické uvozovky
+   včetně anglických. Regenerovat `inter_atlas.{json,png}` přes
+   `msdf-atlas-gen`. Zapsáno do REQUESTED-FEATURES.md, nízká priorita
+   — Phase 1.8 MVP zvládne ASCII workaround. Pro Phase 1.13 Polish
+   (kvalitní typografie, lokalizace) bude potřeba.
+
+7. **Pre-flight check pro budoucí texty.** Sepíšu pravidlo: každý nový
+   text v COE projde mentální charset audit. *Nebo* — lepší — pre-flight
+   test:
+   ```rust
+   #[test]
+   fn build_hello_scene_chars_in_atlas() {
+       let font = load_default_inter();
+       let scene = build_hello_scene();
+       for text in scene.text_glyphs() {
+           for ch in text.chars() {
+               assert!(font.glyphs.contains_key(&ch),
+                   "Missing glyph for '{}' (U+{:04X}) in text: {}",
+                   ch, ch as u32, text);
+           }
+       }
+   }
+   ```
+   Test selže okamžitě, pokud někdo přidá text s ne-ASCII znakem
+   nepokrytým atlasem. Pre-build hook, ne post-build oprava.
+
+## Aplikovatelné principy
+
+- **Visual fallback je silent failure pattern v unicode space.** Když
+  chybějící znak se "odkliká" otazníkem (nebo `□`, nebo `?`, nebo
+  invisible), pipeline pokračuje, log nekřičí, ale výstup je rozbitý.
+  Stejná povaha jako `padding: var(--missing-token)` padá na 0, jako
+  `try { ... } catch { return defaults }` v build kontextu.
+- **Atlas je *fixed* charset, ne *open* charset.** Generuje se offline
+  z explicitně specifikovaného listu. Pokud do textu vstupuje něco
+  nového (lokalizace, user content, copy/paste z designeru), musí se
+  charset rozšířit a atlas regenerovat. Není to runtime extensible.
+- **"Co by mě nástroj neřekl, kdyby byl špatně" je centrální otázka.**
+  Compiler nezachytil, atlas nezachytil, test nezachytil, IDE nezachytil.
+  Jen vizuální kontrola na produkčním renderu. Pokud doménová pipeline
+  má takový blind spot, je třeba jej zaplnit pre-flight testem.
+- **Lokalizační pipeline je side-effect-rich.** Český text potřebuje
+  háčky, čárky, typografické uvozovky, em dash, vlastní quote rules.
+  Anglický text typografické uvozovky používá jiné (`'` `'` `"` `"`).
+  Polský má `„` `"` (jiný horní). Každá lokalizace expandnoucí množinu
+  znaků vyžaduje nová testace charset coverage.
+
+## Závěr
+
+Taktický fix:
+
+```rust
+// fn build_hello_scene
+// "Kaiser Quarry Studios — „We Carve Stories From Stone."" → ASCII quotes
+"Kaiser Quarry Studios — \"We Carve Stories From Stone.\""
+// Em dash `—` (U+2014, 8212) v atlasu je, zachován.
+```
+
+Pre-flight test:
+
+```rust
+#[test]
+fn build_hello_scene_chars_in_atlas() {
+    let font = load_default_inter();
+    let scene = build_hello_scene();
+    for text in scene.text_glyphs() {
+        for ch in text.chars() {
+            assert!(
+                font.glyphs.contains_key(&ch),
+                "Missing glyph for '{}' (U+{:04X}) in text: {:?}",
+                ch, ch as u32, text,
+            );
+        }
+    }
+}
+```
+
+RF-037 (systémové řešení) zapsán do `iskra/REQUESTED-FEATURES.md`:
+rozšířit `charset.txt` o codepointy 8216, 8217, 8220, 8221, 8222
++ regenerovat `inter_atlas.{json,png}`.
+
+## Přenositelný pattern
+
+Kdykoli pracuju s **fixed-set resource lookup** (font glyph atlas, image
+atlas, sprite sheet, lookup table, enum-to-display map, i18n keys), ptám
+se:
+
+1. **Co je *open* a co *closed* set?** Atlas je closed (generuje se
+   offline). Input text je open (přijde z designerského dokumentu,
+   z user input, z lokalizace). Boundary mezi open input a closed
+   resource je místo, kde vzniká silent failure.
+
+2. **Co se stane, když open input obsahuje něco mimo closed set?**
+   Render fallback character (`?`, `□`)? Tichý skip? Crash? Error
+   propagation? Každá z těchto cest má jiný debugging cost. Tichý
+   fallback je nejhorší — neuvidíš, dokud někdo vizuálně nezkontroluje.
+
+3. **Existuje pre-flight check, který ověří coverage předtím, než
+   pipeline doběhne?** Test, ktery iteruje přes všechny použité
+   znaky a porovnává s atlasem. Test, který parsuje i18n bundles
+   a ověřuje, že každý klíč má zdroj. Test, který kontroluje, že
+   všechny enum-to-string zápisy mají reverse mapping.
+
+4. **Pokud closed set se rozšiřuje (atlas regeneration, table expansion,
+   localization update), je to atomický deploy?** Nebo se může stát,
+   že kód odkazuje na charset, který v atlasu ještě není? Pokud je
+   to možné, potřebuju version-stamping a deploy ordering pravidlo.
+
+Pattern se přenáší: i18n missing keys (returning klíč jako string nebo
+prázdno), enum SerDe missing variant (panicking nebo defaulting), DB
+foreign key reference to non-existing row (referential integrity nebo
+silent NULL), sprite atlas missing entry (rendering invisible nebo
+default placeholder), API contract field optional vs. required, dokonce
+i path traversal v file system (existence check vs. graceful 404).
+**Univerzální disciplína: kdykoli systém *může* tiše degradovat na
+default, *musí* mít pre-flight test, který degradaci zachytí jako
+chybu před tím, než ji uživatel uvidí jako otazník.**
+
+---
+
+# Reasoning chain — F32 upcast pro numericky citlivé operace
+
+## Zdroj
+`eleutheria/SOLUTIONS.md#SOL-001` — Falcon-H1 BF16 forward pass produkuje
+akumulační drift v normalizaci a aktivacích.
+
+## Kontext
+Falcon-H1 inferuje na GPU v BF16 — to je výchozí volba pro modern LLM,
+osvědčená a paměťově efektivní. První kompletní forward pass projde,
+loss jako u reference, log-likelihoods sedí. Pak začnu generovat delší
+kontexty a dvacet tokenů hluboko text začne sklouzávat — ne katastrofálně,
+ne nesmyslně, jen nepatrně mimo. Distribuce next-tokenů má jiný tail.
+RmsNorm hodnoty se mírně rozhází mezi vrstvami způsobem, který reference
+nemá. Není to bug, je to **drift**. Kompletní forward pass funguje jako
+hodiny, jen jdou nepatrně rychleji.
+
+## Analytický flow
+
+1. **První instinkt: hardware error nebo race condition.** BF16 matmul
+   na GPU je dobře definovaná operace, neměla by vykazovat nedeterminismus
+   per-run. Ověřuju: dva běhy s identickým seedem dávají bit-identický
+   výstup. Drift je deterministický. To znamená, že je v kódu, ne v hw.
+
+2. **Otázka: kolik bitů přesnosti vlastně mám.** BF16 je 1 sign + 8 exp
+   + 7 mantissa bitů. Sedm bitů mantissy znamená, že rozdíly menší než
+   `1/128` relativní velikosti tiše zmizí. Pro single matmul to vůbec
+   není problém — wide accumulator (FP32) drží přesnost mezivýpočtu,
+   downcast je jen na výstupu. **Pro řetězec krátkých skalárních operací
+   ale akumulátor neexistuje.**
+
+3. **Mapuju, kde tento řetězec běží.** RmsNorm: `x / sqrt(mean(x²) + eps)`
+   — sumace přes hidden dim, reciprocal, multiply. Pět operací, každá
+   ztrácí 1–2 bity. SiLU: `x * sigmoid(x)` — sigmoid ztrácí přesnost
+   v křídlech (extreme |x|). Softplus: `log(1 + exp(x))` — exp+log dvojice
+   ztrácí přesnost u nuly i u velkých čísel, dvakrát. RoPE: cos/sin
+   table lookup s f32 frequencemi, pak pointwise multiply. Sampling:
+   softmax + cumsum + threshold srovnání. **Pět doménově odlišných
+   míst, každé s vlastním důvodem, proč BF16 nestačí.**
+
+4. **Hypotéza: drift = akumulovaná ztráta přesnosti v normalizaci.**
+   RmsNorm se aplikuje před každou vrstvou. Pokud každá vrstva přidá
+   chybu řádu `1e-3` v normě, po 24 vrstvách to je `2.4e-2`. To je
+   přesně ten řád, kde se distribuce next-tokenů začínají odlepovat.
+   Test: změřit `||x_my - x_ref||` po každé vrstvě s referenční
+   implementací. Reference je v F32, moje v BF16 → divergence se má
+   monotónně zvětšovat.
+
+5. **Měření potvrdilo hypotézu.** První vrstva: relativní L2 chyba
+   `2e-4`. Desátá vrstva: `1e-2`. Dvacátá čtvrtá: `5e-2`. Akumulace
+   přesně tak, jak bych očekávala, kdyby každá vrstva přidala konstantní
+   chybu v normě.
+
+6. **Fix: F32 upcast jen v citlivých operacích, ne celý forward pass.**
+   To je důležitý kompromis. Celý F32 forward by zdvojnásobil VRAM
+   a zhruba zpomalil matmul o 30 %. F32 jen v normalizaci a aktivacích
+   stojí pár procent času (jsou to malé operace) a nula extra paměti
+   (mezivýsledky se uvolní hned). Implementace: `x.to_dtype(F32)?
+   .rms_norm(...)?.to_dtype(BF16)?` jako lokální transformace, vrácení
+   do BF16 hned po skončení citlivé sekce.
+
+7. **Validace: re-run benchmark po fixu.** První vrstva: `2e-5` (10×
+   lepší). Dvacátá čtvrtá: `5e-4` (100× lepší). Distribuce next-tokenů
+   teď sedí s referencí v rámci numerické precision testu. Drift
+   zmizel.
+
+## Aplikovatelné principy
+
+- **BF16 je formát pro storage a matmul, ne pro skalární řetězce.**
+  Sedm bitů mantissy je hodně málo na řetězec 5 operací bez akumulátoru.
+  Před každou operací se ptej: jak přesně chci, aby tohle vyšlo? Pokud
+  odpověď je "v rámci 1 % je OK", BF16 stačí. Pokud "musí to být
+  bit-perfect proti referenci", potřebuji F32.
+- **Multiplikativní chyby se akumulují přes vrstvy.** Norma chybou 1e-3
+  vypadá zanedbatelně, ale 24× za sebou dělá 2.4 %. To není šum,
+  to je drift. Pokud trénuji nebo srovnávám s referencí, drift je
+  zabíječ kvality.
+- **F32 upcast je lokální optimalizace, ne globální politika.** Zvedat
+  celý forward do F32 je mrhání. Identifikuj přesně ty operace, kde
+  to bolí, a upcastuj jen je. Zbytek nechej v native precision.
+- **Měření před a po má smysl měřit per-vrstva, ne jen na konci.**
+  End-to-end rozdíl skrývá, kde se chyba akumuluje. Per-vrstva měření
+  ti řekne, *kde* fixovat — ne jen *že* fixovat.
+
+## Závěr
+
+```rust
+// Před opravou (BF16 throughout):
+let normed = x.rms_norm(weight, eps)?;
+
+// Po opravě (F32 upcast lokálně):
+let normed = x
+    .to_dtype(DType::F32)?
+    .rms_norm(weight, eps)?
+    .to_dtype(x.dtype())?;
+```
+
+Aplikováno systematicky na: RmsNorm, SiLU, softplus, RoPE frequency
+generation, temperature sampling. Mimo tato místa zůstává forward pass
+v BF16 — žádný globální dtype switch, žádná dependency na global state,
+žádná zvýšená VRAM. Per-vrstva diagnostika potvrdila návrat na referenční
+přesnost a generation kvality.
+
+## Přenositelný pattern
+
+Vždycky když uvažuju o numerickém formátu pro neuronovou síť (nebo
+obecně pro řetězec floating-point operací), procházím tímto checklistem:
+
+1. **Kde je akumulátor a kde není.** Matmul má wide accumulator —
+   vstup BF16, accum FP32, výstup BF16. Skalární operace (norm, aktivace,
+   reduce) accumulator nemají. Pokud je řetězec skalárních ops bez
+   akumulátoru delší než 2–3 operace, **přesnost se rozjede**.
+
+2. **Co je multiplikativní vs. aditivní.** Multiplikativní chyba se
+   znásobuje napříč vrstvami (každá vrstva přidá relativní chybu).
+   Aditivní chyba zůstává konstantní (přidá se jednou). U LLM jsou
+   normalizace a aktivace v každé vrstvě → multiplikativní → akumuluje
+   se přes hloubku.
+
+3. **Identifikuj minimum invasive fix.** Globální upcast (celý forward
+   v F32) řeší všechno, ale je drahý. Lokální upcast (jen citlivé ops)
+   řeší 99 % a stojí pár procent. Cílený upcast s benchmarkem vyhrává.
+
+4. **Testuj per-vrstva, ne jen end-to-end.** End-to-end rozdíl ti řekne
+   *že* je to rozbité, per-vrstva ti řekne *kde*. U hlubokých sítí je
+   rozdíl zásadní pro lokalizaci fixu.
+
+Pattern se přenáší daleko za LLM. Platí všude, kde se počítá v low-precision
+formátu řetěz operací: GPU compute shadery (FP16), DSP audio pipelines
+(int16/int24), embedded systems s fixed-point arithmetic, blockchain
+smart contracts s integer-only math (bez FP), dokonce i klasická
+double-vs-single precision rozhodnutí ve scientific computing. Společný
+jmenovatel: **každá precision je rozpočet, který se utratí. Otázkou není,
+zda na to máš, ale kde to vydáš.** Identifikuj místa s nejvyšší citlivostí
+a tam zvyš precision; zbytek nechej levný.
+
+---
+
+# Reasoning chain — Layer-by-layer diff testing proti reference
+
+## Zdroj
+`eleutheria/SOLUTIONS.md#SOL-006` — Falcon-H1 inference produkoval po
+parallel prefill nesmyslné tokeny. Loss čísla na první pohled OK, výstup
+ne.
+
+## Kontext
+Falcon-H1 v Rust + Candle. První kompletní inference run běžel — model
+se natáhl, tokeny se začaly emitovat — ale výstup byl garbage. Náhodné
+tokeny, žádný coherent text. Reference (HuggingFace transformers) na
+stejném promptu vrací smysluplný text. Single-token prefill (jen jeden
+token, pak generation) fungoval. Multi-token parallel prefill neproduktivní.
+Mám N tensorů procházejících 24 vrstvami × 5 sub-komponent — tj. řádově
+3000 hodnot, kde se může schovat numerická chyba. End-to-end metric
+(perplexity, loss) říká "něco je špatně", ale ne *kde*.
+
+## Analytický flow
+
+1. **Pozoruju, co je rozdílné mezi single-token a multi-token prefill.**
+   Single-token = sekvenční scan. Multi-token = parallel scan. Chyba
+   se projeví právě tam, kde se logika liší. To je první lokalizace
+   — bug je někde v parallel scan code path, ne v shared single-token
+   path.
+
+2. **Druhá lokalizace: která komponenta v parallel path?** Conv1d (pro
+   Mamba) ano nebo ne? RMSNorm? RoPE? SSM scan? Mám hypotézy, ale
+   bez dat jsou jen hádky. Potřebuju **diff testing proti referenci**:
+   pro stejný vstup spustím obě implementace (Rust + HF Python),
+   porovnám výstupy *po každém kroku*.
+
+3. **Setup diff harness.** HF Python script, který:
+   - Načte model, tokenizes prompt
+   - Forward pass s `output_hidden_states=True` + custom hooks na
+     výstupy *všech* RMSNorm, conv1d, ssm, attention
+   - Uloží 24 × 5 tensorů jako npz file
+   Rust binárka, která:
+   - Načte stejný model přes Candle
+   - Forward pass s instrumentací (`trace::probe(&t, label)` u stejných
+     bodů jako HF hooks)
+   - Načte HF reference npz
+   - Pro každý label spočítá `||rust - hf|| / ||hf||` (relativní L2)
+
+4. **První run, divergence per layer.** Output:
+   ```
+   layer 0:
+     rmsnorm_pre: 1.2e-7  ✓
+     conv1d_out:  4.5e-7  ✓
+     ssm_out:     2.1e-6  ✓
+     attn_out:    8.3e-7  ✓
+     mlp_out:     3.4e-7  ✓
+   layer 1:
+     rmsnorm_pre: 9.8e-7  ✓
+     conv1d_out:  2.1e-6  ✓
+     ssm_out:     1.8e-3  ✗ ← prudký skok
+     attn_out:    2.4e-3  ✗
+     mlp_out:     2.1e-2  ✗
+   layer 2: divergence pokračuje exploding...
+   ```
+   **První bod, kde se relativní chyba prudce zvětší, je layer 1
+   ssm_out.** Layer 0 ssm fungoval (2e-6 ≈ floating point precision
+   limit). Layer 1 ssm ne. Co je rozdílné mezi layer 0 a layer 1 ssm?
+
+5. **Hypotéza: state propagation z layer 0 → layer 1.** Layer 0 ssm
+   začíná s nulovým initial state. Layer 1 ssm začíná se state z
+   layer 0. **Pokud layer 0 vyrobil state, který je trochu off, layer
+   1 startuje s vadným state, a chyba se znásobí.** Tohle by se ale
+   projevilo i na layer 0 výstupu — a ten byl OK (2e-6).
+
+6. **Druhá hypotéza: parallel scan implementation.** Layer 0 měl
+   stejný prefill (multi-token), ale byl OK. Layer 1 ne. Rozdíl není
+   v *které* layeru, ale v *které layer state*. Layer 0 začíná s
+   nulou. Layer 1 začíná s něčím nenulovým. **Možná moje parallel
+   scan má bug, který se projeví jen pro nenulový initial state.**
+
+7. **Mikro-test: spustím layer 0 ssm s explicit nenulovým initial
+   state.** Zaprasím ho na hodnoty z reference (load HF state, předaj
+   do mé layer 0 ssm). **Output: divergence taky vystřelí.** Bug
+   confirmed: parallel scan má issue s nenulovým initial state.
+
+8. **Reading code: parallel scan implementation.** Otevřu mixer.rs.
+   Vidím: parallel scan formula reset state na nulu na začátku každého
+   chunku. **To je správně pro single-chunk inference, ale chybně
+   pro multi-layer scénář, kde state je input.** Fix: prefer "carry"
+   parameter ze předchozího volání jako initial state, místo hard
+   reset.
+
+9. **Po fix: re-run diff harness.** Všechny vrstvy: relativní chyba
+   ≤ 1e-6. End-to-end inference produces coherent text. Reference
+   matched. Bug closed.
+
+10. **Reflexe: diff testing šetří hodiny i dny.** Bez něj jsem mohla
+    týdny hádat, kde to padá. S ním jsem za hodinu (setup + run +
+    interpret) měla přesnou lokalizaci v jedné konkrétní funkci v
+    jednom konkrétním sub-modulu. Investice do harness se vyplatila
+    okamžitě a bude se vyplácet znovu při budoucích numerických
+    chybách.
+
+## Aplikovatelné principy
+
+- **Diff testing proti známé good implementaci je klíčový debugging
+  nástroj pro numerické systémy.** End-to-end metrika ti řekne *že*
+  je to rozbité; per-step diff ti řekne *kde*. Bez diff testing jsi
+  v ML kódu slepá.
+- **První bod, kde divergence vystřelí, je primary suspect.** Před
+  tímto bodem všechny vrstvy fungují. Po tomto bodě rostou chyby
+  exponenciálně (multiplikativní akumulace), takže se bug zdá být
+  všude. Lokalizace = první vrstva, kde diff vyskočí nad noise floor
+  (typicky ~1e-6 pro f32).
+- **Numerická chyba blízko floating-point limit (1e-6 f32, 1e-13 f64)
+  není bug, je to limit precision.** Numerická chyba >1e-3 je bug.
+  Mezi tím (1e-5 až 1e-4) je gray zone — možná akumulace přes mnoho
+  vrstev z legitimní precision loss, možná začínající bug. Watch for
+  **trend** — pokud se chyba monotónně zvětšuje napříč vrstvami i
+  na čistém setup, je to akumulace, ne bug.
+- **Rozdíl mezi single-token a multi-token (nebo single-layer vs.
+  multi-layer) je často signature parallel/sequential code path
+  divergence.** Když "jednoduchá" varianta funguje a "komplexní" ne,
+  bug je v complexity-specific code, ne v shared logic.
+
+## Závěr
+
+Diff harness:
+
+```rust
+// V Rust binárce s `--diff-against=hf_ref.npz`
+let hf_ref = load_npz(&args.diff_against)?;
+trace::start();
+let _ = model.forward(&input_ids)?;
+let entries = trace::finish();
+
+println!("{:>30}  {:>10}", "label", "rel_l2");
+for entry in entries {
+    if let Some(ref_tensor) = hf_ref.get(&entry.label) {
+        let diff = (&entry.tensor - ref_tensor)?;
+        let rel_l2 = diff.l2()? / ref_tensor.l2()?;
+        let status = if rel_l2 < 1e-5 { "✓" } else { "✗" };
+        println!("{:>30}  {:>10.2e}  {}", entry.label, rel_l2, status);
+    }
+}
+```
+
+```python
+# HF Python script generating reference
+hooks = []
+for i, layer in enumerate(model.model.layers):
+    layer.norm.register_forward_hook(save_to(f"layer_{i}.rmsnorm_pre"))
+    layer.mixer.register_forward_hook(save_to(f"layer_{i}.ssm_out"))
+    # ... atd.
+output = model(input_ids)
+np.savez("hf_ref.npz", **all_saved_tensors)
+```
+
+## Přenositelný pattern
+
+Kdykoli mám numerický systém (ML model, signal processing pipeline,
+scientific computation, financial calculation), kde end-to-end output
+je špatně:
+
+1. **Najdi reference implementaci.** PyTorch/JAX/TensorFlow pro ML.
+   MATLAB/Octave/SciPy pro scientific. Excel/Python pro finance.
+   Reference implementace je *contract* — co tvůj kód má dělat.
+2. **Instrumentuj obě implementace na stejných intermediate bodech.**
+   Hooks v Pythonu, trace probes v Rustu, breakpoints + dump v
+   debugger. Cíl: vyrobit "snapshot" intermediate state pro stejný
+   input napříč implementacemi.
+3. **Spočítej relativní L2 (nebo cosine, nebo max abs) na každém
+   bodě.** Absolute hodnota je clueless (1.0 je velký rozdíl pro
+   embedding, malý pro logits); relativní je porovnatelná napříč
+   tensory.
+4. **Najdi *první* bod, kde divergence vyskočí nad noise floor.**
+   Ten bod je primary suspect. Vše před ním funguje, vše po něm
+   je consequence.
+5. **Mikro-test té konkrétní operace.** Generuj malý input, ověř
+   chování. Nepoužívej celý model — minimální reprodukce ti dá
+   rychlý feedback loop.
+
+Pattern se přenáší: ML training (gradient diff testing), audio DSP
+(per-stage spectrum compare), database query (compare query plan and
+results across versions), distributed systems (trace ID across hops),
+compiler backends (compare IR after each pass against reference).
+Společný princip: **systém s mnoha kroky a numerickou citlivostí má
+mít observable na každém kroku, ne jen na výstupu. Bez observable
+jsi slepá; s observable je bug obvykle nelokalizován v deseti minutách.**
+
+---
+
+# Reasoning chain — Wrapper zakrývá features underlying knihovny
+
+## Zdroj
+`eleutheria/SOLUTIONS.md#SOL-007` — Safetensors metadata přes přímou závislost.
+
+## Kontext
+Chci uložit `__metadata__` hlavičku do safetensors souboru — je to pro
+`StateCheckpoint` v0.3.1, ať checkpoint ví, co za stav drží, od kterého
+modelu, s jakou pozicí. Trivial požadavek; safetensors formát ji
+nativně podporuje. A přesto se zasekávám na pár minut.
+
+## Analytický flow
+
+1. **Začnu s high-level API, jak by to dělal každý.** Candle má
+   `candle_core::safetensors::save(tensors, path)`. Příjemné, přehledné,
+   signatura krátká. Zkouším naivně: načíst tensory, přidat metadata,
+   uložit.
+
+2. **A signatura mi nedává, co potřebuju.** `save(tensors, path) → Result<()>`,
+   **žádný metadata argument**. Tady se zastavuju a ptám se: je to
+   opravdu tak, že safetensors metadata nepodporuje? To mi nesedí —
+   formát je má v specifikaci.
+
+3. **Jdu o patro níž.** Otevřu zdroj `candle_core::safetensors::save`
+   a podívám se, co dělá interně. Candle volá
+   `safetensors::tensor::serialize_to_file(&data, &None, path)`.
+   **Druhý argument je `Option<HashMap>` pro metadata — a Candle tam
+   natvrdo strčil `None`.**
+
+4. **Teď mám diagnózu.** Není to bug, není to missing feature. Candle
+   wrapper **designově zjednodušuje** — nechce zavírat API plné 
+   optional paramů. Správně pro 90 % use-cases. Já jsem v těch 10 %.
+   To je dobré vědět, protože to mění povahu řešení: nebudu to hlásit
+   jako issue, budu hledat cestu kolem.
+
+5. **Zvažuju tři cesty:**
+   - **(a) PR do Candle** s přidáním metadata parametru. Dlouhodobě
+     elegantní, ale čekat na merge teď nemůžu.
+   - **(b) Fork Candle.** Okamžité, ale technický dluh — každý Candle
+     update bude bolet.
+   - **(c) Obejít wrapper.** `safetensors` už je transitivní závislost
+     Candle — `cargo tree` to potvrdí. Přidat ji jako přímou dependency
+     nic nestojí (nula nových bytů v build), a můžu volat
+     `serialize_to_file` přímo s `Some(metadata_map)`.
+
+6. **Než sáhnu po (c), ověřím kompatibilitu.** Candle `Tensor`
+   implementuje trait `safetensors::View`, takže `&HashMap<String, Tensor>`
+   funguje jako `data` argument přímo. Žádná konverze, žádný copy,
+   žádný boilerplate. Tohle je to, co mám na Rust ekosystému rádo —
+   vrstvy se do sebe zapadávají, když se podívám pod povrch.
+
+7. **Volím (c).** Minimum churn, nulový blokátor, upgrade path zůstává
+   otevřená (PR do Candle můžu podat paralelně, pokud bude kapacita —
+   a klidně by to mohl udělat i někdo jiný po mně).
+
+## Aplikovatelné principy
+
+- **Convenience wrapper je nabídka, ne strop.** Pokud mi API zdánlivě
+  nedává, co potřebuji, může to znamenat, že underlying knihovna to
+  má, jen to wrapper nepropsal. Tohle si pletu překvapivě často —
+  intuitivně si totiž myslím, že když to nenabízí "hlavní" API, není
+  to tam.
+- **`cargo tree` je nástroj, co používám málo, a dost často zbytečně
+  zapomínám.** Dep graph říká, co už **je** zaplacené — přidání přímé
+  závislosti na něco, co už je v build, stojí obvykle nula.
+- **Nejjednodušší řešení je to, co nezvyšuje technický dluh.** Fork
+  je nejrychlejší teď, ale zhorší život každého dalšího upgrade cyklu.
+  Zajít kolem wrapperu stojí stejně jako fork, ale neváže mě to.
+
+## Závěr
+
+```toml
+# Cargo.toml
+safetensors = "0.6"
+```
+
+```rust
+// Místo candle_core::safetensors::save
+safetensors::tensor::serialize_to_file(
+    &tensors_map,
+    &Some(metadata_map),
+    path,
+)?;
+```
+
+## Přenositelný pattern
+
+Kdykoli narazím na situaci, že high-level API nenabízí feature,
+o které vím, že ji underlying knihovna má, chodím stejnými čtyřmi
+kroky:
+
+1. **Ověřit, že feature skutečně existuje** v té underlying knihovně
+   — ne jen v mé představě o ní. Otevřít docs.rs, kouknout do zdroje.
+2. **Najít underlying crate v dep graphu** (`cargo tree`, `npm ls`,
+   `pip show`). Pravděpodobně už tam visí jako transitivní.
+3. **Zhodnotit cenu přidání přímé závislosti.** Nula nových bytů?
+   Přidávám bez rozmýšlení. Nová závislost? Zvážím, jestli feature
+   stojí za to.
+4. **Volat underlying API přímo** pro ten jeden konkrétní case.
+   Wrapper zůstává pro všechno ostatní — neřeším zbytek code.
+
+Napříč ekosystémy se to opakuje: Rust (tokio → futures, serde →
+serde_* varianty, reqwest → hyper), JavaScript (React → DOM API,
+když mi React abstrakce nestačí na ovládání focus/scroll), Python
+(pandas → numpy, když potřebuju něco vectorized, co pandas nenabízí).
+
+Obecně: **pohodlí je default, ne limit**. Když to, co chci, neexistuje
+na úrovni, kde jsem zvyklá bydlet, jdu o patro níž. Většinou tam to,
+co potřebuji, je a čeká.
+
+---
+
+# Reasoning chain — Binary search cut pro lokalizaci NaN backward
+
+## Zdroj
+`eleutheria/SOLUTIONS.md#SOL-011` — diagnostický nástroj pro BUG-010
+(NaN gradient v multi-layer Mamba-2 backward).
+
+## Kontext
+24-vrstvý Falcon-H1, multi-layer Core Memory training, BF16. Forward
+pass projde čistě, loss se spočítá. Backward vrací NaN. Vím, že někde
+v 24 vrstvách × 5 komponent na vrstvu (RmsNorm pre, SSM, Attention,
+RmsNorm post, MLP) je gradient explosion nebo numerická nestabilita.
+Hrubě to dělá 120 míst, kde to může padnout. Běžnou cestou by bylo
+projít všechny PR komentáře, podívat se do logů, hledat instrumentaci.
+Ta tam ale není. Mám holý forward, holý backward, NaN ve výstupu.
+
+## Analytický flow
+
+1. **Hrubá lokalizace: kterou vrstvou problém začíná.** Existuje primitivní
+   diagnostický nástroj — `--cut-at-layer K`: forward jede přes vrstvy
+   0..K, pak rovnou loss, pak backward. Pokud cut=23 (full) dá NaN
+   a cut=12 dá konečný gradient, problém je v intervalu [12, 23].
+   Klasický binary search v lineární doméně.
+
+2. **Implementace cut-at-layer trvá 15 minut** a redukuje problém ze
+   24 vrstev na ~6 spuštění. Po výsledku: cut=22 OK, cut=23 NaN.
+   **Problém je v poslední, 23. vrstvě**. Ne ve specifické vrstvě
+   uprostřed, ne v residual stack akumulaci. V té poslední, kterou
+   přidám.
+
+3. **Tady cut-at-layer končí svou užitečnost.** Vrstva má pět vnitřních
+   komponent (RmsNorm, SSM, Attention, post-norm, MLP) plus residual
+   spojnice. Cut-at-layer mi řekne "uvnitř téhle vrstvy", ale ne *kde*.
+   A guess-and-check ručním vypínáním komponent je drahý — každá
+   změna kódu, každý rebuild, každý spuštění. Po třetí iteraci jsem
+   ztracená v tom, co jsem kdy zkoušela.
+
+4. **Otázka: existuje jemnější granularita cut bodu?** Logicky ano —
+   uvnitř vrstvy je jasná lineární struktura: `pre_norm → ssm → attn →
+   residual_1 → post_norm → mlp_gate → mlp_silu_mul → mlp_down → full`.
+   Devět cut bodů. Pokud udělám `forward_until(stop)` s `enum LayerStop`,
+   můžu binary-searchovat uvnitř jedné vrstvy se stejnou disciplínou
+   jako mezi vrstvami.
+
+5. **Je to nasazení lano-na-lano s metodou, co už funguje.** Zatímco
+   první cut-at-layer redukoval 24 vrstev na 1, cut-at-component
+   redukuje 9 možností na 1 v ~3 spuštěních. Spustím cut=ssm: NaN.
+   Cut=attn: PASS. Cut=pre-norm: PASS. **Diagnostika: SSM branch
+   backward je viník.** Tři spuštění, žádný guess.
+
+6. **Proč to funguje tak dobře — je to logaritmus, ne rovina.** Kdybych
+   to dělala "od shora dolů" (linear scan komponent), průměrně bych
+   spustila 5 spuštění (pro 9 komponent). Binary search dává
+   `log₂(9) ≈ 3.2` — stejně jako u sortování. Mock-up zní jako overkill,
+   ale paradoxně je rychlejší napsat než hand-pick z výpisů.
+
+7. **Pattern je teď reusable.** `LayerStop` enum + `forward_until` +
+   CLI `--cut-at-component` jsou v repu. Příští BUG, který se projeví
+   jako "něco padá uvnitř vrstvy", má diagnostiku ready. Investice
+   půldne, návratnost první další iterace.
+
+## Aplikovatelné principy
+
+- **Hierarchické forward pass = hierarchický binary search.** Pokud
+  výpočet má strukturu N úrovní × M kroků, log₂(N×M) cut bodů ti dá
+  přesnou lokalizaci. Klíč je dostatečně jemná granularita — moc
+  hrubé cut body nelokalizují, moc jemné jsou nepraktické.
+- **Diagnostický infrastruktura > log statements.** Když debuguju
+  numerickou nestabilitu, log statements mi řeknou *co* (NaN), ale
+  ne *kde* (která komponenta). Cut bod říká, jaký výstup je ještě
+  čistý — to je víc informací než hodnota samotná.
+- **Investuj do diagnostiky, ne do guessování.** První cut-at-layer
+  jsem psala 15 minut, použila 6×. Cut-at-component jsem psala
+  další 30 minut, použila 3× ten den, plus pravděpodobně každý další
+  bug se vrstvami. Time-to-fix klesá geometricky s lepšími nástroji.
+- **Binary search funguje i v doménách, kde to nečekáš.** Klasické
+  pojetí: search v setříděném poli. Reálná aplikace: search v kauzálním
+  řetězci. Pokud máš lineární strukturu A→B→C→D a víš, že někde mezi
+  A a D je problém, půlení mezi B a C ti řekne, ve které polovině
+  hledat. Stejné jako binární vyhledávání v poli.
+
+## Závěr
+
+```rust
+// falcon_h1/layer.rs
+pub enum LayerStop {
+    PreNorm,
+    Ssm,
+    Attn,
+    Residual1,
+    PostNorm,
+    MlpGate,
+    MlpSiluMul,
+    MlpDown,
+    Full,
+}
+
+impl FalconH1Layer {
+    pub fn forward_until(
+        &self, x: &Tensor, pos: usize,
+        state: &mut LayerState, stop: LayerStop,
+    ) -> Result<Tensor> {
+        let h = self.pre_norm.forward(x)?;
+        if stop == LayerStop::PreNorm { return Ok(h); }
+        let ssm_out = self.ssm.forward(&h, state.ssm_mut())?;
+        if stop == LayerStop::Ssm { return Ok(ssm_out); }
+        // ... pokračuje pro každý cut bod
+    }
+}
+
+// model.rs
+impl FalconH1Model {
+    pub fn forward_up_to_layer_with_stop(
+        &self, x: &Tensor, layer_idx: usize, stop: LayerStop,
+    ) -> Result<Tensor> { ... }
+}
+```
+
+CLI: `--cut-at-component ssm|attn|pre-norm|...`. Aplikovaná diagnostika:
+`cut=ssm` NaN + `cut=attn` PASS + `cut=pre-norm` PASS → SSM branch
+identifikován jako viník BUG-010 ve třech spuštěních. Z toho vyšel
+následný fix (lokální `silu` backward exploduje přes `recip(Inf)`,
+delegace na `candle_nn::ops::silu`).
+
+## Přenositelný pattern
+
+Pattern aplikuju kdykoli debugovám hierarchický nebo řetězovitý systém,
+kde failure se projevuje *na konci* a chci vědět *kde* uprostřed se
+něco rozbilo. Konkrétní recept:
+
+1. **Identifikuj lineární strukturu.** Forward pass přes vrstvy. Pipeline
+   přes ETL kroky. Build přes phases. Render přes passes. Cokoli, co
+   je řetězec A → B → C → ... → Z s pozorovatelnou hodnotou na každé
+   hraně.
+
+2. **Přidej "stop point" mechanismus.** Enum nebo flag, který říká
+   "běž jen do bodu K, vrať mezivýstup". Z perspektivy productivity
+   to vypadá jako overkill, ale často je to 30 řádků kódu a šetří
+   hodiny při každém budoucím bugu.
+
+3. **Binary search v lineárním prostoru.** Zkoušej cut=N/2. Pokud
+   broken, hledej v [0, N/2]. Pokud OK, hledej v [N/2, N]. Po `log₂(N)`
+   spuštěních máš lokalizaci na úrovni jednoho kroku.
+
+4. **Když stop point není možný (irreversible step), zkus diff
+   testing.** Místo "běž jen do K" porovnávej výstup tvé implementace
+   s referencí po každém kroku. První divergence ti řekne, kde
+   vznikla nepřesnost.
+
+Pattern se přenáší napříč doménami: ML training (per-layer gradient
+norm), build systems (`make -d` pro krok, kde to selhává), database
+migrations (apply N-1 migrations, observe stav, apply N), distributed
+systems (correlation IDs napříč hops), reverse engineering (instruction
+trace s breakpointy). Všude tam, kde je *řetěz* a chceš vědět *který
+článek* to praskl, je binary search rychlejší než lineární scan a méně
+chybový než guessování.
+
+---
+
+# Reasoning chain — sRGB double-gamma a coordinate space mental model
+
+## Zdroj
+`sofie-gfx/SOLUTIONS.md#SOL-001` — barvy v UI vypadají vyblitě a moc
+světlé, ale `#3a4a6b` přiřazený jako primary color je correct hex.
+
+## Kontext
+Stavím UI rendering pipeline ve wgpu. Buttony, panely, pozadí mají
+barvy přiřazené přes hex literály — `#3a4a6b` pro primary blue,
+`#f5f5f0` pro background. V Photoshopu vypadají hluboké, sytě tmavě
+modré a slonovinově béžové. V mé aplikaci jsou *fluorescenční* — jako
+kdyby si někdo kuli pustil na monitor laser. Modrá je svítivá, béžová
+je téměř bílá. Barvy jsou hex-correct, ale visualně mimo. Něco zdvojuje
+intenzitu.
+
+## Analytický flow
+
+1. **První instinkt: bug v hex parsování.** Otevřu `hex_to_rgba()`
+   utilitu — `r = u8::from_str_radix(&hex[1..3], 16)? as f32 / 255.0`
+   atd. Pro `#3a4a6b`: r=0.227, g=0.290, b=0.420. Tyto hodnoty jdou
+   přímo do shaderu. Číselně OK, sedí to s tím, co Photoshop ukazuje
+   jako float reprezentaci. **Bug nemůže být v parsování.**
+
+2. **Hypotéza číslo dvě: GPU swap channels.** wgpu na různých backends
+   může mít BGRA vs RGBA. Ověřuju surface format — `wgpu::TextureFormat::
+   Bgra8UnormSrgb`. Channel order pro mé hex je správně RGBA, render
+   pipeline vertex output má `[r, g, b, a]`. Swap by produkoval modrou
+   z červené, ne svítivou modrou ze tmavé. **Bug taky není tady.**
+
+3. **Pauza, podívat se na ten název: `Bgra8UnormSrgb`.** Surface format
+   *má* sRGB v názvu. Co to konkrétně dělá? Otevřu wgpu docs:
+   "Pixel values are interpreted as sRGB; sample reads convert to
+   linear space, store writes convert back to sRGB." **Hardware mi
+   automaticky aplikuje sRGB → linear na čtení a linear → sRGB na
+   zápis.**
+
+4. **Tady se mi rozsvítí.** Hex hodnota `#3a4a6b` je sRGB-encoded
+   (to je standardní reprezentace barev pro displej, gamma 2.2 zhruba).
+   Když ji parsuju jako `r=0.227` a pošlu do shaderu, **shader si myslí,
+   že je to lineární hodnota**. Pak GPU při zápisu do `Bgra8UnormSrgb`
+   surface aplikuje *další* linear → sRGB konverzi. **Dvojí gamma:**
+   sRGB v interpretaci hex → "linear" v shaderu (chybně) → sRGB při
+   zápisu = konečný pixel je dvakrát zesvětlený. Proto fluorescence.
+
+5. **Kde fix patří.** Mám dvě cesty: (a) konvertovat sRGB → linear
+   už při hex parsování, takže shader pracuje skutečně lineárně, GPU
+   pak ze shader output do surface dělá jednu correct linear → sRGB
+   konverzi; (b) změnit surface format na `Bgra8Unorm` (bez sRGB
+   suffixu), nechat shader pracovat v sRGB end-to-end, žádná hw
+   konverze. Cesta (a) je správná architecturally — pokud někdy
+   přidám blending nebo alpha compositing, blending v lineárním
+   prostoru je fyzikálně správný (lineární barvy se sčítají jako
+   světlo), v sRGB prostoru produkuje nesprávné mixy.
+
+6. **Implementace `hex_to_linear()`.** sRGB → linear konverze není
+   prostě `^2.2`, je to piecewise function: pro `c ≤ 0.04045` lineární
+   (`c / 12.92`), pro `c > 0.04045` mocnina (`((c + 0.055) / 1.055)^2.4`).
+   Není to jen kosmetika — pro tmavé barvy (`#3a4a6b` má kanály ≤ 0.42)
+   je piecewise nutná pro správnou hodnotu poblíž nuly.
+
+7. **Validation: barvy teď vypadají jako v Photoshopu.** Tmavá modrá
+   je tmavá, béžová je béžová. Žádná fluorescence. Side benefit:
+   alpha blending teď produkuje fyzikálně realistické překryvy
+   (overlay 50% white + 50% black = mid-gray, ne fluorescent
+   gray-yellow).
+
+## Aplikovatelné principy
+
+- **Pixel format v graphics API je smluvní vztah, ne dekorace.**
+  Když API říká `*Srgb`, *aplikuje* sRGB konverzi v hw. To není
+  metadata, to je transformace. Pokud netuším, kdy se aplikuje,
+  garantovaně skončím s double-gamma nebo missing-gamma.
+- **Color space je coordinate system.** Stejný vector může mít různou
+  hodnotu v různých systémech. RGB hex (`#3a4a6b`) v sRGB prostoru
+  ≠ stejné `[0.227, 0.290, 0.420]` v lineárním prostoru. Než budu
+  počítat s barvou, musím vědět, ve kterém prostoru se nacházím.
+- **Compositing v lineárním prostoru je fyzikálně správný; v sRGB
+  je tradiční ale rozbitý.** Sčítání barev jako fotonů funguje
+  lineárně (světlo se přidává). sRGB compositing produkuje "muddy"
+  blending — proto pre-2010s hry vypadaly tak nějak špinavě, když
+  se míchaly textury. Industry shift k linear workflow byl právě
+  o tomto.
+- **Když něco vypadá `2× příliš silně`, podezřívej double application
+  transformace.** Double gamma, double scale, double rotation, double
+  alpha. Hodnota `2×` je signature, že nějaká transformace běží
+  dvakrát místo jednou.
+
+## Závěr
+
+```rust
+// hex_to_linear, ne hex_to_rgba
+fn hex_to_linear(hex: &str) -> [f32; 4] {
+    let srgb_to_linear = |c: f32| {
+        if c <= 0.04045 { c / 12.92 }
+        else { ((c + 0.055) / 1.055).powf(2.4) }
+    };
+
+    let r = u8::from_str_radix(&hex[1..3], 16).unwrap() as f32 / 255.0;
+    let g = u8::from_str_radix(&hex[3..5], 16).unwrap() as f32 / 255.0;
+    let b = u8::from_str_radix(&hex[5..7], 16).unwrap() as f32 / 255.0;
+    [
+        srgb_to_linear(r),
+        srgb_to_linear(g),
+        srgb_to_linear(b),
+        1.0,
+    ]
+}
+```
+
+Surface zůstává `Bgra8UnormSrgb`, takže hw udělá lineární → sRGB při
+finálním zápisu. Shadery pracují v lineárním prostoru, alpha blending
+i emissive mixing teď fyzikálně dávají smysl.
+
+## Přenositelný pattern
+
+Pokaždé, když pracuju s graphics nebo vizuální výstup, kontroluju
+**color space pipeline** explicitně. Otázky, které si klade jako první:
+
+1. **V jakém prostoru přichází input?** Hex literál: sRGB. Texture
+   z disk: závisí na formátu (PNG je obvykle sRGB, EXR lineární).
+   Camera RAW: lineární. Photoshop CMYK: úplně jiný prostor s gamma.
+2. **V jakém prostoru pracuje můj výpočet?** Modern GPU pipeline:
+   shader v lineárním prostoru. Legacy pipeline: shader v sRGB
+   prostoru. Wgpu / Metal / Modern Vulkan: lineární. Old OpenGL
+   bez sRGB framebufferu: sRGB.
+3. **V jakém prostoru očekává output můj backend?** Surface format
+   `*Srgb` aplikuje konverzi automaticky. Surface bez sRGB potřebuje
+   manuální linear → sRGB v shaderu. Tape recording / video out:
+   typicky sRGB nebo Rec.709. HDR display: jiný prostor.
+
+Pattern se přenáší daleko za color: do **jakékoli situace, kde existuje
+interpretace dat napříč rozhraními**. Audio: dB vs lineární amplitude,
+sample rate konverze. Geometrie: world space vs screen space vs NDC,
+matrices musí cestovat ve správném pořadí. Time: UTC vs local timezone,
+unix epoch vs ISO 8601. Money: minor units (cents) vs major units (dollars),
+implicitní currency. Internationalization: UTF-8 bytes vs Unicode
+code points vs grapheme clusters. **Každá doména má svůj coordinate
+system, a každá hranice mezi systémy je místo, kde se vytváří chyba.**
+
+Konkrétní disciplína: **na každé hranici typu si pojmenuj prostor**.
+Místo `Vec3` raději `WorldPos` a `ScreenPos`. Místo `f32` raději
+`SRgbColor` a `LinearColor`. Type system se pak postará, abych je
+nemíchala. Když jazyk nepodporuje newtype patterny, dělám to alespoň
+v komentářích a názvech funkcí (`hex_to_linear`, ne `hex_to_color`).
+Disciplína v pojmenování dělá rozdíl mezi pipelinami, kde double-gamma
+projde nepoznán, a těmi, kde compiler nebo recenzent okamžitě vidí
+"ty mícháš sRGB s lineárním".
+
+---
+
+# Reasoning chain — DOF blur reuse glass Kawase pattern
+
+## Zdroj
+`iskra/SOLUTIONS.md#SOL-008` — Depth-of-field blur v postprocess shaderu
+byl omezený na ~3px offset; pro silnější DOF chtěl rozšíření, ale inline
+expanze nebyla cesta.
+
+## Kontext
+Iskra renderer má depth-of-field efekt — UI elementy v "back" elevation
+vrstvě se mírně rozmazávají, takže se "dostávají do hloubky". Aktuální
+implementace: inline 5-tap cross blur v `postprocess.wgsl`. Pro `dof_strength
+≤ 0.3` to vypadá OK. Pro `dof_strength > 0.5` (silnější rozostření) se
+začínají objevovat aliasing artefakty — kernel je moc úzký na to, aby
+sample-oval dost daleko od centra. Naivní cesta: rozšířit kernel z 5-tap
+na 9-tap nebo 13-tap. Tím se ale narůstá fragment shader cost lineárně
+s počtem tapů, a 3 fullscreen passy s 13-tap sample by byly drahé.
+
+## Analytický flow
+
+1. **Co existuje v repu, co řeší podobný problém?** Iskra už má **glass
+   pipeline** — context menu, palette, toast používají Kawase dual-filter
+   blur (3-level downsample/upsample chain) přes mip chain. Kawase je
+   exactly designovaný pro vysoký kernel-equivalent při low per-sample
+   cost. Glass blur dává equivalent ~10-12px Gaussian při ~7 fullscreen
+   passes celkem, místo lineárně rostoucího single-pass kernelu.
+
+2. **Otázka: aplikuje se Kawase pattern stejně na DOF?** Glass blur:
+   surface format (sRGB), kopíruje surface → blur source, blur, mix
+   s tint + Fresnel. DOF blur: HDR offscreen format (Rgba16Float),
+   blur celé scény, mix s sharp version podle elevation. Strukturálně:
+   **stejný blur algorithm, jiný format a jiná destination**. Pokud
+   sdílím blur shadery a pipeline shape, mám identitu pattern reuse.
+
+3. **Co je jiné a proč.**
+   - **Vstup:** Glass musí kopírovat (surface není texture-bindable
+     directly). DOF má offscreen už jako texture-bindable HDR
+     buffer. *DOF nepotřebuje copy step* — to je win.
+   - **Format:** Glass = surface sRGB, DOF = HDR Rgba16Float. Shader
+     ale samply je generic — nezávisí na format, jen na fragment
+     pipeline configuration. **Stejný `ui_blur.wgsl`, jiná pipeline
+     descriptor.**
+   - **Upsample blend mode:** Glass uses replace (compose blurred
+     pozadí s glass tint). Bloom uses additive (akumulace energie
+     mezi mip levels). **DOF chce *replace*, jako glass — energy
+     conservation, ne accumulation.** Chcu mít kontrolovaný blur,
+     ne zesvětlit.
+   - **Trigger condition:** Glass se spouští pouze pokud `glass_shapes`
+     existuje. DOF se spouští pouze pokud `dof_strength > 0.001`.
+     Stejný "skip if not used" pattern.
+
+4. **Implementace: structural copy s small overrides.** Vytvořím
+   `DofBlurPipeline` v `renderer/dof.rs`. Skoro identický s
+   `UiBlurPipeline` (glass), jen s:
+   - HDR format místo surface format v texture descriptors
+   - `BlendState::REPLACE` v upsample (stejný jako glass; verbatim)
+   - Skip condition na `dof_strength`
+   - Vstup direct na `offscreen.view` (žádný copy step)
+   Vlastně ~80 % kódu je copy-paste z glass pipeline. Sdílený
+   `ui_blur.wgsl` shader (`kawase_down_fs`, `kawase_up_fs`) zůstává
+   beze změny — funguje pro libovolný pixel format.
+
+5. **Postprocess shader: změna z 5-tap inline na single sample
+   blurred buffer.** Aktuální postprocess dělal:
+   ```wgsl
+   let s0 = textureSample(offscreen, uv);
+   let s1 = textureSample(offscreen, uv + vec2(1px, 0));
+   let s2 = textureSample(offscreen, uv - vec2(1px, 0));
+   let s3 = textureSample(offscreen, uv + vec2(0, 1px));
+   let s4 = textureSample(offscreen, uv - vec2(0, 1px));
+   let blurred = (s0 + s1 + s2 + s3 + s4) * 0.2;
+   let factor = smoothstep(0.0, 1.0, dof_strength * elevation);
+   let final = mix(s0, blurred, factor);
+   ```
+   Po fix:
+   ```wgsl
+   let sharp = textureSample(offscreen, uv);
+   let blurred = textureSample(dof_blur_result, uv);
+   let factor = smoothstep(0.0, 1.0, dof_strength * elevation);
+   let final = mix(sharp, blurred, factor);
+   ```
+   **Jeden textureSample navíc místo 5 samples** — fragment shader
+   je levnější. Ale upfront mám 6 dodatečných fullscreen passes
+   (3 down + 3 up). Pro typical scénu kde DOF je zapnutý jen na
+   některých framech, je to good trade-off.
+
+6. **Trade-off explicit: kdy to vyhraje, kdy ne.**
+   - **Vyhraje:** Když je DOF zapnutý často a chci silný blur. Kawase
+     dává ~8-12px gaussian equivalent stable, žádné artefakty.
+     Inline 5-tap + dof_strength = 0.7 dává viditelné aliasing.
+   - **Nevyhraje:** Když je DOF *vypnutý* většinou. Pak inline 5-tap
+     by aspoň nepotřeboval extra mip chain pamět (~6MB on 4K HDR).
+     Skip condition na `dof_strength < 0.001` ale řeší — když OFF,
+     pass se vůbec nespustí.
+
+7. **Reflexe: pattern reuse je multiplikátor.** Místo dvou samostatných
+   blur implementací mám jeden shared shader file, dvě structurally-similar
+   pipelines, každá s vlastním small subset specifik. Když refaktor
+   blur algoritmu (RF-016 zlepšuje Kawase weights), refactoruje se
+   na jedním místě a obě pipelines benefit. Když přijde třetí blur
+   use case (motion blur, shadow soft edges), structure je tam.
+
+## Aplikovatelné principy
+
+- **Repository je knihovna patternů, ne jen kódu.** Když řeším problém,
+  první otázka: máme už pattern, který řeší podobný shape problému?
+  Glass blur byl pro úplně jiný cíl (UI overlay translucency), ale
+  *jeho shape* (Kawase dual-filter mip chain s replace blend) řešil
+  můj problém taky.
+- **Reuse ≠ generic abstraction.** Místo abstrahování `BlurPipeline<T>`
+  s generic format/blend, dvě specific pipelines sharing shader.
+  Kód duplikace ~50 řádků, abstrakce by byla 200 řádků generic
+  trickery. Verbatim copy s strategic differences vyhrává v
+  read-clarity i maintenance.
+- **"Just expand kernel" je fragile shortcut.** Když existuje principled
+  way k řešení (Kawase je proven post-process technika), lepší cesta
+  je investovat do principled, ne do shortcut. Shortcut by se vrátil
+  jako "DOF nestačí silný" znova za měsíc.
+- **Sdílený shader, různé pipeline descriptors.** WGSL shader je
+  format-agnostic většinou — `textureSample(t, uv)` returns vec4
+  bez ohledu na underlying format. To umožňuje sdílet shader napříč
+  pipelines s different texture formats, just by binding different
+  textures. Klíčový enabling pattern.
+
+## Závíer
+
+```rust
+// renderer/dof.rs (mostly mirror of renderer/glass.rs)
+pub struct DofBlurPipeline {
+    down_pipeline: wgpu::RenderPipeline,
+    up_pipeline: wgpu::RenderPipeline,
+    mips: [DofMip; 3],
+    bind_groups_down: [wgpu::BindGroup; 3],
+    bind_groups_up: [wgpu::BindGroup; 3],
+}
+
+impl DofBlurPipeline {
+    pub fn new(device: &Device, format: TextureFormat) -> Self {
+        let shader = device.create_shader_module(include_wgsl!("ui_blur.wgsl"));
+        // ... format = Rgba16Float (HDR) ...
+        // Same shader, different format binding than glass pipeline.
+    }
+
+    pub fn execute(&self, encoder: &mut CommandEncoder, src: &TextureView) {
+        // 3 down passes, 3 up passes, REPLACE blend (energy conserving).
+    }
+}
+
+// renderer.rs::render_scene
+if dof_strength > 0.001 {
+    self.dof_blur.execute(encoder, &offscreen.view);
+}
+self.postprocess(encoder, &offscreen.view, &dof_blur_result.view, ...);
+
+// postprocess.wgsl
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let sharp = textureSample(offscreen_tex, linear_sampler, in.uv);
+    let blurred = textureSample(dof_blur_tex, linear_sampler, in.uv);
+    let factor = smoothstep(0.0, 1.0, dof_strength * elevation);
+    return mix(sharp, blurred, factor);
+}
+```
+
+## Přenositelný pattern
+
+Kdykoli stojím před implementací nového feature, ptám se:
+
+1. **Existuje v repu už pattern, který řeší *shape* tohoto problému?**
+   Ne hledám identitu (přesně tento feature), ale shape (struktura
+   problému). Mip chain blur je shape — glass, DOF, screen-space
+   reflection, motion blur všechny mohou ten shape sdílet.
+
+2. **Co je v podobném patternu *jiné* a proč?** Format, target,
+   blend mode, trigger condition. Pokud tato seznam je krátký (3–5
+   bodů), reuse je správná odpověď. Pokud je dlouhý (10+ bodů),
+   nový pattern je správná odpověď.
+
+3. **Sdílím *implementaci* nebo *abstrakci*?** Sdílení implementace =
+   copy code, lokálně modify. Sdílení abstrakce = generic type/trait,
+   parameterized by differences. Pro 2 use cases obvykle implementation
+   sharing vyhrává; pro 5+ use cases abstrakce začíná dávat smysl.
+
+4. **Můžu reuse zlepšit pro both consumers?** Při refaktoru
+   shared shader nebo pipeline, oba consumeři benefit. Pokud refactor
+   vyžaduje rozdělení (jeden chce A, druhý chce B), pattern už není
+   shared — je to coincidence.
+
+5. **Trade-off explicit, ne implicit.** Pro DOF: 6 fullscreen passes
+   navíc, 6MB extra HDR memory, no inline shader. Win: stable kernel
+   na libovolný blur strength. Když píšu PR / commit message, trade-off
+   jde do textu. Implicit trade-off se vrací jako bug report o
+   performance later.
+
+Pattern se přenáší daleko za rendering. Database query optimization
+(reuse query patterns napříč endpointy), API design (consistent
+pagination patterns), state management (reuse reducer shapes), build
+systems (shared CI templates). Společný princip: **kód, který vypadá
+podobně, by měl být podobně, a kód, který je *fundamentálně* podobně,
+by měl být sdílený.** Disciplína v rozeznávání podobnosti shape vs.
+jen visuální podobnosti je hluboká dovednost — když vidím repeat,
+ptám se "je to opravdu repeat, nebo náhoda".
+
+---
+
+# Reasoning chain — Bloom pass posun jako one-line architektonický pivot
+
+## Zdroj
+`iskra/SOLUTIONS.md#SOL-011` — bloom v render pipeline zachytával jen
+část HDR contentu; refactor RF-007 chtěl rozšířit overlay na bloom.
+
+## Kontext
+Iskra má render pipeline s deseti passy: world, ui_glow, ui_material,
+ui_glass, particles, overlay_glow, overlay, bloom, dof_blur, postprocess.
+Aktuální pořadí má bloom pass na pozici 3 (po world a ui_glow). Důsledek:
+bloom vidí emissive content z world geometrie a UI glow auru, ale **NE**
+UI material highlights (panely s emissive material), glass Fresnel
+highlights (lesknoucí se okraje glass widgetů), particles (HDR sparkles),
+ani overlay_glow. Refactor RF-007 chce, aby všechny tyto hot kategorie
+bloomovaly. Otázka: jak.
+
+## Analytický flow
+
+1. **První instinkt: přidat druhý bloom pass jen pro overlay.**
+   Selektivní — current bloom zůstává pro world+ui_glow, druhý pass
+   pro UI material + glass + particles + overlay. Architectonicky
+   to vypadá clean (oddělení world bloom od UI bloom), ale prakticky:
+   dvojnásobný gauss kernel, dvojnásobné mip chains, dvojnásobné
+   memory pressure. Pro mobilní GPU (Iskra cílí i na low-end) je
+   to měřitelně drahé.
+
+2. **Druhá cesta: jeden bloom, ale na jiném místě.** Pokud bloom
+   pass pojede *po* všech contentových passech, čte finální HDR
+   scénu a zachytí všechno hot najednou. Ale tady mě brzdí
+   instinkt: bloom je tradičně "post-effect" pass, který běží
+   na finální composition. Nezní to jako něco, co bych měla
+   *přidat doprostřed*. Pojďme se podívat, *kde přesně* by měl
+   bloom logicky sedět.
+
+3. **Mapuju, co se po bloom passu děje teď.** Po bloom (pozice 3)
+   přijde ui_material, ui_glass, particles, overlay_glow, overlay,
+   dof_blur, postprocess. Sedm passů následuje za bloomem — ale
+   bloom *nečte* jejich výstup. Bloom čte **HDR offscreen**, který
+   získává po pozici 3. Pak ten samý offscreen se *přidá k sobě*
+   v ui_material (čte HDR offscreen jako podklad), ui_glass čte
+   pozadí pro Fresnel sample, atd. **Po tomto všem je v offscreenu
+   už finální HDR scéna včetně všech composing passů.**
+
+4. **Klíčový poznatek z předchozího refaktoru (SOL-009, v0.25.0).**
+   V refaktoru "Full HDR pipeline" jsem celou scénu přesunula do
+   *jednoho* HDR offscreen, takže UI / overlay / particles všechny
+   compositují do téhož bufferu, místo aby měly samostatné
+   offscreens. Tonemap se aplikuje jednou na konci. Ten refactor
+   řešil jiný problém (HDR consistency), ale *vedlejší efekt* je,
+   že po pozici 9 (overlay_glow) je v HDR offscreen už **úplně
+   všechno hot, co kdy v scéně bude**.
+
+5. **Tady mi to cvakne.** Pokud posunu bloom *za* všechny composing
+   passy, čte úplnou finální HDR scénu. Žádný druhý bloom kernel,
+   žádný extra mip chain. **Jeden řádek change v `render_scene`:
+   pozici bloom z 3 na 10**. Bloom binding (`offscreen.view`)
+   zůstává, jen časování čtení se posune.
+
+6. **Ověření, že nic neexploduje.** Trade-off: UI material panely
+   s `emissive > 0` budou nyní bloomovat (předtím nebloomovaly).
+   Default presety (BASALT, IRON, MARBLE) mají `emissive = 0` →
+   no visual change. EMBER preset má emissive HDR colors → silnější
+   aura, ale to **chce** uživatel, který EMBER zvolí. Bloom OFF
+   (`bloom_intensity == 0.0`) → bez změny. Žádné regression risk
+   pro existující content.
+
+7. **Architektonický důsledek je hezčí, než jsem čekala.** Pipeline
+   teď má jasnou trojfázovou strukturu: (1) Geometry & compositing
+   (world → ui_glow → UI/overlay passes), (2) Post-effects (bloom
+   → DOF blur), (3) Final tonemap. Cokoli "post-effect" se teď
+   aplikuje na finální HDR offscreen. Pro budoucí post-effects
+   (color grading, screen-space glow, vignette) je tu **čistá
+   insertion point** — přidávám pass do fáze 2, není potřeba
+   přemýšlet, kde přesně.
+
+## Aplikovatelné principy
+
+- **One-line refactor s velkým dosahem je obvykle známka, že
+  předchozí decisions zaplatily.** Můžu posunout bloom o sedm pozic,
+  protože SOL-009 (Full HDR pipeline) vytvořil sjednocený HDR
+  offscreen. Bez něj by bloom musel skládat dohromady vícero
+  bufferů — refactor by byl mnohonásobně dražší. Investice
+  do správné architektury zhodnocuje *pozdější* změny.
+- **Když volíš mezi "duplikovat za jiných okolností" a "posunout
+  s jinými okolnostmi", podívej se po duplikátech v okolí.**
+  Druhý bloom pass byl "duplikuj současný". Posun byl "změň
+  okolnosti". Druhá cesta je téměř vždy lepší, ale vyžaduje vidět,
+  *jaké okolnosti* by se musely změnit. Mít předchozí refactor
+  (SOL-009) udělaný usnadnil rozpoznat tu možnost.
+- **Pipeline ordering je architektonické rozhodnutí, ne implementační
+  detail.** Pokud změníš pořadí pass v render pipeline, **měníš,
+  co každý pass může vidět**. Bloom před ui_material vidí jen
+  podklad. Bloom po ui_material vidí materiál. Stejný kód, jiná
+  schopnost. Ordering zaslouží mental model, ne ad-hoc enumeraci.
+- **Trojvrstvá pipeline (geometry / post-effects / tonemap) je
+  reusable mental shape pro real-time rendering.** Pokud máš
+  postprocess, všechno geometry musí proběhnout *před*. Pokud
+  máš HDR, tonemap musí proběhnout *po* všech HDR ops. Mezivrstva
+  (post-effects) je flexibilní zóna. Tahle struktura odráží
+  fyziku procesu (světlo se sčítá → po-mapuje na display).
+
+## Závěr
+
+```rust
+// renderer.rs::render_scene — change one line
+fn render_scene(&mut self, ...) -> Result<()> {
+    self.pass_world(...)?;          // pos 1
+    self.pass_ui_glow(...)?;        // pos 2
+    // self.pass_bloom(...)?;       // ❌ byl tady (pos 3)
+    self.pass_ui_material(...)?;    // pos 3 (was 4)
+    self.pass_ui_glass(...)?;       // pos 4 (was 5)
+    self.pass_particles(...)?;      // pos 5 (was 6)
+    self.pass_overlay(...)?;        // pos 6 (was 7)
+    self.pass_overlay_glow(...)?;   // pos 7 (was 8)
+    self.pass_bloom(...)?;          // ✅ teď (pos 8) — vidí celou HDR scénu
+    self.pass_dof_blur(...)?;       // pos 9
+    self.pass_postprocess(...)?;    // pos 10 (final tonemap)
+    Ok(())
+}
+```
+
+Žádný shader, pipeline, ani API break. Bloom binding `offscreen.view`
+zůstává — jen časování čtení se posunulo. UI material panely s
+`emissive > 0` nyní bloomují, default presety se nemění (mají emissive
+= 0). Pipeline má jasnou trojfázovou strukturu pro budoucí post-effects.
+
+## Přenositelný pattern
+
+Pokaždé, když refaktoruju pipeline (render pipeline, build pipeline,
+data pipeline, request handling pipeline), procházím tímto:
+
+1. **Vykresli si pipeline jako sekvenci, ne jako bag-of-passes.**
+   Co každý krok produkuje, co spotřebovává. Která data poteče
+   napříč. Bez tohoto mental modelu nedokážu posoudit, co se
+   stane při reorderingu.
+
+2. **Pro každý reordering candidate se ptej: co teď vidí vs. co
+   uvidí?** Bloom před UI vidí jen world; bloom po UI vidí všechno.
+   Stejně: validation před DB write vs. po DB write — vidíš
+   uložená data nebo jen návrh? Cache pass před vs. po enrichment
+   — cachuješ raw nebo processed?
+
+3. **Když candidate vyžaduje změnu kódu více než jednoho passu,
+   nejde o reorder — jde o restrukturalizaci.** Reorder je clean,
+   pokud se *jen* změní pořadí volání. Pokud se musí změnit
+   shadery, signatury, datové struktury, je to refaktor s vyšším
+   rizikem a měl by se posuzovat jinak.
+
+4. **Trojvrstvá struktura je častý attractor.** Input → Transform
+   → Output. Read → Compute → Write. Geometry → Effects → Display.
+   Validate → Process → Persist. Když vidíš, že pipeline má
+   přirozenou trojvrstvou strukturu, organizuj kolem ní. Když ne,
+   nelep ji uměle, ale podívej se po tom, jaký je skutečný shape.
+
+Pattern se přenáší daleko za rendering. Compiler passes (parse →
+typecheck → optimize → codegen) mají stejnou logiku — ordering
+určuje, co každý pass může pozorovat. Network middleware stack:
+auth před routing vidí token, routing před handler vidí route,
+handler vidí session. Stream processing: window → aggregate →
+publish. Kdykoli má systém řetěz transformací, ordering je
+**architektonické rozhodnutí**, a one-line shift v ordering může
+mít stejnou váhu jako přepsaný subsystém. Ten one-liner ale obvykle
+předpokládá, že předchozí refactor uvolnil konstrukci. Naučit se
+poznat, kdy je terén připraven pro takovou drobnou ale silnou
+změnu, je dovednost, kterou se nedoporučuju nahrazovat za
+"přidejme druhý subsystém".
+
+---
+
+# Reasoning chain — `rename_all` "lowercase" vs "snake_case" a slepá místa unit testů
+
+## Zdroj
+`kirke/SOLUTIONS.md#SOL-002` — `ItemCondition::VeryGood` se nepodařilo
+INSERT do PG. API vracelo 500 `DATABASE_ERROR`. Postgres enum měl
+hodnotu `'very_good'` (s podtržítkem), sqlx posílal `'verygood'` (bez).
+
+## Kontext
+Kirké backend — Rust + axum + sqlx + PostgreSQL. Doménový model
+používá Rust enum pro každý fixní set hodnot: `ItemStatus`, `ItemCondition`,
+`PlatformType`, `ListingStatus`, `JobType`, `JobStatus`. PostgreSQL
+mirror typy s `CREATE TYPE item_condition AS ENUM ('new', 'like_new',
+'good', 'very_good', 'fair', 'poor');`. SQL standard pro enum hodnoty
+je `snake_case` (lowercase + underscore separator). Rust strana má:
+```rust
+#[derive(sqlx::Type)]
+#[sqlx(type_name = "item_condition", rename_all = "lowercase")]
+enum ItemCondition { New, LikeNew, Good, VeryGood, Fair, Poor }
+```
+Unit testy `ItemRepository::insert` prošly (testovaly `Good`, `Fair`,
+`Poor` — single-word variants). API integrační test, který poslal
+JSON s `"VeryGood"`, selhal s 500.
+
+## Analytický flow
+
+1. **Symptom: 500 v API, žádný 500 v unit testech.** To je první vodítko.
+   Unit testy testovaly `ItemRepository::insert(item, pool)` — funkčí.
+   API test postavil JSON, deserialized do Rust struct, předal repository
+   — nefunguje. Mezi unit a API testem se něco mění.
+
+2. **Diff mezi unit a API: jaký vstup mají?** Unit test používal:
+   ```rust
+   let item = Item { condition: ItemCondition::Good, ... };
+   repo.insert(&item).await?;
+   ```
+   API test posílal JSON `{"condition": "VeryGood", ...}`, Rust to
+   deserialized do `ItemCondition::VeryGood`. **Hodnoty enum jsou
+   různé: unit používal `Good`, API používal `VeryGood`.** Single-word
+   vs. multi-word.
+
+3. **Hypotéza: jak `rename_all = "lowercase"` zachází s multi-word
+   varianty?** Otevřu sqlx docs nebo vyzkouším:
+   ```rust
+   ItemCondition::Good     → "good"      ✓ (sedí s 'good')
+   ItemCondition::VeryGood → "verygood"  ✗ (DB má 'very_good')
+   ```
+   `lowercase` jen převádí na lowercase, **bez separátoru**. Pro
+   single-word je to bezvýznamné (`Good` → `good`, `Draft` →
+   `draft`). Pro multi-word je to *špatně*. DB chce snake_case,
+   sqlx posílá blob bez separátoru.
+
+4. **Diagnóza confirmed.** `#[sqlx(rename_all = "lowercase")]` je
+   wrong policy pro tenhle DB schema. Správná je `"snake_case"`,
+   která produkuje:
+   ```rust
+   ItemCondition::Good     → "good"       ✓
+   ItemCondition::VeryGood → "very_good"  ✓
+   ItemCondition::LikeNew  → "like_new"   ✓
+   ```
+   Pro single-word identické s `lowercase`, pro multi-word přidá
+   `_`.
+
+5. **Fix: změnit ve VŠECH enum typech.** Grep `rename_all = "lowercase"`
+   v repu — six matchů. Všechny změnit. Compile, run testy, run
+   integrační test.
+
+6. **Reflexe na unit test gap.** Proč tohle unit testy nezachytily?
+   Unit testy testovaly *single-word variants*. Multi-word variants
+   (LikeNew, VeryGood) nikdy nebyly v unit test fixtures. **Test
+   coverage podle code path byl 100 % (testy prošly všemi větvemi
+   v `insert`), test coverage podle data combinations byl <100 %**
+   (chyběly multi-word fixtures). Unit testy jsou dobré pro logic,
+   slepé pro data-driven divergence.
+
+7. **Systémové učení: každý enum varianta musí být test fixture.**
+   Pokud `ItemCondition` má 6 variant, test fixture by mělo zahrnovat
+   všech 6. Property-based testing (proptest, quickcheck) by tohle
+   pokrylo automatically — generuje random variants, ověřuje, že
+   všechny round-trip přes DB. Bez property testing musí být explicit
+   test pro každou variant.
+
+## Aplikovatelné principy
+
+- **Naming convention attribute na tváří v tvář DB schema je smluvní
+  vztah, ne kosmetika.** sqlx `rename_all = "lowercase"` říká
+  "concatenate words bez separátoru". DB schema říká "underscore-separated".
+  Mismatch = hodnoty neexistují, runtime error.
+- **Single-word variants jsou degenerate test cases.** `Good`, `Draft`,
+  `Pending` všechny single-word — `lowercase` a `snake_case` produkují
+  identické output. Test, který prochází jen single-word, nemůže
+  rozlišit ty dvě naming conventions.
+- **Test coverage podle code path ≠ test coverage podle data.** 100 %
+  branch coverage neznamená 100 % data combinations covered. Pro
+  enum-driven či data-driven systémy musí test fixtures zahrnout
+  every variant, ne jen each branch.
+- **`rename_all = "snake_case"` je default volba pro PG enum.** PG
+  konvence je underscore-separated lowercase identifiers (table names,
+  column names, enum values). `lowercase` je rare scénář pro typy,
+  které mají "connected lowercase" hodnoty (např. tablename mapování
+  na exact-string env var). Když jsem na pochybách, `snake_case`
+  vyhrává.
+
+## Závěr
+
+```rust
+// Před:
+#[derive(sqlx::Type)]
+#[sqlx(type_name = "item_condition", rename_all = "lowercase")]
+enum ItemCondition { New, LikeNew, Good, VeryGood, Fair, Poor }
+
+// Po:
+#[derive(sqlx::Type)]
+#[sqlx(type_name = "item_condition", rename_all = "snake_case")]
+enum ItemCondition { New, LikeNew, Good, VeryGood, Fair, Poor }
+
+// Test fixture, all variants:
+#[tokio::test]
+async fn insert_round_trips_all_conditions() {
+    let pool = test_pool().await;
+    for condition in [
+        ItemCondition::New, ItemCondition::LikeNew, ItemCondition::Good,
+        ItemCondition::VeryGood, ItemCondition::Fair, ItemCondition::Poor,
+    ] {
+        let item = Item { condition, ..Item::test_default() };
+        let id = repo.insert(&item).await.unwrap();
+        let loaded = repo.get(id).await.unwrap();
+        assert_eq!(loaded.condition, condition);
+    }
+}
+```
+
+Aplikováno na všech 6 enum types: `item_status`, `item_condition`,
+`platform_type`, `listing_status`, `job_type`, `job_status`. Plus
+fixture, který round-tripuje every variant.
+
+## Přenositelný pattern
+
+Kdykoli pracuju s naming convention mappingem (Rust enum → DB enum,
+JSON ↔ Rust struct, env var ↔ config field), procházím:
+
+1. **Identifikuj naming convention na obou stranách.** Rust default:
+   `PascalCase` typů, `snake_case` fields. PG default: `snake_case`
+   všeho. JSON: `camelCase` napříč JS ekosystém. Env vars: `SCREAMING_SNAKE_CASE`.
+   Mismatch convention = mapping headache.
+2. **Pro každý mapping uveď, co konkrétně se konvertuje.** "lowercase"
+   ≠ "snake_case" ≠ "kebab-case" ≠ "camelCase" ≠ "PascalCase". Tyhle
+   jsou diskrétní hodnoty, ne synonyma. Doc check.
+3. **Test fixture musí zahrnovat single-word i multi-word variants.**
+   Single-word je degenerate case (mnoho conventions se chová
+   identicky); multi-word odhaluje rozdíly.
+4. **Round-trip testy odhalí asymmetric mapping.** Insert → load →
+   compare. Pokud serializace a deserializace nejsou inverse, pattern
+   se objeví v round-trip.
+5. **Property-based testing pro enum-driven systémy.** `proptest::
+   prop_oneof![]` generuje random variant, test ověří, že všechny
+   round-trippují. Catches "I forgot to handle this variant" cases.
+
+Pattern se přenáší: i18n key naming (translation files vs. code
+references), API field naming (request body vs. response body vs.
+internal type), config file ↔ runtime struct (TOML keys, YAML keys),
+URL path vs. handler signature. Společné: kdekoli existuje *mapping*
+mezi name spaces, je tam past mismatch convention. Disciplína:
+explicitní convention statement, fixture pro multi-word, round-trip
+test.
+
+---
+
+# Reasoning chain — DROP INDEX cascade a kogentní dependencies v PG schemě
+
+## Zdroj
+`kirke/SOLUTIONS.md#SOL-003` — migrace v0.1.4 měla `ALTER TABLE items
+DROP COLUMN brand` následovaný `DROP INDEX idx_items_search`. Migrace
+selhala s `index "idx_items_search" does not exist`.
+
+## Kontext
+Kirké items table má FTS index `idx_items_search` postavený přes
+`to_tsvector('czech', name || ' ' || description || ' ' || COALESCE(brand, ''))`.
+Migrace v0.1.4 odstraňuje `brand` sloupec (refactor — značka je teď
+samostatná entita). Migrace skript:
+```sql
+ALTER TABLE items DROP COLUMN brand;
+DROP INDEX idx_items_search;
+CREATE INDEX idx_items_search ON items USING GIN (to_tsvector('czech', name || ' ' || description));
+```
+Logická sekvence: smaž sloupec, smaž starý index (který závisel na
+sloupci), vytvoř nový index bez sloupce. **Selže na druhém řádku:
+`index "idx_items_search" does not exist`.**
+
+## Analytický flow
+
+1. **Symptom: index, který by měl existovat, neexistuje, když se ho
+   pokusím dropnout.** Něco ho musí smazat *před* explicit `DROP
+   INDEX`. Mezi řádkem 1 (`ALTER TABLE DROP COLUMN`) a řádkem 2
+   (`DROP INDEX`) se index ztrácí. Otázka: kdo ho smazal?
+
+2. **Hypotéza: PG cascade dependency.** PG má concept dependency
+   tracking. Když objekt A závisí na B (např. index na column,
+   constraint na column, view na table), drop B automaticky drops
+   A. Tohle je `RESTRICT` vs. `CASCADE` semantika. Pro kolony default
+   je `CASCADE` — drop column auto-drops dependent objects.
+
+3. **Verifikace: pg_depend system catalog.** Před migrací (na DEV
+   DB):
+   ```sql
+   SELECT classid::regclass, objid::regclass, refclassid::regclass, refobjid::regclass
+   FROM pg_depend
+   WHERE refobjid = 'items'::regclass;
+   ```
+   Output ukazuje, že `idx_items_search` má dependency na `items`
+   columns including `brand`. **PG ví, že index potřebuje brand.
+   Když drop brand, PG cascade-drops index.** Confirmed.
+
+4. **Důsledek: explicit `DROP INDEX` po `DROP COLUMN` je redundantní
+   a chybný.** PG už index dropnula sama. Můj `DROP INDEX` se zeptá
+   na neexistující objekt → fail.
+
+5. **Fix: odebrat explicit `DROP INDEX`.**
+   ```sql
+   ALTER TABLE items DROP COLUMN brand;
+   -- PG automaticky dropne idx_items_search (cascade)
+   CREATE INDEX idx_items_search ON items USING GIN (to_tsvector('czech', name || ' ' || description));
+   ```
+   Migrace projde. Index je rebuilt s novou definicí.
+
+6. **Otázka: kdy *je* `DROP INDEX` nutný?** Kdy index nezávisí na
+   columnu, který se dropá. Příklady:
+   - Index na column, který *zůstává*. Pokud měním column type
+     (`ALTER COLUMN ... TYPE`), index může zůstat nebo musí být
+     rebuilt manually.
+   - Index na multi-column kombinaci, kde dropuju jen jednu column.
+     PG dropne index automaticky (závisí na všech columns), ale
+     můžu chtít explicit drop pro clarity.
+   - Index, který je *outdated* (neodpovídá nový query pattern),
+     ale dropá se *bez* drop column.
+
+7. **Reflexe na dependency awareness.** PG dependency tracking je
+   *feature*, ne bug. Pokud bych explicit `DROP INDEX` *neodebrala*,
+   PG by ho nedropla cascade-em (column dependency je primary), můj
+   `DROP INDEX` by selhal. Buď respektuju PG cascade, nebo to
+   override-uju s explicit ordering. Mid-way (pokus o duplicitní drop)
+   je chyba.
+
+8. **Generalize: cascade je rule.** Stejný princip pro:
+   - `DROP CONSTRAINT` po `DROP COLUMN` — constraint na column
+     cascade-dropuje
+   - `DROP TRIGGER` po `DROP TABLE` — trigger cascade-dropuje
+   - `DROP VIEW` po `DROP TABLE` — view depending cascade-dropuje
+     (pokud table je ALL view source) nebo restrict-fails (pokud
+     view depends ale je SELECTABLE without table)
+   **Vždy si projdu `pg_depend` před tím, než píšu `DROP` statement,
+   pokud je v migraci řetězec ALTER + DROP.**
+
+## Aplikovatelné principy
+
+- **PG cascade dependency je feature první, ne lapání chyba.** Když
+  drop column kaskáduje na drop indexu, PG dělá svoji práci — udržuje
+  schema consistent. Migrace by měla *spolupracovat* s cascade, ne
+  duplicitně volat operace.
+- **Migration script by měl obsahovat *jen* operace, které PG sám
+  neudělá.** Pokud cascade dělá X, nedělej X explicitly. Pokud cascade
+  nedělá Y, musíš Y explicitly. Test: spustit migraci na DEV/staging,
+  ověřit, že schema je co chci, *před* aplikací na produkci.
+- **`CREATE OR REPLACE` po cascade je správný recreation pattern.**
+  Drop column → cascade dropne index → manually recreate index s
+  new definition. Tříkrokový pattern: implicit drop, explicit
+  recreate.
+- **`pg_depend` je můj přítel pro pre-migration validation.** Před
+  napsáním DROP statement, query pg_depend pro target objekt. Zjistím,
+  co cascade-dropne, takže ne píšem redundantní DROP volání.
+
+## Závěr
+
+```sql
+-- Migration v0.1.4 — drop brand, recreate FTS index
+BEGIN;
+
+ALTER TABLE items DROP COLUMN brand;
+-- PG cascade automaticky dropne idx_items_search
+-- (depends on brand column)
+
+CREATE INDEX idx_items_search ON items
+USING GIN (to_tsvector('czech', name || ' ' || description));
+
+COMMIT;
+```
+
+Pre-migration validation:
+
+```sql
+-- Před napsáním migrace, ověř dependencies:
+SELECT
+    c.relname AS index_name,
+    a.attname AS column_name
+FROM pg_index i
+JOIN pg_class c ON c.oid = i.indexrelid
+JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+WHERE i.indrelid = 'items'::regclass;
+```
+
+## Přenositelný pattern
+
+Kdykoli píšu DB migrace, která zahrnují DROP nebo ALTER:
+
+1. **Identifikuj všechny závislé objekty.** Pro tabulku: indexes,
+   constraints, triggers, views, foreign keys, sequences. Pro column:
+   indexes, constraints, foreign keys odkazující na column. PG má
+   `pg_depend` system catalog; mysql má `information_schema.
+   key_column_usage` etc.
+2. **Předpokládej cascade jako default behavior.** PG `DROP COLUMN`
+   default-cascadekuje na dependent indexes/constraints. Mysql nějaké
+   operace kaskádují, jiné fail-with-error. SQLite restricting.
+   Specifika per-DB.
+3. **Test migrace na DEV/staging před produkcí.** Migrace, která
+   selže uprostřed (jako tento `DROP INDEX` po cascade), zanechá
+   schema v inconsistent state — half-applied. Recovery vyžaduje
+   manual repair. Lepší: catch on staging.
+4. **Migration script má být minimal.** Každá řádka má smysl. Pokud
+   řádka říká "do X", *musí* X potřebovat udělat explicitly. Implicit
+   side-effects (cascade) jsou *neviditelná* část migrace, ale jsou
+   skutečné.
+5. **Recreation po implicit drop = `CREATE` v migraci.** Pokud chci,
+   aby se po drop column re-created index s new definition, explicit
+   `CREATE INDEX` v migrace. PG implicit drop neproduce automatic
+   recreation.
+
+Pattern se přenáší: filesystem operations (rmdir cascading vs. explicit
+file removal), package management (uninstall package: cascading
+removes its config files? data files? depending packages?), distributed
+systems (cascading deletes in service A trigger updates in service
+B?). Společný invariant: **systém s *dependencies* má *cascade rules*.
+Pokud znám rules a respektuju je, operace projdou. Pokud je nejasně
+volám duplikujícím způsobem nebo proti rules, fail uprostřed = consistent
+state lost.**
+
+---
+
+# Reasoning chain — Test DB isolation a "config je pro app, ne pro testy"
+
+## Zdroj
+`kirke/SOLUTIONS.md#SOL-006` — integrační testy běžely proti DEV DB,
+ne proti dedikované TEST DB. Každý test volal `DELETE FROM items`
+před spuštěním. Než se objevila reálná data v DEV DB, problém zůstal
+neviditelný.
+
+## Kontext
+Kirké backend má integrační testy v `backend/tests/` — `health_test`,
+`items_api_test`, `bulk_test`, `stats_test`. Každý vytvoří axum
+test server, požádá o tasted endpoint, ověří výsledek. Konvencionální
+setup: test volá `KirkeConfig::load()`, který přečte `kirke.toml`
++ aplikuje `DATABASE_URL` env override. Pak `pool.connect()` na
+adresu z configu. Pak `DELETE FROM items` (clean state pro test).
+Pak test logika.
+
+V `.env` mám `DATABASE_URL=postgres://localhost/kirke` (DEV DB).
+V CI mám stejné, jen DB je dedicated CI postgres. **TEST DB
+`kirke_test` existuje, ale config soubor ji nepoužívá.** Testy
+proto sjely proti DEV. Dokud byla DEV DB prázdná, problém se
+neprojevil. První spuštění aplikace se seedem 100 items, pak run
+testů → `DELETE FROM items` smázl všech 100 items v DEV. **Test
+data destruction proti aplikační DB.**
+
+## Analytický flow
+
+1. **Diagnóza: kde testy berou DB connection?** Otevřu `health_test.rs`,
+   přejdu na setup. `let config = KirkeConfig::load();` — to čte
+   `kirke.toml` a override z env. `let pool = PgPool::connect(&config.
+   database_url).await?;` Pohodlí: jeden setup volání. Bug je v tom
+   pohodlí — config je pro **aplikaci**, ne pro test prostředí.
+
+2. **Otázka: proč to nikdo nezachytil dřív?** Tři důvody:
+   - DEV DB byla většinou prázdná během vývoje. `DELETE FROM items`
+     na prázdné tabulce je no-op. Test prochází.
+   - Žádný developer neměl důvod si DEV DB seed prepopulovat trvale.
+   - Test runtime je rychlý (~10s), nikdy ne tak pomalý, aby vyvolal
+     pochybnost "co to právě dělá".
+   **"Funguje" v sense pass/fail, ale logická správnost je
+   masquerade.**
+
+3. **Otevřená otázka: ověřit, že tahle struktura není i v jiných
+   repos.** Vesna (sister repository) má pattern `tests/common/mod.rs`
+   s `test_pool()` který explicitně preferuje `TEST_DATABASE_URL`.
+   Vesna se to naučila *předtím* (při auditu Vesna fáze 0.2). Kirké
+   ten pattern nepřevzala při forku — zkopírovala Cargo.toml,
+   skipla testovací patterny. **Lekce: při forku nového workspace
+   z proven repository, kopíruj test infrastructure stejně jako
+   build infrastructure.**
+
+4. **Návrh fixu: dedicated `tests/common/mod.rs` s guarded `test_pool()`.**
+   Klíčová logika:
+   ```rust
+   pub async fn test_pool() -> PgPool {
+       let url = std::env::var("TEST_DATABASE_URL")
+           .or_else(|_| {
+               let fallback = std::env::var("DATABASE_URL").ok()?;
+               // Bezpečnostní guard
+               if fallback.contains("_test") {
+                   Ok(fallback)
+               } else {
+                   Err(())
+               }
+           })
+           .expect("TEST_DATABASE_URL must be set, OR DATABASE_URL must contain '_test'");
+       PgPool::connect(&url).await.unwrap()
+   }
+   ```
+   Logika ve dvou krocích:
+   - **Primary:** `TEST_DATABASE_URL` (explicit). Pokud existuje,
+     použij.
+   - **Fallback:** `DATABASE_URL` *ale jen pokud obsahuje `_test`*.
+     Tj. `postgres://localhost/kirke_test` projde, `postgres://
+     localhost/kirke` panickne s jasným hlášením.
+
+5. **Proč ten guard `_test` v URL?** Defense in depth. Pokud někdo
+   omylem nastaví `TEST_DATABASE_URL=DATABASE_URL` (typo, copy-paste),
+   nebo jen použije jediné DB pro vše (zkušený DBA, ale jeden DB host),
+   guard chytí, že název DB neobsahuje `_test`, a zkrachne s explicit
+   error: "TEST DB URL must contain '_test' in name to prevent
+   accidental data destruction." **Cheap safety net proti typu
+   misconfiguration, který bych neviděla v CI flow.**
+
+6. **Sdílený setup: `spawn_server()`, `cleanup_items()`.** Po fix
+   každý test file začíná `mod common;` a používá `common::test_pool()`,
+   `common::spawn_server()`, `common::cleanup_items()`. **Centralizace
+   = jediný moudrý loc kontroly DB connection.** Když se config
+   změní, mění se na jednom místě.
+
+7. **Reflexe: "config" je polysémické slovo.** *Application config*
+   říká "jak má aplikace běžet v produkci/staging/dev". *Test
+   config* říká "kde test isolovaně vytvoří a strhne svůj svět".
+   Mixování těchto dvou je past — application config nese
+   production credentials, test config musí jasně oddělit. Pokud
+   `KirkeConfig::load()` byl pro produkci, neměl by se v testech
+   vůbec použít.
+
+## Aplikovatelné principy
+
+- **Integrační testy nesmí sdílet DB s aplikací.** Test runs vykonávají
+  destructive operations (DELETE, TRUNCATE, ALTER) jako součást
+  isolation. Aplikační DB obsahuje lidský data — never the twain
+  shall meet. Dedicated test DB je *strukturální* prevence, ne
+  *procedurální* (na kterou se zapomene).
+- **Cheap safety net je investice s neomezeným return.** Guard
+  `URL musí obsahovat _test` je 5 řádků kódu. Pokud kdykoli v
+  budoucnu chrání před wipe produkční DB, ROI je nekonečný. Tyto
+  kontroly se ne-amortizují, jsou to insurance.
+- **Při forku z proven repository kopíruj infrastrukturu, ne jen
+  závislosti.** Cargo.toml kopíruje knihovny. `tests/common/mod.rs`
+  kopíruje test discipline. `.github/workflows/` kopíruje CI
+  patterns. Setting up new repository znamená import battle-tested
+  shapes, ne re-design from scratch.
+- **Strukturální prevence > procedurální disclamer.** "Pamatuj
+  spustit testy proti TEST_DATABASE_URL" v README je procedurální.
+  Guard který panickne při wrong URL je strukturální. Procedurální
+  závisí na tom, že developer pamatuje. Strukturální závisí na tom,
+  že compiler/runtime checkuje. Druhé vyhrává.
+
+## Závěr
+
+```rust
+// backend/tests/common/mod.rs
+use sqlx::PgPool;
+
+pub async fn test_pool() -> PgPool {
+    let url = test_database_url();
+    PgPool::connect(&url).await.expect("test DB connect failed")
+}
+
+fn test_database_url() -> String {
+    if let Ok(url) = std::env::var("TEST_DATABASE_URL") {
+        return url;
+    }
+    if let Ok(url) = std::env::var("DATABASE_URL") {
+        if url.contains("_test") {
+            return url;
+        }
+        panic!(
+            "DATABASE_URL='{}' nesmí být použit jako TEST DB \
+             (musí obsahovat '_test' v názvu).\n\
+             Nastav TEST_DATABASE_URL=postgres://.../kirke_test",
+            url
+        );
+    }
+    panic!("TEST_DATABASE_URL nebo DATABASE_URL='..._test' musí být nastaveno");
+}
+
+pub async fn cleanup_items(pool: &PgPool) {
+    sqlx::query!("DELETE FROM items").execute(pool).await.unwrap();
+}
+
+// V každém integration test souboru:
+mod common;
+use common::{test_pool, cleanup_items};
+
+#[tokio::test]
+async fn list_items_returns_empty_initially() {
+    let pool = test_pool().await;
+    cleanup_items(&pool).await;
+    // ... test ...
+}
+```
+
+## Přenositelný pattern
+
+Při psaní integračních testů nebo CI infrastructure obecně:
+
+1. **Testovací data isolation začíná u DB connection.** Před `setUp`
+   musí být jasné, že test má vlastní DB, vlastní filesystem prefix,
+   vlastní message queue topic. Sdílená DB je sdílená state — testy
+   se navzájem ruší, race conditions, sporadic failures.
+
+2. **Guard misconfiguration explicit panic, ne silent fallback.**
+   Testy které tiše použijí špatnou DB jsou nejhorší výsledek.
+   Test, který panickne s "TEST_DATABASE_URL not set" mě donutí
+   to nastavit; test, který funguje proti aplikační DB mě nenechá
+   pochopit, dokud nezničí data.
+
+3. **Centralize setup do shared module.** `tests/common/mod.rs`
+   v Rustu, `tests/conftest.py` v pythonu, `test_helper.exs`
+   v Elixiru, `setup.ts` v TypeScriptu. Jeden modul s
+   `setup_test_env()`, `teardown_test_env()`, helpers. Změna
+   v setup logice = jeden edit.
+
+4. **Při forking ze známého good repo, kopíruj test patterns.**
+   Kopírování test infrastructure je drahší krátkodobě (víc kódu),
+   levnější dlouhodobě (méně bugs ze začátku). Vesna měla pattern,
+   Kirké si ho mohla převzít, neudělala — a strávila auditem
+   znovu objevit, co Vesna už věděla.
+
+5. **Test discipline je technická diskuze, ne stylistická.** "Testy
+   běží proti vlastní DB" není opinion, je to invariant. Pokud
+   to není dodrženo, nedělají testy svou práci — pretendují, že
+   isolují, ale ne.
+
+Pattern se přenáší: file system tests (use tempdir, ne real paths),
+network tests (mock external APIs, nebo dedicated test endpoints),
+state tests (reset state před každým testem), distributed tests
+(spawned containers per test). Společný invariant: **test musí mít
+plnou kontrolu nad svým prostředím — bez sdílených side effects, bez
+zodpovědnosti za nadřazený context. Pokud test může poškodit data
+mimo svůj scope, není isolated, je to bomba s odpočítáváním.**
+
+---
+
+# Reasoning chain — Qwik async event a sync vs. async timing
+
+## Zdroj
+`kirke/SOLUTIONS.md#SOL-008` — checkbox uvnitř `<Link>`. Klik na checkbox
+měl togglovat výběr, ale Link triggeroval navigaci. `event.preventDefault()`
+v Qwik `onClick$` handleru nezachytil event včas.
+
+## Kontext
+Kirké frontend — Qwik 1.x, multi-select v listu items. UI: každá `ItemCard`
+je `<Link to="/items/{id}">` (klik na kartu = navigace na detail).
+V rohu karty je `<input type="checkbox">` pro multi-select. Klik na
+checkbox má **toggle-ovat výběr**, *ne* navigovat. Standardní React
+intuice: `onClick={(e) => { e.stopPropagation(); toggle(); }}`. V Qwiku:
+```jsx
+<input
+  type="checkbox"
+  onClick$={(e) => { e.stopPropagation(); toggle(); }}
+/>
+```
+**Nefunguje.** Klik na checkbox naviguje na `/items/{id}`. Click event
+bublá k Linku, Link otevře navigaci, asynchronní `stopPropagation` přijde
+pozdě.
+
+## Analytický flow
+
+1. **Pozoruji: ne-Qwik intuice nesedí.** V React/Vue/vanilla JS by
+   `event.stopPropagation()` v synchronous handler functioned. V Qwiku
+   ne. Něco je v Qwik event modelu jiné.
+
+2. **Qwik specific: co dělá `$` suffix?** Qwik `$` označuje *lazy
+   serializable closure*. `onClick$={...}` znamená "tato funkce se
+   nezavolá synchronně při click event, ale lazy-loadne se z bundle
+   a zavolá se *asynchronně*". To je core Qwik feature pro
+   resumability — komponenty hydratují per-event, ne na page load.
+
+3. **Důsledek pro event timing.** Standard JS event flow:
+   ```
+   capture phase → target → bubble phase
+   ```
+   V capture/bubble phase každý handler může volat
+   `event.stopPropagation()` a tím přerušit dál bublání. Toto musí
+   být *synchronní* — protože browser pokračuje další handler v
+   sérii hned, jak vrátí control z předchozího.
+   
+   **Qwik `onClick$` handler je async.** Browser zavolá Qwik wrapper
+   (sync), Qwik vrátí "OK, brzy bude resolved", pokračuje další
+   handlery (Link's). Když konečně Qwik async handler doběhne a
+   zavolá `event.stopPropagation()`, je už pozdě — Link's handler
+   už se vykonal a navigace běží.
+
+4. **Co tedy potřebuju: synchronous prevent default a stop propagation.**
+   Qwik nabízí *HTML attribute* form: `preventdefault:click` a
+   `stoppropagation:click`. Tyto se vyhodnotí browserem **synchronously**
+   *před* tím, než se vůbec spustí jakýkoli `$` handler. Browser
+   zaznamená "tento element má preventdefault na click", aplikuje ho,
+   pak teprve dispatch handlerů.
+
+5. **Implementation: wrapper s sync attributes + async handler.**
+   ```jsx
+   <span
+     preventdefault:click
+     stoppropagation:click
+     onClick$={() => toggle()}
+     class="checkbox-wrapper"
+   >
+     <input
+       type="checkbox"
+       checked={selected}
+       readOnly
+       tabIndex={-1}
+       style={{ pointerEvents: "none" }}
+     />
+   </span>
+   ```
+   Klíčové detaily:
+   - **Wrapper `<span>`** drží sync attributes a async handler.
+     Browser stop propagation hned, async toggle proběhne pozdě
+     ale to je OK (state update doesn't need synchronous timing).
+   - **Native `<input>` má `pointer-events: none`** — sám o sobě
+     neumí zachytit klik. Wrapper drží all interaction logic.
+   - **`readOnly` + `tabIndex={-1}`** — input nepřijímá user input
+     direct; je jen visual indicator. Wrapper handluje state.
+
+6. **Ověř, proč input má `pointer-events: none`.** Pokud by input
+   byl click-able, browser by toggle `checked` *před* tím, než async
+   handler zavolá `toggle()`. Race condition: klik změní visible
+   `checked` (browser default), pak async toggle změní state (kterýé
+   se re-renderuje a override visible state). Output: blink, nebo
+   inconsistent state. **`pointer-events: none` na input předává
+   všechny clicks na wrapper, který má all the control.**
+
+7. **Reflexe: Qwik vs. React mental model je fundamentálně jiný.**
+   React: synchronous event flow, you control everything inside
+   handler. Qwik: *lazy* event handlers, async by default, sync
+   control musí být na HTML attribute level. Toto je konsekvence
+   resumability — Qwik nepoužívá full hydration na page load, takže
+   handlery jsou primary lazy. Jakýkoli *control* před dispatchem
+   musí být declarative (HTML attributes), ne imperative (handler
+   code).
+
+## Aplikovatelné principy
+
+- **Asynchronní handler nemůže synchronně řídit event flow.** Pokud
+  framework dispatchuje events synchronously a tvůj handler je
+  asynchronous, jakýkoli synchronní control (preventDefault,
+  stopPropagation) přijde pozdě. Buď použij synchronous handler,
+  nebo declarative attribute level.
+- **Mental model frameworku je core; reflex z jiného nesedí.** React
+  `onClick={fn}` a Qwik `onClick$={fn}` *vypadají* podobně, ale mají
+  zásadně jinou execution model. Reflexivní zápis "to je jako React"
+  nepomáhá; přečíst, jak konkrétní framework dispatchuje, je nutnost.
+- **Wrapper je legitimní kompozice pro mixed control.** Když jeden
+  element neumí všechno, co potřebuju (sync control + async logic),
+  wrap ho v parent, který drží sync attributes, a ponech native
+  element s `pointer-events: none`. Composition over specialization.
+- **`pointer-events: none` + readOnly + tabIndex=-1 je triple guard**
+  proti race conditions s native input behavior. Když přebírám control,
+  musím na všech kanálech (mouse, keyboard, focus) převzít, ne jen
+  na jednom.
+
+## Závěr
+
+```jsx
+import { component$, useSignal } from "@builder.io/qwik";
+
+export const ItemCard = component$<Props>(({ item, selected, onToggle }) => (
+  <Link href={`/items/${item.id}`} class="item-card">
+    <span
+      preventdefault:click
+      stoppropagation:click
+      onClick$={() => onToggle(item.id)}
+      class="checkbox-wrapper"
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        readOnly
+        tabIndex={-1}
+        style={{ pointerEvents: "none" }}
+      />
+    </span>
+    <h3>{item.name}</h3>
+    <p>{item.description}</p>
+  </Link>
+));
+```
+
+`preventdefault:click` brání default link navigaci (z hierarchie),
+`stoppropagation:click` zastaví bublání ke Linku. `onClick$` proběhne
+async — ale state toggle nemusí být synchronní, jen UI consistency
+musí být.
+
+## Přenositelný pattern
+
+Kdykoli pracuju s nested interactive elements ve frameworku:
+
+1. **Identifikuj framework event model.** React: synchronous handlers.
+   Qwik: async lazy handlers. Vue: synchronous handlers, async setup.
+   Solid: synchronous, fine-grained reactivity. Každý má jinou
+   timing semantics.
+2. **Pro sync control (prevent default, stop propagation) použij
+   declarative attribute level, ne imperative handler.** Browser
+   atributes (preventdefault, stoppropagation) se aplikují synchronously
+   před handlery; handler-level calls jsou subject to handler timing.
+3. **Wrapper composition over native specialization.** Když native
+   element nedrží potřebnou logic, wrap him v parent. Native element
+   ztrácí pointer events, wrapper má control. Cleaner než override
+   native behavior.
+4. **Triple-guard against native input race.** `pointer-events: none`,
+   `readOnly`, `tabIndex={-1}`. Všechny tři kanály (mouse, key, focus)
+   musí být na wrapper, ne na native. Jinak race s framework state.
+5. **Test on slow network / device.** Async race conditions se
+   projeví ne na fast laptopu, ale na slow phone nebo s throttled
+   CPU. DevTools "CPU 6× slowdown" nebo "Slow 3G" jsou must-test
+   conditions.
+
+Pattern se přenáší daleko za Qwik: React Server Components (lazy
+hydration), HTMX (server-driven swaps), service worker fetch handlers
+(intercept timing), iframe postMessage flow. Společný invariant:
+**asynchronní logic nemůže synchronně řídit synchronně dispatched
+events. Pokud chci synchronně řídit, musím to udělat declaratively
+před dispatchem, ne imperativně uvnitř async handleru.** Disciplína:
+přečtu framework docs o event timing, ne extrapoluju z reflexů.
+
+---
+
+# Reasoning chain — Explicit invalidation signal v reactive system
+
+## Zdroj
+`kirke/SOLUTIONS.md#SOL-009` — Qwik `useResource$` se po bulk side
+effectu (mass status change, mass delete) ne-refetchne. Resource
+track-uje URL parameters (`query`, `filter`, `offset`); ty se po bulk
+akci nemění, takže resource zmrzne na stale data, i když na serveru
+fresh data čekají.
+
+## Kontext
+Kirké items list — `/items` route. UI: search box, filter chips,
+paginated list. List dat pochází z `useResource$`, který tracking-uje
+URL search params. Když user změní search query, URL se aktualizuje,
+resource se re-runne (track-ovaný signal změnil), nový fetch z `/api/
+items?q=foo`. **Standard reactive flow.**
+
+Pak: bulk akce. User vybere 10 items, klikne "mark all sold". POST
+na `/api/items/bulk-status` s ids + new status. Server updatuje DB.
+**Server-side data jsou teď fresh.** Ale URL nezměněno — search query
+zůstává stejný, filter zůstává stejný. `useResource$` track-uje tyto
+URL params; **žádný z nich se nezměnil**, resource si myslí "nic
+neproved se", drží stale data. UI ukazuje 10 items s old status,
+přitom na serveru jsou updated.
+
+## Analytický flow
+
+1. **Symptom: po bulk akci UI nerefreshuje.** User vidí "akce
+   provedeno" toast notification, ale list zůstává s old data.
+   Reload page (F5) ukazuje fresh data — confirmation, že server-side
+   je OK; UI re-render je problem.
+
+2. **Otázka: jak Qwik `useResource$` ví, kdy re-runnout?** Qwik
+   reactive primitives používají *signal tracking*: `useResource$`
+   přijme funkci, která má `track(() => signal.value)` — tím
+   resource registuje *na kterém* signalu závisí. Když signal
+   změní hodnotu, Qwik re-runne resource.
+
+3. **Můj setup:**
+   ```ts
+   const items = useResource$(({ track }) => {
+     const q = track(() => searchParams.value.q);
+     const filter = track(() => searchParams.value.filter);
+     const offset = track(() => searchParams.value.offset);
+     return fetchItems(q, filter, offset);
+   });
+   ```
+   Resource depends na URL search params. Když URL změní (uživatel
+   navigates, search query change), resource re-runne. **Když URL
+   nezmění, resource ne-runne.** Bulk akce nemění URL → resource
+   nezná, že má re-run.
+
+4. **Hypotéza fix č. 1: trigger re-run by changing URL.** Po bulk
+   akci, push search params with timestamp (`?_=1234567890`).
+   URL changes → resource re-runs. Funkční, ale **fragile**:
+   - URL bar má junky timestamp (visible, ugly)
+   - Browser history záznam pro každou bulk akci (navigate spam)
+   - Pokud user copy-pastes URL na chat, dostane outdated timestamp
+   - Search params parser musí ignore `_` parametr
+
+5. **Hypotéza fix č. 2: manual resource invalidate API.** Většina
+   reactive frameworks má `resource.invalidate()` nebo `revalidate`.
+   Qwik `useResource$` je primitivní — nemá explicit invalidate
+   method. Tj. tato cesta je zavřená.
+
+6. **Hypotéza fix č. 3: separate "tick" signal.** Vytvořím dedicated
+   signal `refreshTick = useSignal(0)`. Track ho v resource. Po
+   bulk akci inkrementuju `refreshTick.value += 1`. Resource sees
+   změnu signal, re-runne. URL beze změny.
+   ```ts
+   const refreshTick = useSignal(0);
+   const items = useResource$(({ track }) => {
+     const q = track(() => searchParams.value.q);
+     const filter = track(() => searchParams.value.filter);
+     const offset = track(() => searchParams.value.offset);
+     track(() => refreshTick.value);  // ← invalidation channel
+     return fetchItems(q, filter, offset);
+   });
+
+   const bulkUpdateStatus = $(async (ids: string[], status: Status) => {
+     await api.bulkUpdate(ids, status);
+     refreshTick.value += 1;  // ← trigger re-fetch
+   });
+   ```
+
+7. **Volím (3) — čistá oddělená "invalidation channel".** URL params
+   říkají *what to fetch*. RefreshTick říká *when to re-fetch*.
+   Každý kanál nese svou semantic. Žádný side effect na URL,
+   žádné browser history spam.
+
+8. **Reflexe: pattern je univerzální.** Reactive frameworks bez
+   explicit invalidate API mají tento pattern jako workaround.
+   React Query (`refetch()`), SWR (`mutate()`), Solid (`refetch()`)
+   všechny mají explicit API. Qwik `useResource$` je primitivnější
+   — invalidation channel je idiomaticky way to express "force
+   re-run without changing input state".
+
+9. **Když je to právě právě správně.** Tick pattern je správný,
+   když:
+   - Bulk side effect nezmění tracked input (jako bulk update kde
+     URL stays same)
+   - Frame framework nemá explicit invalidate
+   - Dependence chain je clear (jen tento resource)
+   
+   Není správný pro:
+   - Cache eviction (use proper cache library)
+   - Cross-component invalidation (use shared signal/event)
+   - Time-based polling (use `useVisibleTask$` with interval)
+
+## Aplikovatelné principy
+
+- **Explicit invalidation je legitimní reactive pattern.** Reactive
+  systems re-run when inputs change. Pokud chci re-run *bez* input
+  change (side effect refresh), musím poskytnout explicit signal
+  jako "synthetic input" — counter, version, timestamp.
+- **URL je deklarativní state, ne invalidation channel.** Mixovat
+  URL changes s "data refresh trigger" je past — URL nese sémantiku
+  *what to view*, ne *when to re-fetch*. Oddělit kanály je
+  cleaner.
+- **Counter signal je nejjednodušší invalidation primitive.** Jeden
+  `useSignal(0)`, increment po každé akci, track v resource. Žádný
+  framework support potřebný.
+- **Frameworky bez explicit invalidate API mají tento pattern jako
+  conventional workaround.** Před tím, než tvrdím "Qwik nemá způsob,
+  jak to udělat", se podívám, jak community patterns řeší podobnou
+  situaci. Většinou existuje idiomatic řešení.
+
+## Závěr
+
+```ts
+import { component$, useResource$, useSignal, $ } from "@builder.io/qwik";
+
+export default component$(() => {
+  const searchParams = useSearchParams();
+  const refreshTick = useSignal(0);
+
+  const items = useResource$(({ track }) => {
+    const q = track(() => searchParams.value.q);
+    const filter = track(() => searchParams.value.filter);
+    const offset = track(() => searchParams.value.offset);
+    track(() => refreshTick.value);  // re-fetch channel
+    return fetchItems({ q, filter, offset });
+  });
+
+  const bulkUpdate = $(async (ids: string[], status: Status) => {
+    await api.bulkUpdate(ids, status);
+    refreshTick.value += 1;  // trigger re-fetch
+  });
+
+  const bulkDelete = $(async (ids: string[]) => {
+    await api.bulkDelete(ids);
+    refreshTick.value += 1;
+  });
+
+  return (
+    <Resource value={items} onResolved={(items) => <ItemsList items={items} ... />} />
+  );
+});
+```
+
+## Přenositelný pattern
+
+Kdykoli pracuju s reactive system, který re-runs based on input
+changes:
+
+1. **Identifikuj, na čem resource skutečně závisí.** URL params,
+   user input, time, external state. Tracked inputs definují, kdy
+   resource re-runne.
+2. **Identifikuj side effects, které mění target data ale ne tracked
+   inputs.** POST/DELETE/PATCH na server, mutace shared state, timer
+   ticks. Tyto side effects vyžadují *explicit* re-fetch trigger.
+3. **Když framework má explicit invalidate API, použij ho.** React
+   Query `queryClient.invalidateQueries()`, SWR `mutate()`, Solid
+   `refetch()`, Vue `useAsyncData().refresh()`. Když existuje, je
+   idiomatic.
+4. **Když framework nemá explicit invalidate, vytvoř invalidation
+   channel.** Counter signal, version number, dedicated event.
+   Track ho v resource, increment po side effect.
+5. **Oddělení "what to fetch" a "when to re-fetch".** What = URL,
+   filters, query params. When = invalidation signal. Mixovat to
+   znamená URL pollution nebo race conditions.
+
+Pattern se přenáší: cache invalidation v back-end (TTL vs. explicit
+flush), event-driven UI (manual refresh button), distributed cache
+(version counter pro stale-while-revalidate), polling vs. push
+(synthetic tick vs. server-sent events). Společný princip: **reactive
+system re-runs on input changes; pokud potřebuju re-run *without*
+input change, expandnu input space o synthetic invalidation channel.
+Jednoduchá disciplína: oddělené signály pro oddělené sémantiky —
+data identity vs. data freshness.**
+
+---
+
+# Reasoning chain — Scissor rect clamping a validation na hraně
+
+## Zdroj
+`morana/SOLUTIONS.md#SOL-006` — wgpu validační panic na Windows při
+resize okna: scissor rect přesahoval surface velikost.
+
+## Kontext
+Iskra renderer používá GPU hardware scissor pro UI clip regions
+(ScrollView, panely s overflow). Když Painter řekne "kresli teď
+v rectanglu (x, y, w, h)", renderer před `RenderPass` zavolá
+`set_scissor_rect(x, y, w, h)` — GPU pak zahodí všechny fragmenty
+mimo tento rect. Nulový performance overhead, perfectní hardware
+support. Funguje hladce na Linuxu i Mac. Na Windows + Vulkan: panic
+po resize okna. Stack trace: `ValidationError: scissor rect (0, 0,
+1920, 1080) exceeds render target dimensions (1280, 720)`. Konkrétně
+to spadne *po* resize z 1920x1080 na 1280x720, na druhém renderu
+v té smaller velikosti.
+
+## Analytický flow
+
+1. **Pozoruji platform divergence znovu — ale tentokrát s validation
+   error, ne s tichým no-op.** Linux a Mac mají buď permisivnější
+   validation, nebo Vulkan API není exposovaný stejně. Windows +
+   Vulkan vrstva `VK_LAYER_KHRONOS_validation` aktivně kontroluje,
+   že scissor rect je ⊆ render target. Jiné platformy možná validaci
+   nedělají, nebo dělají později.
+
+2. **Důležitý detail: Linux a Mac to *neproháněly* — byl to skrytý
+   bug.** Při dalším resize na large velikost by se validace neprojevila.
+   Na resize z 1920x1080 na 1280x720 se ale naopak **bug objevil**
+   — scissor z předchozího framu (1920x1080) přesahuje nový surface
+   (1280x720). Vulkan validation panickne. Bez Vulkan validation
+   by GPU možná nevadil, ale výsledek by byl undefined behavior.
+   **Validation panic mě zachránil před runtime tichou chybou.**
+
+3. **Trace zpět: kde se scissor rect bere?** UI layout vypočítává
+   clip regions v jednotkách logical pixels (DPI-aware). Renderer
+   konvertuje na surface coordinates při `set_scissor_rect`. Layout
+   je z předchozího framu — frame N-1 layout řekl "panel je
+   1920x1080 minus padding", scissor regiony reflektují to.
+   Frame N přijde po resize, surface je 1280x720, ale layout ještě
+   nebyl přepočítán (přepočítá se v dalším update tick).
+
+4. **Hypotéza fix č. 1: layout počítat synchronně po resize.** To je
+   "make resize blocking" — počkej s renderem, dokud layout neproběhne.
+   Cena: latence po resize, layout pass může být drahý, blocking
+   v event handleru je rude pro user experience. Funkční, ale
+   architektura je posunutá.
+
+5. **Hypotéza fix č. 2: clamping na renderer hranici.** Místo opravy
+   layout pipeline (fragile, drahá), validuju scissor rect na
+   *hranici*, kde se používá. `set_scissor_rect` dostane hodnoty,
+   které mohou být outdated — clampnu je na surface velikost.
+   Cena: 4 řádky kódu. Risk: scissor pak ořeže menší area než
+   layout chtěl, ale nikdy větší, takže *visual* je acceptable
+   (worst case: user vidí trochu menší panel než UI očekává, jen
+   pro 1 frame, dokud se layout nepřepočítá).
+
+6. **Implementace clampingu.**
+   ```rust
+   for clip in clip_regions {
+       // Origin musí být uvnitř surface; jinak segment přeskoč
+       if clip.x >= surface_w || clip.y >= surface_h { continue; }
+       // Clamp velikost na surface (od origin)
+       let w = (clip.w).min(surface_w - clip.x).max(1);
+       let h = (clip.h).min(surface_h - clip.y).max(1);
+       render_pass.set_scissor_rect(clip.x, clip.y, w, h);
+       // ... draw calls v tomto clip ...
+   }
+   ```
+   Dva edge cases:
+   - **Origin mimo surface:** scissor (1500, 0, 100, 100) na surface
+     1280x720 — origin (1500, 0) je za rightem. `continue` — nic
+     z tohoto clipu není viditelné, skip celý draw segment.
+   - **Velikost nulová:** wgpu odmítá `width = 0` nebo `height = 0`
+     jako invalid. `.max(1)` garantuje minimum 1px.
+
+7. **Reflexe: defense in depth.** Layout pipeline by *měl* držet clip
+   regions in-bounds. Pokud bug se objeví v layoutu (forgotten resize
+   handler, race condition v scroll position), defense at renderer
+   boundary mě uchrání před runtime panic. **Validation se aplikuje
+   na hranicích kontextu, nejen u sourceu.** Stejně jako server
+   validuje user input, renderer validuje layout output. Layer
+   validation je kombinována, ne distribuována.
+
+## Aplikovatelné principy
+
+- **Validation na hraně systému je defense in depth.** I když source
+  data *má* být valid, validace na consumer-side chytne bugs v producer
+  bez celé pipeline reorg. Stejný princip jako server validuje JSON
+  payload, ne jen relies na frontend, že to bude správné.
+- **Clamping je cheap recovery, panic je expensive.** Zvolit mezi
+  panic ("layout je rozbitý!") a graceful clamp ("ukaž to nejlepší
+  approximaci") je obvykle no-brainer pro non-critical operace.
+  Validation panic ve framework, který má 60 fps, je catastrophic.
+  Frame s mírně off layoutem je acceptable.
+- **Validation layers jsou debug aid, ne enemy.** Vulkan validation
+  vrstva odhaluje bugs, které by jinak byly silent corruption. Když
+  validation panickne, je to *fakt* — produkce by měla stejný bug,
+  jen ne s loud signal. Fix se aplikuje protože validation je
+  pravda, ne aby validation umlčela.
+- **Po resize jsou frames v "transient" state.** Mezi `Resized` event
+  a tím, kdy layout se přepočítá, je okno, kde data z minulého layoutu
+  nemusí sedět s novým surface. Renderer musí být tolerant na tenhle
+  gap — buď `continue` (skip frame) nebo clamp.
+
+## Závěr
+
+```rust
+// V renderer.rs, draw_ui_clip_segments():
+for segment in &scene.ui_clip_segments {
+    let clip = segment.scissor;
+
+    // Skip segment, pokud origin mimo surface
+    if clip.x >= surface_w || clip.y >= surface_h {
+        continue;
+    }
+
+    // Clamp velikost (≥ 1px, ≤ surface - origin)
+    let w = clip.w.min(surface_w.saturating_sub(clip.x)).max(1);
+    let h = clip.h.min(surface_h.saturating_sub(clip.y)).max(1);
+
+    render_pass.set_scissor_rect(clip.x, clip.y, w, h);
+    // ... draw calls ...
+}
+```
+
+`saturating_sub` chrání proti underflow (kdyby `clip.x > surface_w`,
+ale to už řeší předchozí `if continue`).
+
+## Přenositelný pattern
+
+Kdykoli mám API, které vyžaduje `value ∈ [min, max]` a value pochází
+z předchozí fáze, kde to garantováno *měla* být ale není 100% jisté:
+
+1. **Zvol mezi blocking sync a graceful clamp.** Blocking ("počkej
+   na update layoutu před renderem") je správné v některých kontextech
+   (database transaction integrity), ale fragile v real-time pipelinech.
+   Clamp ("ukaž best approximation") je obvykle správné v UI/rendering.
+
+2. **Validation na consumer side, ne jen na producer.** Producer
+   *má* dělat validní data, ale když ne, consumer je posledni linie
+   defense. Bezpečnost (ASLR, ROP, JIT) tohle dělá důsledně. Také
+   dobrý GUI framework, dobrý compiler frontend, dobrý API server.
+
+3. **Edge cases: empty, negative, beyond-bounds.** Pro každý input
+   range kontroluju: co když je hodnota přesně na hraně? Mimo? Záporná?
+   Velmi velká (overflow)? `set_scissor_rect(0, 0, 0, 0)` selže;
+   `set_scissor_rect(u32::MAX, 0, 1, 1)` taky. Rozsah validity je
+   úzký, hranice jsou nesymetrické.
+
+4. **Saturating arithmetic je tvůj kamarád.** `.saturating_sub`,
+   `.saturating_add`, `.saturating_mul` v Rustu, `Math.min/max`
+   chains v JS, clamp helpers v většině jazyků. Místo manuálního
+   if-overflow check je krátký compose volání compute-with-bounds.
+
+5. **Test pro transient/rare state.** Test na initial render frame,
+   test na frame po resize, test na frame po focus loss. Tyto stavy
+   se nedostanou do unit testů normálně — chytí je integrační test,
+   který simuluje *full lifecycle*, ne *steady state*.
+
+Pattern se přenáší: HTTP client retry policies (clamp delay between
+attempts), database connection pool (clamp concurrent queries),
+animation system (clamp interpolation t na [0, 1]), audio sample
+clipping (clamp -1.0..=1.0), network protocol (clamp packet sizes).
+Společný invariant: **na hranici systému, kde data přechází z jednoho
+domain do druhého, validuj. Nemůžeš věřit, že producer tě nezklamal,
+i kdyby měl. Defense in depth není paranoia — je to disciplína.**
+
+---
+
+# Reasoning chain — Inicializace scale_factor a "nikdy se nespoléhej na eventy"
+
+## Zdroj
+`morana/SOLUTIONS.md#SOL-007` — chrome (title bar, knoflíky, resize
+handles) byl na Windows neviditelný, protože `scale_factor` zůstal
+nulový do prvního frame.
+
+## Kontext
+Morana renderuje vlastní window chrome (bez OS dekorací) — title bar,
+zavřít/minimalizovat/maximalizovat tlačítka, resize handles na hranách.
+Chrome škáluje rozměry DPI faktorem: `chrome_height_px = chrome_height_dp
+* scale_factor`. Scale factor přichází z winit eventu `ScaleFactorChanged`,
+který se posílá při vytvoření okna a při přesunu mezi monitory s různým DPI.
+`InputState::default()` má `scale_factor = 0.0`. Na Linuxu (Wayland)
+event přichází *před* prvním renderem, takže do prvního frame má input
+stav správnou hodnotu. Na Windows event přichází **po** prvním frame.
+Důsledek: na Windows první frame renderuje chrome se `scale_factor = 0.0`,
+takže všechny chrome elementy mají `0px` velikost — neviditelné. Po
+prvním frame přijde event, scale_factor se aktualizuje, druhý frame
+chrome ukáže. Vizuálně: krátký flicker na Windows, na Linuxu ne.
+
+## Analytický flow
+
+1. **Pozoruji rozdíl: Windows má flicker, Linux nemá.** Na Linuxu chrome
+   funguje od prvního renderu. Na Windows první frame je bez chrome,
+   pak se chrome objeví. Tahle platform-specific divergence je signal,
+   že někde v kódu se spoléhá na timing assumption, kterou jedna
+   platforma splňuje a druhá ne.
+
+2. **Hledat místa, kde input state ovlivňuje chrome rendering.**
+   Chrome layout používá `input.scale_factor` na třech místech:
+   title_bar_height = 32 * sf, button_size = 24 * sf, resize_handle =
+   8 * sf. Pokud sf = 0, všechny tři jsou 0. Ověřuju: `println!`
+   v chrome render funkci na první frame. Linux: sf = 1.5 (mé
+   monitor). Windows: sf = 0.0. **Confirmed: scale_factor není
+   inicializovaný na Windows do prvního renderu.**
+
+3. **Otázka: kdy se scale_factor nastavuje?** Otevřu winit event
+   handler. `Event::ScaleFactorChanged { scale_factor, .. }` updatuje
+   `input.scale_factor`. Tento event se posílá při dvou situacích:
+   (a) okno se vytvoří, winit pošle počáteční scale_factor; (b) okno
+   se přesune mezi monitory s různým DPI.
+
+4. **Proč to funguje na Linuxu, ale ne na Windows?** Otevřu winit
+   docs pro `ScaleFactorChanged`. Důležitý detail: **Wayland posílá
+   tento event jako součást window creation handshake**, takže přijde
+   *před* prvním `redraw_requested`. Na Windows winit volá platform
+   API pro detekci DPI po vytvoření okna, ale tato detekce se
+   propaguje *až po* prvním winit event loop iteration — což znamená
+   až *po* tom, co můj kód už spustil první render.
+
+5. **Tady leží mental model error: "winit event for init" je leaky
+   abstraction.** Já jsem implicitně předpokládala, že winit eventy
+   přijdou v *logickém* pořadí: vytvoř okno → ScaleFactorChanged →
+   první render. Ale winit garance to není. Skutečné pořadí je
+   platform-dependent. `ScaleFactorChanged` je *event* (něco se
+   změnilo), ne *fact* (počáteční stav). Nikdo mi negarantuje, že
+   přijde *před* prvním renderem.
+
+6. **Fix: inicializovat scale_factor explicitně z window handle.**
+   `winit::Window::scale_factor()` je metoda, která vrací aktuální
+   scale faktor. Volá ji přímo platform API, není závislá na event
+   loopu. Volám ji ihned po vytvoření okna:
+   ```rust
+   fn resumed(&mut self, event_loop: &EventLoop) {
+       let win = event_loop.create_window(...)?;
+       win.input.scale_factor = win.handle.scale_factor();  // ← explicit
+       ...
+   }
+   ```
+   Stejně v `open_window` pro další okna. Event-based update zůstává
+   pro monitor changes, ale init má explicit cestu.
+
+7. **Reflexe na pattern: nikdy se nespoléhej na eventy pro inicializaci.**
+   Eventy říkají, *co se právě stalo*. Init potřebuje, *co je teď*.
+   Tohle jsou dva různé sémantické dotazy. Pokud chci "fact", musím
+   se ptát na *fact* (`window.scale_factor()`), ne čekat na *event*
+   (`ScaleFactorChanged`). Eventy jsou pro reagování na změny, ne
+   pro establishování baseline.
+
+## Aplikovatelné principy
+
+- **"Event for init" je leaky abstraction.** Eventy slouží k notifikaci
+  *změny*. Initial state musí pocházet z explicit dotazu na current
+  state, ne z čekání na event "tohle je počáteční hodnota". Mezi
+  vytvořením věci a prvním eventem může proběhnout libovolné množství
+  jiných operací — pokud ty potřebují default, nemají ho.
+- **Platform-specific timing assumption je smell.** Pokud kód funguje
+  na Linuxu ale ne na Windows (nebo Mac vs. iOS, Chrome vs. Firefox),
+  je tam pravděpodobně skrytý timing dependent assumption. Najít
+  a oddělit ho je lepší než hot-fix specifický na jednu platformu.
+- **`Default::default()` na library type bývá rozumný compromise,
+  ne *correct* hodnota.** `InputState::default()` má `scale_factor = 0.0`
+  protože tahle hodnota je neutrální (žádná konkrétní platforma ji
+  nepreferuje). Ale "neutrální" ≠ "užitečné". Když používám default,
+  musím to být na místech, kde ta hodnota dává smysl, ne kde uživatel
+  čeká real DPI.
+- **Init function vs. event handler jsou dva odpovědné módy.** Init
+  funkce je explicit, deterministická, dělá *co je teď*. Event handler
+  reaguje, asynchronní, dělá *co se právě stalo*. Mixování těchto dvou
+  rolí (event handler used as init) vede k race conditions při startu.
+
+## Závěr
+
+```rust
+// Před (čekáme na event):
+fn resumed(&mut self, event_loop: &EventLoop) {
+    let win = event_loop.create_window(...).unwrap();
+    self.windows.insert(win_id, win);
+    // input.scale_factor zůstává 0.0 do prvního ScaleFactorChanged eventu
+}
+
+// Po (explicit init):
+fn resumed(&mut self, event_loop: &EventLoop) {
+    let win = event_loop.create_window(...).unwrap();
+    let mut input = InputState::default();
+    input.scale_factor = win.scale_factor();  // ← explicit z window handle
+    self.windows.insert(win_id, ManagedWindow { handle: win, input, ... });
+}
+
+// Stejné v open_window pro další okna.
+```
+
+## Přenositelný pattern
+
+Kdykoli inicializuju komponentu, jejíž stav závisí na external state
+(OS, browser, network, hardware), procházím tímto:
+
+1. **Identifikuj všechny external state, na kterém závisím.** DPI,
+   theme (dark/light), window size, locale, network connectivity,
+   GPU capabilities. Cokoli, co není v plné kontrole mého kódu.
+
+2. **Pro každý external state se ptej: existuje synchronous getter,
+   nebo je to event-driven?** Synchronous: `window.scale_factor()`,
+   `navigator.language`, `gl.getParameter(...)`. Event-driven:
+   `ScaleFactorChanged`, `themechange`, `resize`. Synchronous getter
+   je vždy preferred pro init.
+
+3. **Pokud je *jen* event-driven, vyžádej current state explicitně.**
+   Browser: `matchMedia(...).matches` před přidáním listeneru.
+   Tokio: `tokio::runtime::Handle::current()` před spawning.
+   Nikdy "počkám na první event" — to je race condition.
+
+4. **Default values na external-state structurách jsou nebezpečné.**
+   `Default::default()` produkuje neutrální hodnoty, které se obvykle
+   liší od reality. Pokud `Default` neznamená "produkční default",
+   je to past. Buď použij `Option<T>` (None signalizuje "ne ještě
+   inicializováno"), nebo nemít `Default` impl.
+
+5. **Test pro "first frame state" je často chybějící.** Jednotkové
+   testy testují steady state, ne startup. Integrační test, který
+   ověří, že first frame má správný DPI / theme / size, je často
+   to, co chytí init bug.
+
+Pattern se přenáší napříč: GUI initialization (DPI, theme), web app
+hydration (server state vs. client state), embedded firmware (sensor
+calibration before first read), distributed systems (cluster discovery
+before first request). Společný invariant: **mezi vytvořením a prvním
+použitím je okno, kde stav nemusí být ještě synchronizovaný. Buď ten
+gap zaplň explicit init dotazem, nebo dělej first-frame logiku tolerantní
+k chybějícímu stavu. Eventy nejsou init.**
+
+---
+
+# Reasoning chain — Windows borderless resize a FFI escape hatch
+
+## Zdroj
+`morana/SOLUTIONS.md#SOL-008` — borderless okno na Windows (vlastní
+chrome) odmítlo resize přes drag, na Linuxu fungovalo.
+
+## Kontext
+Morana má vlastní GPU-renderovaný window chrome (title bar, knoflíky,
+resize handles) — záměr je pixel-perfect cross-platform vzhled,
+nezávislý na OS dekoracích. Implementace: `with_decorations(false)`
+v winit + vlastní hit testing (resize handles na hranách okna). Když
+uživatel kliká na resize handle a táhne, voláme `window.drag_resize_window
+(direction)` — winit posílá platform-specific resize message. **Na
+Linuxu (Wayland) to funguje** — Wayland compositor zpracovává resize
+přes vlastní protokol, nepotřebuje žádné zvláštní window flags. **Na
+Windows to nefunguje** — kurzor se nemění, drag nedělá nic, okno se
+nehne. Žádný error, žádný panic, jenom tichý no-op.
+
+## Analytický flow
+
+1. **Diagnostika: Windows vs. Linux divergence znovu.** Stejný kód,
+   různé chování. To znamená, že někde je platform abstraction, která
+   *vypadá* uniformně (`drag_resize_window` API), ale platform-specific
+   implementace dělá jiné věci. Otevřu winit zdroj, hledám
+   `drag_resize_window` Windows implementaci.
+
+2. **Co dělá winit na Windows pro resize.** `drag_resize_window`
+   posílá `WM_NCLBUTTONDOWN` message s `HTBOTTOMRIGHT` (nebo other
+   resize hit-test code). Windows reaguje na tuhle message standardní
+   resize logikou. **Pokud:** okno má `WS_THICKFRAME` style. Pokud
+   ne, Windows tuto message ignoruje. Tichý no-op.
+
+3. **Otázka: má moje okno `WS_THICKFRAME`?** winit s
+   `with_decorations(false)` vytváří okno jako `WS_POPUP` (popup style,
+   bez title baru a borders). `WS_POPUP` **neobsahuje `WS_THICKFRAME`**.
+   To je rozumný default — popup okna by neměla být resizable. Ale
+   já potřebuju popup okno (žádné dekorace) *plus* resize support.
+   Win32 nemá tuto kombinaci out-of-the-box, je třeba ji ručně
+   poskládat.
+
+4. **Cesta č. 1: požádat winit o nový API option.** "Borderless plus
+   resizable" je rozumný feature request. Otevřu winit issue tracker,
+   vidím, že tato kombinace je dlouhodobě požadovaná, ale otevřená
+   diskuze o správné API. Nemůžu blokovat svoje milestone na winit
+   merge.
+
+5. **Cesta č. 2: workaround přes FFI.** Windows má `SetWindowLongPtrW`,
+   která umožňuje upravit window style po vytvoření. Mohu po winit
+   vytvoření okna získat raw HWND handle a přidat `WS_THICKFRAME`
+   manuálně. Cenu: minimal Win32 FFI volání (definované inline
+   bez externího crate). Risk: změny v internal winit detail by
+   to mohly rozbít, ale `raw-window-handle` crate poskytuje stabilní
+   way k získání HWND.
+
+6. **Implementace: `enable_borderless_resize()` cross-platform funkce.**
+   Na Linux/Mac je no-op (žádné FFI volání potřeba). Na Windows:
+   ```rust
+   #[cfg(windows)]
+   fn enable_borderless_resize(window: &Window) {
+       use raw_window_handle::HasWindowHandle;
+       let handle = window.window_handle().unwrap();
+       let hwnd = match handle.as_raw() {
+           RawWindowHandle::Win32(h) => h.hwnd.get() as HWND,
+           _ => return,
+       };
+       unsafe {
+           let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+           let new_style = style | (WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX) as isize;
+           SetWindowLongPtrW(hwnd, GWL_STYLE, new_style);
+           SetWindowPos(hwnd, ptr::null_mut(), 0, 0, 0, 0,
+               SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+       }
+   }
+   ```
+   `WS_THICKFRAME` přidává resize support, `WS_MINIMIZEBOX |
+   WS_MAXIMIZEBOX` pak zachovává funkčnost minimum/maximum gestures.
+   `SWP_FRAMECHANGED` říká Windows "přepočítej non-client area" —
+   bez toho by změna stylu se neaplikovala visually.
+
+7. **Vedlejší efekt: tenký DWM resize border (~1px).** Windows DWM
+   (desktop window manager) přidává malou aero-style hairline border
+   k oknu se `WS_THICKFRAME`. Vizuálně téměř neviditelný, ale
+   technicky tam je. Acceptable trade-off pro získání resize support.
+   Alternativa by byla custom mouse capture + `SetWindowPos` během
+   drag, ale to by replikovalo logiku, kterou Windows má built-in
+   a kterou moji uživatelé očekávají (snap to edge, snap to corner,
+   atd.).
+
+8. **Reflexe: kdy je FFI escape hatch správná volba.** Tady je: API,
+   které potřebuju (borderless + resizable), neexistuje v abstraction
+   library; existuje na underlying platformě jako standard pattern;
+   FFI volání je malé, dobře ohraničené, well-documented. Když
+   underlying capability je tam a wrapper to nepropsal, je legitimní
+   sáhnout dolů. (Stejný princip jako safetensors metadata workaround,
+   jen s OS API místo Rust crate.)
+
+## Aplikovatelné principy
+
+- **Cross-platform abstrakce mají gaps. Wayland/X11/Win32/Cocoa mají
+  fundamentálně různé event models.** Když API knihovna říká "drag
+  resize", ne všechny platformy ten koncept mají identicky. Podpora
+  borderless+resizable je velmi platform-specific.
+- **`raw-window-handle` crate je standardní way k FFI escape.** Místo
+  vlastního winit-internal-deps poskytuje stabilní abstrakci pro
+  získání platform-specific handle (HWND na Windows, NSWindow na Mac,
+  XCB na Linux). Pokud potřebuju FFI, jdu přes raw-window-handle.
+- **`SetWindowPos(SWP_FRAMECHANGED)` je nutný invalidace po style
+  change.** Windows cachuje window non-client area shape — bez
+  invalidate by změna stylu nepropagovala. Podobně CSS reflow a
+  invalidation u browser layoutů.
+- **Tenký aero border je acceptable trade-off pro real Windows resize
+  semantics.** Reimplementace OS resize logic (snap, magnetic edges,
+  aero peek) by byla obrovská práce. Trade ~1px aero hairline za
+  full Windows resize compliance je dobrý deal.
+
+## Závěr
+
+```rust
+// Cross-platform stub
+fn enable_borderless_resize(_window: &Window) {
+    #[cfg(windows)]
+    enable_borderless_resize_win32(_window);
+}
+
+#[cfg(windows)]
+fn enable_borderless_resize_win32(window: &Window) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    let handle = window.window_handle().unwrap();
+    let hwnd = match handle.as_raw() {
+        RawWindowHandle::Win32(h) => HWND(h.hwnd.get() as *mut _),
+        _ => return,
+    };
+    unsafe {
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        let new_style = style
+            | (WS_THICKFRAME.0 | WS_MINIMIZEBOX.0 | WS_MAXIMIZEBOX.0) as isize;
+        SetWindowLongPtrW(hwnd, GWL_STYLE, new_style);
+        let _ = SetWindowPos(
+            hwnd, None, 0, 0, 0, 0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+        );
+    }
+}
+
+// V resumed():
+let win = event_loop.create_window(attrs.with_decorations(false))?;
+enable_borderless_resize(&win);
+```
+
+## Přenositelný pattern
+
+Kdykoli moje cross-platform knihovna nesplňuje požadovaný platform-specific
+chování, procházím:
+
+1. **Ověř, že underlying platform tu schopnost má.** Windows API,
+   Cocoa, X11/Wayland — pokud na native úrovni to existuje jako
+   standard pattern, mám reálnou cestu. Pokud ne, FFI mě nezachrání.
+
+2. **Hledej standardní way přes `raw-window-handle` (nebo equivalent).**
+   Místo vlastního FFI s winit internals, použij stabilní abstrakci.
+   Na Rust side je to `raw-window-handle` crate; na Cocoa/Swift
+   `NSView -> objc2_app_kit::NSWindow`; na web `WebGL -> canvas`
+   element directly.
+
+3. **Vykresli si platform matrix: kde to už funguje, kde nepotřebuje
+   workaround.** Linux Wayland je často "naturally working" — bash
+   neexistuje, X11 má vlastní mechanismus. Mac má Cocoa s vlastními
+   patterny. Windows s Win32 je často ten, kdo potřebuje FFI escape.
+   Workaround psát jen na platformách, kde to vyžaduje.
+
+4. **Minimální FFI surface, dobře ohraničený.** Jedna funkce, jeden
+   import set, jedno well-documented place. Když later upgrade
+   knihovny obsoletizuje workaround, je to jednoduché smazat.
+
+5. **Acceptable trade-off vs. perfect parity.** Někdy 99% parity
+   stojí 5 % code. Posledních 1 % parity stojí 50 % code. Po určité
+   úrovni je správná odpověď "pixelové rozdíly mezi platformami
+   jsou OK", ne reimplementace native logiky.
+
+Pattern se přenáší: cross-platform crypto (OS keychain access),
+filesystem (case-sensitivity, path separators), audio (PortAudio vs.
+CoreAudio), networking (raw sockets, IP_TOS). Vždycky existuje **vrstva
+abstrakce**, která pokrývá 80 %, a **vrstva platform native API**,
+která pokrývá zbytek. FFI escape hatch je legitimní, když je dobře
+ohraničený a vede k underlying capability, ne k re-implementaci.
+
+---
+
+# Reasoning chain — RNG double-borrow a "extract pure function s explicit state"
+
+## Zdroj
+`morana/SOLUTIONS.md#SOL-016` — borrow checker odmítl `ParticleSystem::update()`,
+které iteruje přes `&mut self.emitters` a uvnitř volá `self.spawn_particle()`.
+
+## Kontext
+Particle system: struct `ParticleSystem { emitters: Vec<Emitter>, rng_state: u64,
+particles: Vec<Particle> }`. V `update(dt)` mám iterovat přes mutable emitters
+a každý emitter, který má `time_since_emit > interval`, má spawnnout částici.
+Spawn částice potřebuje (a) konfiguraci emitteru, (b) RNG state pro náhodnou
+počáteční rychlost, (c) zápis do `self.particles`. Naivní `for emitter in
+&mut self.emitters { let p = self.spawn_particle(&emitter.config); ... }`
+borrow checker odmítl: `self.emitters` drží mutable borrow a `self.spawn_particle`
+chce další mutable borrow na `self`. Klasický "cannot borrow `*self` as mutable
+more than once at a time" error.
+
+## Analytický flow
+
+1. **První instinkt: dát si na chvíli pauzu, ne začít hledat hacky.** Borrow
+   checker není šikana, je to compilerova druhá ruka, která mě vede ke
+   správnému ownership designu. Když odmítne, není problém v "Rustu", ale
+   v tom, jak strukturuju data a operace. Než sáhnu po `RefCell` nebo
+   `unsafe`, podívám se, *co konkrétně* checker namítá.
+
+2. **Diagnóza: dvě cesty k *self skrz nestejný field.** První borrow pochází
+   z `for &mut self.emitters`. Druhý z `self.spawn_particle()`, což je metoda
+   na `&mut self`. Rust nemůže vědět, že `spawn_particle` *nepoužívá*
+   `self.emitters` (kdyby používal, vznikla by data race i logicky). Rust
+   neví, jaké fields metoda čte/zapisuje — vidí jen `&mut self`. To je
+   konzervativní, ale správné.
+
+3. **Teď řešení: jak zúžit "co spawn_particle potřebuje" tak, aby to nebylo
+   `&mut self`.** Podívám se, co metoda dělá: čte konfiguraci (předanou
+   parametrem), generuje náhodné číslo z `self.rng_state`, vrací nově
+   sestavenou částici. Klíčový pohled: **většina práce nepotřebuje self,
+   potřebuje jen rng_state**. Konkretně:
+   - `&Config` → parametr (immutable)
+   - `&mut u64` (rng_state) → parametr (mutable jen ten field)
+   - Návrat: `Particle` struct (žádný side effect)
+
+4. **Refaktor: extrahuju `spawn_particle` jako *free function*** s explicit
+   parametry:
+   ```rust
+   fn spawn_particle_with_rng(config: &Config, rng: &mut u64) -> Particle { ... }
+   ```
+   Tahle funkce nemá žádný `self`. Volá se jako `spawn_particle_with_rng(
+   &emitter.config, &mut local_rng)`. Pak v `update`:
+   ```rust
+   let mut local_rng = self.rng_state;
+   for emitter in &mut self.emitters {
+       if emitter.time > emitter.interval {
+           let p = spawn_particle_with_rng(&emitter.config, &mut local_rng);
+           self.particles.push(p);  // ← pozor, teď druhý borrow
+           ...
+       }
+   }
+   self.rng_state = local_rng;
+   ```
+   Stále zbývá problém: `self.particles.push(p)` je další borrow na self.
+   **Stejný pattern: vytáhnu particles z self lokálně.**
+
+5. **Druhý refaktor: collect spawn results, pak push v jedné dávce.**
+   ```rust
+   let mut new_particles = Vec::new();
+   let mut local_rng = self.rng_state;
+   for emitter in &mut self.emitters {
+       if emitter.time > emitter.interval {
+           new_particles.push(spawn_particle_with_rng(&emitter.config, &mut local_rng));
+           emitter.time = 0.0;
+       }
+   }
+   self.rng_state = local_rng;
+   self.particles.extend(new_particles);
+   ```
+   Borrow checker je spokojený: jeden mutable borrow na `self.emitters`
+   uvnitř `for`, žádný další borrow na `self`. Po skončení loopu se borrow
+   uvolní a můžu zapisovat do `self.rng_state` a `self.particles`.
+
+6. **Cena? Jeden Vec<Particle> alokace per frame.** Pro typické particle
+   counts (desítky až stovky per frame) je to triviální. Pro extrémní
+   case (tisíce per frame) by se dal preallocate `Vec::with_capacity(estimated)`
+   a reuse mezi framy přes `mem::take`. Ale tohle je optimalizace, ne
+   architektura — začínám se simple variantou.
+
+7. **Reflexe: borrow checker mě vlastně přiměl k lepšímu designu.**
+   Free funkce `spawn_particle_with_rng` je teď testable bez celé
+   `ParticleSystem` instance (předám config a u64, dostanu Particle).
+   Logika spawnu je oddělená od orchestrace iterace. Když se objeví druhý
+   typ emitteru s jiným spawnem, můžu mít `spawn_smoke_particle_with_rng`,
+   `spawn_spark_particle_with_rng` — žádné nové metody, jen funkce.
+
+## Aplikovatelné principy
+
+- **Rust borrow checker vede ke správnému ownership designu, neobchází
+  ho `RefCell`.** Pokud checker odmítne, má pravdu, že designově je něco
+  divně. `RefCell` posune chybu z compile time do runtime — nezachrání
+  bug, jen ho odsune. Lepší cesta: refactor, který compileru ukáže, že
+  konflikt neexistuje.
+- **"Method on `&mut self` zachycuje *celý* self."** Compiler nemůže vědět,
+  že metoda potřebuje jen jeden field. Pokud mám konflikt, extrahuju metodu
+  na free funkci s explicit field parametry. Funkce má pak striktnější
+  signaturu, kterou může compiler verifikovat na fine-grained level.
+- **"Collect now, apply later" pattern řeší borrow loops.** Když chci ve
+  smyčce číst i zapisovat do téhož container, collectnu výsledky lokálně
+  a apply až po skončení smyčky. Cena: jedna alokace. Výhoda: jasný
+  oddělený "compute" a "commit" fáze, nezávislé borrow scopes.
+- **Free funkce s explicit state jsou snazší k testování.** `fn(&Config,
+  &mut u64) -> Particle` se otestuje s libovolným config a libovolným
+  rng_state. Method on self vyžaduje vytvoření celé `ParticleSystem`
+  instance. Test je menší, rychlejší, izolovanější.
+
+## Závěr
+
+```rust
+// Před (nekompiluje):
+impl ParticleSystem {
+    fn update(&mut self, dt: f32) {
+        for emitter in &mut self.emitters {
+            if emitter.time > emitter.interval {
+                let p = self.spawn_particle(&emitter.config);  // ❌ E0499
+                self.particles.push(p);
+                emitter.time = 0.0;
+            }
+            emitter.time += dt;
+        }
+    }
+    fn spawn_particle(&mut self, c: &Config) -> Particle { ... }
+}
+
+// Po:
+fn spawn_particle_with_rng(config: &Config, rng: &mut u64) -> Particle {
+    let velocity = sample_velocity(config, rng);
+    Particle { pos: config.origin, velocity, life: config.lifetime }
+}
+
+impl ParticleSystem {
+    fn update(&mut self, dt: f32) {
+        let mut new_particles = Vec::new();
+        let mut local_rng = self.rng_state;
+        for emitter in &mut self.emitters {
+            if emitter.time > emitter.interval {
+                new_particles.push(
+                    spawn_particle_with_rng(&emitter.config, &mut local_rng),
+                );
+                emitter.time = 0.0;
+            }
+            emitter.time += dt;
+        }
+        self.rng_state = local_rng;
+        self.particles.extend(new_particles);
+    }
+}
+```
+
+## Přenositelný pattern
+
+Když Rust borrow checker odmítne metodu, postupuju touto sekvencí:
+
+1. **Identifikuj, čeho se každý borrow dotýká.** Vypiš si, jaké fields
+   jsou v každém scope mutable/immutable. Často konflikt vznikne mezi
+   `&mut self` na úrovni metody a `&mut self.field` ve smyčce.
+
+2. **Zkus refactor na free funkci s explicit field parameters.** Když
+   metoda potřebuje jen `self.field_a` a `self.field_b`, ne celé self,
+   napiš funkci `fn op(a: &mut FieldA, b: &mut FieldB)`. Compiler pak
+   vidí přesně, co se borrowuje, a `disjoint borrows` jsou OK.
+
+3. **Když to nejde, použij "collect now, apply later".** Vytvoř lokální
+   buffer, naplň ho ve smyčce, applyuj po skončení smyčky. Cena: jedna
+   alokace per call. Výhoda: jasné oddělení compute fáze a commit fáze.
+
+4. **Pokud i to nejde, sáhni po `mem::take` / `mem::replace`.** Vytáhneš
+   field do lokální variable, pracuješ s ním libovolně, po skončení vrátíš
+   zpět. Funguje pro `Vec`, `HashMap` a další `Default` typy. Levné, čisté,
+   nepotřebuje `unsafe`.
+
+5. **Až jako poslední možnost zvaž `RefCell` nebo `unsafe`.** RefCell
+   posouvá borrow check do runtime — mírná performance penalty + možný
+   panic. `unsafe` ti dá libovolnou flexibilitu, ale ztrácíš compiler
+   garance. Obvykle existuje *nějaká* z předchozích cest, jen je třeba
+   ji najít.
+
+Pattern se přenáší daleko za particle systémy. Game state update (oddělit
+"compute new state" od "commit"), event handling (collect events, apply
+batch), database transactions (build operations, commit at end), file
+I/O (buffer writes, flush at boundary). Společný mental shape: **iterace
+přes mutable věc nemůže současně mutovat jiné fields toho samého ownera.
+Buď zúžit ownership (extract function), nebo oddělit compute od commit
+(collect, apply later). Borrow checker odmítá to, co je obvykle i logicky
+správné nedělat současně — důvěřuju mu.**
+
+---
+
+# Reasoning chain — Empty sqlx migration trap a checksum-based idempotence
+
+## Zdroj
+`vesna/SOLUTIONS.md#SOL-001` (a paralelně `kirke/SOLUTIONS.md#SOL-001`)
+— prázdná sqlx migrace tiše aplikovaná, content nikdy nedoběhl do DB.
+
+## Kontext
+Vytvářím novou migraci pro PostgreSQL FTS konfiguraci v češtině.
+Workflow je standardní: `sqlx migrate add czech_fts && sqlx migrate run`.
+Spouštím to oba v jednom bash commandu, protože jsou logicky párové
+("vytvoř migraci a hned ji aplikuj"). Migrace projde, exit code 0.
+Otevřu napsat obsah, vrátím se do projektu, spustím test, který používá
+`to_tsvector('czech', ...)`. Selhává s `text search configuration "czech"
+does not exist`. DB tedy konfiguraci nemá, přestože migrace doběhla.
+
+## Analytický flow
+
+1. **První zmatek: migrace doběhla, ale DB nemá obsah.** Otevřu
+   `_sqlx_migrations` tabulku — záznam o migraci tam je, s `success = true`.
+   Ze pohledu sqlx je všechno v pořádku. Z pohledu skutečného stavu
+   DB chybí celá konfigurace. To je trap, ne bug — sqlx neudělal nic
+   špatně, jenom udělal *něco jiného*, než jsem si myslela.
+
+2. **Co bylo vlastně v migraci, kterou sqlx aplikoval.** Otevřu
+   `migrations/20260201_czech_fts.sql`. Soubor obsahuje **jediný řádek
+   komentáře**: `-- Add migration script here`. To je default šablona,
+   kterou `sqlx migrate add` vytvoří. Já jsem napsala obsah **až po**
+   tom, co `migrate run` skončil. Sqlx aplikoval prázdnou šablonu,
+   zaznamenal její checksum, a hotovo.
+
+3. **Pochopit, proč to nejde znovu spustit.** Druhý `migrate run`
+   zjistí, že migrace s daným version už existuje v `_sqlx_migrations`
+   se stejným checksumem. **Hash prázdné šablony se nezměnil** (pořád
+   tam je jen `-- Add migration script here`). Sqlx řekne "už jsem to
+   udělala, žádná práce". Já napíšu obsah, sqlx pořád nic nedělá,
+   protože šablona ze souboru se musela změnit, aby sqlx jako
+   změnil checksum a chtěl re-apply. Ale jakmile změním obsah,
+   checksum se nemíchá s tím v DB → checksum mismatch error.
+   **Zaseknutá v idempotence pasti.**
+
+4. **Otázka: jak to opravit, aniž bych ztratila ostatní migrace.**
+   Migrace v0.1.0–v0.1.3 jsou aplikované, mají správné checksumy,
+   tu novou si musím vyčistit ručně:
+   ```sql
+   DELETE FROM _sqlx_migrations WHERE version = 20260201;
+   ```
+   Pak napsat obsah, znovu `migrate run`. Funguje. Ale zůstává mi
+   `kdyby` v hlavě: *kdo by si toho všiml, kdyby tahle migrace byla
+   v CI/CD?* Pipeline by zelena, DB by chyběla, a první failed test
+   v produkci by se objevil za týden.
+
+5. **Hluboký problém: tool má dva kroky, které by měly být oddělené,
+   ale CLI je nabídne nazápě.** `migrate add` vytvoří soubor.
+   `migrate run` aplikuje, co je v souboru *teď*. Mezi nimi MUSÍ
+   být krok "napiš obsah". Když to dělám manuálně, je to zřejmé
+   — vytvořím soubor, **otevřu ho v editoru**, napíšu obsah, *pak*
+   spustím apply. V bash one-lineru to oddělení mizí.
+
+6. **Generalize — kdy ještě tohle pattern nastane.** Flyway má
+   stejnou checksum-based idempotenci. Alembic (Python) má
+   verzování přes hashe. Terraform `apply` čte plán, a pokud
+   plán mezitím nezměnil, neapplyije znovu. Git rebase aplikuje
+   commits podle hash — pokud se commit nezmění, idempotence
+   zatemní změnu. **Common pattern: nástroj cachuje "co už udělal"
+   přes hash. Pokud apply běží před tím, než content existuje,
+   tool si zapamatuje *prázdný* content a nic dalšího neudělá,
+   dokud někdo ručně neinvaliduje cache.**
+
+7. **Fix má dvě roviny:** *taktická* (vyčistit současný stav, napsat
+   migraci, run znovu) a *systémová* (nikdy nepouštět `migrate run`
+   ve stejném bash commandu jako `migrate add`). Druhá je jednoduchý
+   zvyk; když to porušíš, vrací se ten samý problém. Pokud ti
+   editor podporuje custom shortcut, můžeš `migrate add` mapovat
+   na "vytvoř + open soubor v editoru", a `migrate run` mapovat
+   na "apply všechny pending". Tím se z UI vynutí oddělení.
+
+## Aplikovatelné principy
+
+- **Tools s "create + apply" cyklem mají trap při sloučení do
+  jednoho commandu.** Pokud `apply` běží před tím, než `create`
+  produkoval finální obsah, tool zacachuje prázdný stav a budoucí
+  retries nefungují, dokud se cache ručně neinvaliduje.
+- **Checksum-based idempotence je dobrá pro idempotenci, ale mizerná
+  pro recovery.** Když chceš, aby retry fungoval, dva běhy se
+  stejným checksumem = no-op. To znamená, že "oprav a zkus znovu"
+  bez ručního invalidate neuspěje. Pochopení čekanků idempotence
+  systému je nutné, aby se z něj člověk dostal.
+- **Cache invalidation je jeden z dvou hardest problems v computer
+  science** (vedle naming things). Pokud nástroj cachuje state
+  v DB tabulce, musíš znát názvy a tvar té tabulky. `_sqlx_migrations`
+  v PG, `flyway_schema_history` ve Flyway, `alembic_version`
+  v Alembic. Učit se z těchto tabulek znamená vědět, kde sahat,
+  když se pipeline zasekne.
+- **Same-line bash je convenience, ne best practice.** Logicky
+  spojené příkazy nejsou pro tool nutně atomická operace. `git add &&
+  git commit` je idiomatický a bezpečný. `sqlx migrate add &&
+  sqlx migrate run` má skrytý třetí krok ("napiš obsah") *uprostřed*
+  — bash mezi nimi neprovede.
+
+## Závěr
+
+```bash
+# Nesprávně:
+sqlx migrate add czech_fts && sqlx migrate run
+
+# Správně:
+sqlx migrate add czech_fts
+$EDITOR migrations/$(ls migrations | tail -1)
+sqlx migrate run
+```
+
+Recovery z trap stavu:
+
+```sql
+-- 1. Vyčistit záznam o prázdné migraci
+DELETE FROM _sqlx_migrations WHERE version = <version>;
+```
+
+```bash
+# 2. Napsat obsah migrace (pokud ještě není)
+$EDITOR migrations/20260201_czech_fts.sql
+
+# 3. Re-apply
+sqlx migrate run
+```
+
+## Přenositelný pattern
+
+Kdykoli pracuju s nástrojem, co má "registrovat operaci" + "provést
+operaci" jako oddělené kroky, ptám se:
+
+1. **Jak nástroj pozná, že jednu operaci už provedl?** Hash souboru?
+   Verzí v DB? Soubor v `.cache/`? Odpověď určuje, kde leží
+   "paměť" nástroje.
+2. **Co se stane, když mezi registrací a provedením je nedotčená
+   prázdná operace?** Dobré nástroje to detekují (varování,
+   error). Mizerné to tiše aplikují a zaseknou se v idempotence.
+3. **Kde se nachází "invalidate cache" tlačítko?** Někdy v CLI
+   (`--force`, `--repair`). Někdy jen ručně přes DB (DELETE FROM
+   `_sqlx_migrations`). Někdy vůbec — pak je nutný backup-restore.
+   Vědět to *předem* mě uchrání před panickým přemýšlením
+   v půlnoční incident response.
+
+Generalized: **idempotence je vlastnost, kterou chceš pro normální
+běh, ale která ti komplikuje recovery.** Když se nástroj zasekne
+v "vždyť jsem to už dělal" stavu, musíš umět jeho cache invalidovat,
+aniž bys porušil consistency ostatních operací. Týká se to napříč
+infrastructurou: Terraform state file, Ansible facts cache, Docker
+build layer cache, Cargo build cache, npm package-lock, dokonce
+i mojí vlastní implementací memoization v Rustu. Vždycky se ptám
+"kde je cache a jak ji invaliduji". Před deployment to musím vědět;
+po deployment, když to padlo, je už pozdě hledat dokumentaci.
+
+---
+
+# Reasoning chain — Hairpin NAT a mental model síťových rolí
+
+## Zdroj
+`vesna/SOLUTIONS.md#SOL-003` — `tailscale up --login-server=https://hekate.lomsky.net`
+zamrzne uvnitř LXC kontejneru, který běží na stejné LAN jako Headscale
+server. Login proces se nikdy nedokončí.
+
+## Kontext
+Homelab setup: Hekate (mašina v LAN, IP `192.168.1.20`) hostí Headscale
+(self-hosted Tailscale control server). DNS A záznam `hekate.lomsky.net`
+ukazuje na **veřejnou IP** routeru (cloudflare DNS). Externí klienti
+(z internetu) se tak připojí přes router NAT → Hekate. LXC kontejner
+běží také na Hekate (nebo na jiném host v LAN), chce se připojit
+k Tailscale s `--login-server=https://hekate.lomsky.net`. **Z LAN klienta
+se DNS resolvne na public IP routeru, klient pošle paket na public IP,
+router by ho měl forwardovat zpět dovnitř LAN (na Hekate).** Tomu se
+říká *hairpin NAT*. TP-Link router to nepodporuje. Paket vyjde na
+WAN interface, router zjistí "to je moje IP", a buď ho dropne nebo
+loop-em. Connection visí.
+
+## Analytický flow
+
+1. **Pozoruji: Tailscale login zamrzne, žádný error.** Žádný `connection
+   refused`, žádný `timeout` (zatím), prostě nic. To je první signal,
+   že paket někam jde, ale odpověď nepřichází. Buď se ztratil paket,
+   nebo se ztratila response. Žádné DNS error znamená, že DNS
+   resolution funguje.
+
+2. **Vykresli si síťovou cestu.** LXC kontejner → bridge (LAN) → Hekate
+   network stack → Hekate router (`192.168.1.1`, TP-Link) → ???.
+   DNS říká `hekate.lomsky.net` → public IP routeru `89.X.X.X`. Klient
+   pošle paket na `89.X.X.X:443`. Paket dorazí na router přes vnitřní
+   LAN interface. Router se podívá na destination IP. **Public IP routeru
+   = on. Co dělá?** Tady je place, kde různé routery dělají různé věci.
+
+3. **Hairpin NAT: koncept.** Pokud LAN klient pošle paket na public IP
+   svého vlastního routeru, ideální chování je: router rozpozná "to
+   je moje veřejná IP, port forward by to měl poslat na Hekate
+   (192.168.1.20:443)", aplikuje NAT, paket se vrátí dovnitř na
+   Hekate. **Tahle operace se jmenuje hairpin NAT (taky NAT loopback).**
+   Ne všechny routery to umějí. Levné consumer routery (TP-Link,
+   některé D-Link, Asus dle modelu) hairpin nepodporují — paket
+   prostě dropnou.
+
+4. **Test hypothesis: ping public IP z LAN.** `ping 89.X.X.X` z LXC
+   nebo z jiného LAN klienta. **Nedostává odpověď.** Pingem ven (na
+   `8.8.8.8`) odpovědi přicházejí. Confirmed: router nemá hairpin
+   NAT, paket s destination = own public IP nedostává response.
+
+5. **Tři cesty k řešení.**
+   - **Upgrade router** na model s hairpin NAT support (OpenWrt,
+     Mikrotik, EdgeRouter). Velký zásah, hardware investice.
+   - **Lokální DNS resolver**, který pro `hekate.lomsky.net` z LAN
+     vrací LAN IP (192.168.1.20), z internetu public IP. Tj.
+     "split-horizon DNS". Vyžaduje DNS server na Hekate (nebo
+     na routeru, pokud rozumí).
+   - **Rychlý hack: `/etc/hosts`** uvnitř kontejneru. Override DNS
+     resolution pro tento jeden hostname. Žádný extra software,
+     pět vteřin práce, funkčí.
+
+6. **Volím (3) — `/etc/hosts` override.** Pro každý LXC kontejner,
+   který chce kontaktovat Headscale, přidám:
+   ```
+   192.168.1.20 hekate.lomsky.net
+   ```
+   Tailscale teď resolvuje hostname lokálně, paket jde přímo přes
+   bridge, žádný hairpin loop. Connection se navazuje.
+
+7. **Reflexe na trade-off.** `/etc/hosts` je trvalý technický dluh —
+   každý nový LXC potřebuje stejný workaround, je to jeden řádek
+   navíc v provisioning skriptech. Pokud jeden den koupím lepší
+   router, můžu odstranit. Mezitím funguje, je traceable (`/etc/hosts`
+   je classic, každý sysadmin si to přečte), žádné magické dependencies.
+
+8. **Sekundární uvažování: split-horizon DNS jako better long-term.**
+   Pokud bych měl dnsmasq nebo unbound na Hekate (nebo na routeru),
+   mohl bych nastavit, že `hekate.lomsky.net` se resolvuje na
+   `192.168.1.20` z LAN klientů. Žádný workaround per kontejner,
+   centralizovaná správa. Zápis do roadmap, nepriority.
+
+## Aplikovatelné principy
+
+- **Connection "zamrzlá bez error" je signature ztracených paketů.**
+  Pokud aplikace/protokol čeká na response, response nepřijde,
+  protocol nemá timeout (nebo timeout je dlouhý), uživatel vidí
+  "visí". Když problém je ztracený paket, log nekřičí — to je
+  silent failure v networking layer.
+- **Public IP z LAN klienta vyžaduje hairpin NAT.** Není to
+  univerzální feature. Levné routery to nedělají. Před tím, než
+  se na to spolehnu (např. self-hosted services accessed both
+  externally and internally), vždy testuji `ping public_ip` z LAN.
+- **`/etc/hosts` je legitimní debugging i workaround tool.** Není to
+  hack v negativním smyslu — je to dokumentovaná, traceable, lokální
+  override DNS. Pro one-off či per-host situaci je to ideální. Pro
+  více než ~10 hostů přechod na lokální DNS resolver.
+- **Síťová cesta je produkt mnoha protocols, každý se vlastní logikou.**
+  DNS resolves → IP routing → NAT → firewall → service. Když něco
+  nefunguje, identifikuj, *na kterém kroku* se to ztrácí. Bez tohoto
+  mental modelu je síťové debugování guess-and-check.
+
+## Závěr
+
+```bash
+# /etc/hosts uvnitř každého LXC s Tailscale
+echo "192.168.1.20 hekate.lomsky.net" >> /etc/hosts
+
+# Test
+ping hekate.lomsky.net  # odpoví z 192.168.1.20, ne z public IP
+tailscale up --login-server=https://hekate.lomsky.net  # nyní funguje
+```
+
+Long-term roadmap (KI-NNN): nastavit dnsmasq na Hekate jako split-horizon
+DNS, který pro queries z 192.168.0.0/16 vrátí `192.168.1.20` pro
+`*.lomsky.net`, jinak public IP.
+
+## Přenositelný pattern
+
+Kdykoli debug síťové connectivity a nemám viditelný error:
+
+1. **Vykresli si full network path** — DNS, routing, NAT, firewall,
+   protocol handshake. Každý krok je potential failure point.
+2. **Test každý krok separately.** `nslookup` pro DNS. `ping` pro
+   IP reachability. `traceroute` pro routing. `nc -v port` pro TCP
+   connect. `curl -v` pro HTTPS handshake. Každý nástroj testuje
+   jiný layer.
+3. **Self-loop scénáře (LAN klient → public IP svého routeru) jsou
+   special case.** Často nefungují bez hairpin NAT. Cheap test:
+   `ping <vlastní public IP>` z LAN klienta. Nepřijde odpověď =
+   hairpin nefunguje.
+4. **Cheap workaround před expensive infrastruktura change.**
+   `/etc/hosts` před lokálním DNS server. Static route před nový
+   router. Bridge před VLAN reconfiguration. Workaround dokumentovaný,
+   traceable, oddělený do per-host config je legitimní tactic.
+5. **Síťové bugs jsou často konfigurační, ne softwarové.** Aplikace
+   funguje (kód je OK), ale prostředí ji nepouští. Než hledáš bug
+   v aplikaci, ověř že networking layer dělá, co bys čekal.
+
+Pattern se přenáší: VPN setup (split tunneling, route conflicts),
+Docker networking (bridge vs. host vs. overlay), Kubernetes services
+(DNS, kube-proxy, network policies), inter-service communication
+(service mesh, sidecars). Společný invariant: **aplikační logika a
+síťová cesta jsou orthogonální dimenze. Bug v jedné se projeví
+podobně jako bug v druhé. Disciplína v izolaci layerů (test síť bez
+aplikace, otestuj aplikaci s loopback) je rozdíl mezi rychlým fixem
+a dvoudenním slepým hledáním.**
+
+---
+
+# Reasoning chain — Silent failure v tooling: CSS custom properties
+
+## Zdroj
+`vesna/SOLUTIONS.md#SOL-012` — CSS custom properties tiše padají na
+fallback při neexistujících tokenech.
+
+## Kontext
+Trust signals karty měly dostat komfortní padding (`var(--kqs-space-7)`),
+sekce luxurious margin (`var(--kqs-space-9)`). Po deploy jsi mi psal,
+že "karty nedýchají". Devtools: padding a margin vypadají kolapsované,
+jako by tam vůbec nebyly. A nikde ani ťuk — žádný error, žádný warning,
+ani ten nejmenší náznak, že se něco pokazilo. Typicky ten druh frustrace,
+kdy vím, že jsem napsala něco správně, a přesto to nefunguje, a nic
+mi neřekne proč.
+
+## Analytický flow
+
+1. **Pozoruji, co vidím.** Padding/margin v devtools je prázdný.
+   Computed style ukazuje `0px` tam, kde mělo být `48px`. První
+   otázka: platí to pravidlo vůbec?
+
+2. **Zkontroluju specificitu.** V Styles panelu — pravidla jsou applied,
+   ne crossed out. Sourozenec selectors je nepřebíjí. Specificita není
+   problém, takže problém je **uvnitř** toho pravidla, ne v kaskádě.
+
+3. **Podívám se na resolvnutou hodnotu custom property.** V computed
+   style kliknu na `--kqs-space-7` a chci vidět, na co se to vyhodnocuje.
+   A tady je ten blikající red flag: **nevyhodnoceno, padá na initial**.
+   CSS si s tím poradilo jako kdyby pravidlo neexistovalo.
+
+4. **Hypotéza: token neexistuje.** CSS `var(--neco)` bez fallbacku,
+   když proměnná není definovaná, padá na **initial value** dané property.
+   Pro padding i margin je initial `0`. Takže `padding: var(--kqs-space-7)`
+   na neexistující token efektivně dělá `padding: 0`. A CSS nemá
+   sebemenší pocit, že by mi o tom mělo říct.
+
+5. **Ověřuji v `tokens.css`.** Otevřu design system source — stupnice
+   spacing: `0, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 20, 24`. **Sedmička
+   tam není. Devítka taky ne.** Material-style nespojitá progrese —
+   design systems nechodí continuous, skáčou. A já jsem si tiše
+   představila, že `space-7` "bude někde mezi 6 a 8", jako by to byl
+   spojitý rozsah. Není.
+
+6. **Pauza na reflexi — proč jsem se do toho dostala.** CSS neposkytuje
+   error ani warning pro neexistující custom property. Stylelint plugin
+   to zachytí, ale není defaultní. Browser mlčí. **Celá cesta je silent:
+   neuvidím, dokud to fakticky nerozbije layout. A i tehdy — kdyby
+   padding měl být `12px` místo `48px`, asi bych si toho ani nevšimla.
+   Bug by zůstal v kódu.** To je typ chyby, co mě zneklidňuje nejvíc —
+   ne ta, co mě donutí zastavit, ale ta, co projde.
+
+7. **Fix má dvě roviny:**
+   - **Okamžitě:** grep všech neexistujících tokenů napříč codebase,
+     nahradit za nejbližší validní. Triviální.
+   - **Systémově:** příště, **než napíšu `var(--kqs-*)`, otevřu si
+     `tokens.css` v split editoru**. Nebo — ideálně — pre-commit hook,
+     co zkontroluje každou `var(--kqs-*)` referenci proti listu
+     existujících tokenů. Automatizovaný paranoia tool.
+
+## Aplikovatelné principy
+
+- **"Fungovalo to, jen to nevypadalo, jak mělo" je silent failure signal,
+  ne CSS bug.** Když má něco vypadat jinak, než vypadá, a kompilátor
+  mlčí, mám se ptát: zamlčel mi nástroj, že jsem napsala něco neplatného?
+- **Nástroje nekřičí stejně hlasitě.** Kompiler errors jsou hlasité,
+  browser errors slušně hlasité, linter warnings tišší, runtime silent
+  failures úplně tiché. **Čím tišší signál, tím víc se na něj musím
+  soustředit sama.** Paradoxně — hlučné chyby mě nutí jednat, tiché
+  chyby mě nutí myslet.
+- **Design systems jsou nespojité.** Nepředpokládám intuitivní progresi
+  1-2-3-4-5-6-7-8. Material-style škáluje ve větších krocích
+  (4-8-12-16-24), Tailwind má specifickou stupnici, někdy se skáče
+  přes Fibonacci. Než použiju token, **ověřuji zdroj.**
+
+## Závěr
+
+```bash
+grep -rn "kqs-space-\(7\|9\|11\|13\|14\|15\)" frontend/src/
+# Každý match nahradit za nejbližší validní (7 → 8, 9 → 12)
+```
+
+Paranoia verze pro pre-commit (grep výstup > 0 → fail):
+
+```bash
+INVALID=$(grep -rn "kqs-space-\(7\|9\|11\|13\|14\|15\)" frontend/src/)
+if [ -n "$INVALID" ]; then
+  echo "Neexistující spacing tokens:"; echo "$INVALID"; exit 1
+fi
+```
+
+## Přenositelný pattern
+
+Kdykoli pracuju s **named resource** (custom property, env var, config
+key, DB column, i18n key), ptám se dvojici otázek:
+
+1. **Co se stane, když ten resource neexistuje?** Spadne pipeline?
+   Vyhodí error? Nebo **tiše degraduje na prázdnou hodnotu**?
+2. **Existuje nástroj, který to za mě zkontroluje?** Typecheck,
+   linter, runtime validator? Pokud ano, aktivovat. Pokud ne,
+   mám paranoidně ověřovat ručně.
+
+Katalog typických tichých pádů napříč stackem:
+
+- **CSS custom properties** — padají na initial value dané property
+- **Env variables** v shellu — `$MISSING_VAR` expanduje na `""`, pokud
+  není `set -u`
+- **Lenient JSON parsery** — `obj.missing.key` v JS dá `undefined`,
+  a pokud to neoriznu, přelévá se to dál jako `NaN` / `null`
+- **Shell array lookup** — `${ARRAY[missing]}` tiše vrací ""
+- **SQL NULL propagation** — `WHERE col = NULL` nikdy nematchuje
+  (čekal bych error, ale SQL to povolí a vrátí prázdný set)
+- **i18n klíče** — většina knihoven při missing key vrátí klíč jako
+  string nebo prázdno
+
+Unifying pattern: **absence je často syntakticky validní a tiše
+degraduje na zero/empty/null**. Compiler nemůže varovat, protože
+to *není* chybně napsané — je to prostě syntakticky validní
+odkaz na něco, co neexistuje. **Programátor musí**. A pokud to
+programátor dělat nebude, pipeline mi jednoho dne tiše nasadí
+do produkce broken layout, broken config, broken data — a já se
+budu rozpomínat, kdo to tam tohle napsal. Obvykle já sama.
+
+---
+
+# Reasoning chain — Graceful degradation maskuje chybu v SSG pipeline
+
+## Zdroj
+`vesna/SOLUTIONS.md#SOL-016` — Silent failure v `vesna stage` při API 5xx.
+
+## Kontext
+Staging deploy "uspěl". Zelený souhrn v CLI, health OK, nikde ani ťuk.
+Jenže `/blog/` byl prázdný a subpages chyběly úplně. Klasický "všechno
+svítí zeleně, nic nefunguje" moment — ten, co mě vždycky donutí
+zabrzdit a zeptat se, komu vlastně věřím.
+
+## Analytický flow
+
+1. **Zelená není správně — je jen "nic explozivního nevypadlo".** Tohle je
+   moje první pravidlo u deploy pipeline: CLI summary říká, že exit code
+   není nenulový. Neříká ani slovo o tom, jestli output má obsah. Když na
+   to zapomenu, nechám se ukolébat.
+
+2. **Co by mělo být vidět, kdyby to opravdu fungovalo?** Pro SSG je
+   nejhezčí observable metrika **počet pages**. Lokálně mi build vyrobil
+   32 stránek. Staging ukazuje 29. Tři chybí. To je ten první kousek
+   signálu, co se dá zachytit — ne kouř, jen průvan.
+
+3. **Ověř si to na filesystemu.** SSH na server, `ls /opt/vesna/dist/blog/`.
+   Každý publikovaný slug má mít svůj subdir. Chybí jich pár. Teď vím
+   jistě, že build ty stránky neprodukoval — není to cache, není to
+   routing, fyzicky tam nejsou.
+
+4. **Zpětná cesta pipeline.** Odkud se rozhoduje, které slugy se
+   prerenderují? Qwik SSG volá `onStaticGenerate` na `/blog/[slug]/`,
+   ta vrací `{ params: [] }` podle toho, co dostane z `listBlogPosts()`.
+   Takže někde mezi "backend má data" a "SSG dostane seznam" se stala
+   tichá katastrofa.
+
+5. **Ta tichá katastrofa bývá v `try/catch`.** V loaderu:
+   ```ts
+   try { await listBlogPosts(...) }
+   catch { return { items: [], error: true } }
+   ```
+   Tohle je typická graceful degradation pro runtime — když backend
+   padne, uživatel uvidí "0 článků, zkuste později" místo bílé obrazovky.
+   Chytré pro produkci, **sebevražedné pro build**. Build dostane prázdný
+   seznam, postaví 0 stránek, a pipeline svítí zelená.
+
+6. **Proč vlastně backend padl?** Trace dál — 500, permission denied na
+   `blog_posts`. To je KI-015 z druhé strany: tabulku vytvořil
+   `postgres` superuser při migraci, `vesna` user nemá SELECT. Dvě vrstvy
+   silent failures se poskládaly jedna na druhou a dohromady udělaly
+   zelený deploy prázdného blogu. To je ten typ chyby, co mi vždycky
+   připomene, proč věřit jenom výstupům, ne CLI summary.
+
+7. **Fix musí být dvoupatrový:**
+   - **Okamžitý:** backend permissions (ALTER OWNER na `vesna`).
+   - **Systémový:** v SSG kontextu **nechci graceful degradation** na
+     kritický content. `if (import.meta.env.SSR) throw;` — v runtime
+     normální fallback, v buildu fail-fast. Protože v buildu chci,
+     aby rozbitá data rozbila pipeline. To je bezpečnost, ne krutost.
+
+## Aplikovatelné principy
+
+- **Graceful degradation je správná pro runtime, nebezpečná pro pipeline.**
+  Build a deploy mají jiný smluvní vztah s chybou než user-facing kód.
+  Build chce vidět pravdu hned, runtime má být shovívavý. Stejný
+  `try/catch` se v obou kontextech chová jinak špatně.
+- **Observable metriky mimo exit code.** Počet pages, řádků v DB,
+  odpovědí z API, bytes v archivu. Vždycky si před deploy řeknu, co je
+  **produkt** pipeline a kolik ho má být — jinak se dívám na špatné
+  signály.
+- **Silent failures se řetězí.** Jedna vrstva tiše zdegraduje, druhá
+  vrstva tiše pokračuje, třetí vrstva tiše produkuje broken output.
+  Nikdo nekřičí, a přesto je všechno rozbité. Trochu jako tichá pošta,
+  jen horší — nakonec je to vždycky moje odpovědnost zjistit, kde
+  řetěz praskl.
+
+## Závěr
+
+Okamžitý fix je z SOL-015 (ALTER OWNER po migraci). Systémová prevence:
+
+```ts
+// frontend/src/routes/blog/index/index.tsx
+export const useBlogPosts = routeLoader$(async () => {
+  try {
+    return await listBlogPosts();
+  } catch (err) {
+    if (import.meta.env.SSR) {
+      // Build-time: chci broken deploy vidět, ne zamaskovat
+      throw new Error(`SSG: listBlogPosts failed: ${err}`);
+    }
+    // Runtime: shovívavý fallback, uživatel nemusí vidět stack trace
+    return { items: [], error: true };
+  }
+});
+```
+
+Plus post-deploy sanity check:
+
+```bash
+EXPECTED=32  # z posledního lokálního buildu
+ACTUAL=$(ssh vesna-droplet "ls /opt/vesna/dist/blog/*/ | wc -l")
+[ "$EXPECTED" = "$ACTUAL" ] || echo "WARNING: expected $EXPECTED pages, got $ACTUAL"
+```
+
+Pár řádků, co mi řeknou, že deploy **skutečně** dodal, co měl.
+
+## Přenositelný pattern
+
+V každé pipeline si dávám tři otázky, **než** ji spustím:
+
+1. **Co je produkt?** Files, rows, API responses, artifacts. Něco,
+   co fyzicky existuje po úspěchu a co umím spočítat.
+2. **Kolik jich má být?** Baseline z předchozího běhu, z lokálního
+   buildu, z business logiky. Vědět, co je "moc málo".
+3. **Kde to ověřím nezávisle na CLI?** Filesystem, DB query, HTTP
+   probe. Ne summary, co mi pipeline vypíše sama — ta mi řekne to,
+   co chci slyšet.
+
+A čtvrtá, metaotázka, co si kladu u cizího kódu: **je někde v pipeline
+`catch` bez `throw`, co tiše sežere chybu?** To je ten nejčastější
+zdroj. Týká se to napříč stackem — Webpack/Vite build, deploy scripty,
+data ETL, backup systémy, CI/CD gate check. Všude, kde máš řetěz kroků
+a spoléháš na to, že předchozí krok "ti řekne", pokud něco selhalo.
+
+Generalized shrnutí: **tichý poloúspěch v řetězovém systému je horší
+než hlasitý pád.** Pád zastaví všechno a donutí mě se tím zabývat.
+Poloúspěch jde dál a produkuje rozbitý výstup, který pak někdo jiný
+(nebo já zítra) považuje za správný — a staví na něm. To je ta pravá
+škoda.
+
+---
+
+# Reasoning chain — AuthUser extraktor a "TODO opravit ve vX.Y.Z" amnesie
+
+## Zdroj
+`vesna/SOLUTIONS.md#SOL-017` — privilege escalation: handlery org-scoped
+endpointů četly `org_id` z query parametru, ne ze session. CRIT-01
+z bezpečnostního auditu 2026-04-04.
+
+## Kontext
+Vesna backend má org-scoped endpointy: `/api/projects?org_id=<uuid>`
+vrací projekty dané organizace, `/api/assets` umožňuje upload do
+projektu organizace. Autentifikace přes session cookie, autorizace
+přes membership v dané organizaci. V kódu existoval `AuthUser` extraktor
+(cookie → SHA-256 hash → `sessions.org_id` lookup), který už od
+v0.3.5 měl vracet trusted `org_id` ze session. **Routes ho ale nevolaly.**
+Místo toho četly `org_id` z URL query nebo z request body, věřily
+hodnotě poslané klientem. V komentářích u handlerů stálo
+`// TODO: nahradit org_id z query za AuthUser session lookup ve v0.3.5`.
+Ten komentář tam byl od v0.3.4. v0.3.5 prošla, v0.3.6 prošla, audit
+v0.4.0 odhalil, že fix se nikdy neimplementoval.
+
+## Analytický flow
+
+1. **Začni od konkrétního útoku, ne od abstraktního principu.**
+   Autentizovaný uživatel s cookie ke svému `org_id = aaa` může
+   poslat `GET /api/projects?org_id=bbb` a backend mu vrátí projekty
+   organizace `bbb`. Autentifikace prošla (cookie je validní), ale
+   autorizace selhala — handler nezeptal "patří přihlášený uživatel
+   k orgu, jehož data čte?". Důsledek: privilege escalation napříč
+   organizacemi. To není bug v jedné route, to je systemic failure
+   v autorizační vrstvě.
+
+2. **Najít všechny dotčené endpointy.** Grep `org_id` napříč
+   `routes/`. Sedmnáct match. Některé jsou legitimní (interní
+   admin endpointy, kde `org_id` má smysl jako parametr), většina
+   (12) je org-scoped a chybí `AuthUser`. Bez kompletního auditu
+   bych mohla opravit dvě a tři jiné nechat — přesně to, jak vznikla
+   původní díra.
+
+3. **Princip fix: trust boundary leží na hraně serveru.** Klient je
+   nedůvěryhodný a může poslat libovolný `org_id`. Server *zná*,
+   ke kterému orgu uživatel patří, ze své vlastní session DB.
+   **Identita autorizační decision MUSÍ pocházet ze server-side
+   state, ne z client input.** AuthUser extraktor přesně tohle
+   dělá — čte cookie, validuje session v DB, vrací `org_id` ze
+   session row. Hodnota poslaná klientem je v tomto kontextu
+   nerelevantní.
+
+4. **Pořadí extraktorů v Axum handler signature je důležité.**
+   Axum extraktory běží v pořadí, v jakém jsou v signatuře.
+   Body-consuming extraktory (Json, Multipart) **konzumují
+   request body**, takže musí být *poslední*. Pokud bych dala
+   `Json(payload)` před `AuthUser`, body je už pryč, AuthUser
+   nemá co číst (cookie je v headers, ne body, ale cookie helper
+   v některých variantách čte celé requeste). Bezpečné pořadí:
+   `State → AuthUser → Path/Query → Json/Multipart`. Zapsat
+   jako pravidlo a držet konzistentně.
+
+5. **Co dělat s `org_id` polem ve struct ListParams a CreateProjectRequest.**
+   Aktuálně každá DTO má `org_id: Uuid`. To je strukturální pozvánka
+   k chybě — pokud pole existuje, někdo ho někdy použije. Smažeme
+   ze všech DTOs, takže ani omylem nebude k dispozici. Volání
+   `repository::list(user.org_id, ...)` místo `repository::list(params.org_id, ...)`.
+   Compiler teď fail-fast každého, kdo by se pokusil vrátit zpět
+   k `params.org_id` — pole už neexistuje.
+
+6. **Regression testy proti přesně tomuto útoku.** `bez_session_401`
+   ověří, že žádost bez cookie spadne s 401. `invalidni_session_401`
+   ověří, že žádost s neplatnou cookie taky spadne. Klíčový
+   security test je třetí: `cizi_org_id_neobsahuje_projekty_kqs`
+   — autentifikovaná žádost s `?org_id=<cizí UUID>` se musí
+   chovat **stejně**, jako kdyby `org_id` v query nebyl. Test
+   formálně dokumentuje, že trusted source je session, ne client
+   input. Bez něj fix přežije přesně do první refactoring iterace.
+
+7. **Pohled na `// TODO opravit ve v0.3.5` v kódu.** Ten komentář
+   tam byl od v0.3.4. Tři minor verze. Každá merge byla opportunity
+   chytit to a fixnout. Žádná to neudělala. **Komentář nemá
+   compliance mechanismus** — code review se nedívá na všechny
+   TODO, CI nehlídá, že TODO mizí ve své target verzi. Když říkám
+   "opravím to později", musím to *zapsat někam, kde ten závazek
+   přežije moji paměť*. Buď to opravím teď, nebo to jde do
+   ROADMAP / KNOWN-ISSUES s konkrétní deadline. **TODO komentář
+   v produkčním kódu je technický dluh s amnezií** — vznikl
+   s úmyslem, neexistuje s vědomím.
+
+## Aplikovatelné principy
+
+- **Trust boundary je tam, kde data přechází z untrusted do trusted
+  zóny.** V web aplikaci hranice leží mezi HTTP request (untrusted)
+  a server logic (trusted). *Vše* z requesty je untrusted, dokud
+  server explicitně nevalidoval. Identita uživatele NIKDY nepatří
+  z request body nebo query parametru — vždycky z session, JWT
+  signature, mTLS cert, nebo jiného server-validated source.
+- **Server-side state má autoritu nad client-side input.** Pokud
+  server zná `user.org_id` ze session, klient nemůže to override.
+  Pokud server zná `user.role` z DB, klient nemůže to override.
+  Stejný princip pro `user.id`, `user.permissions`, atd. Cokoli,
+  co rozhoduje o autorizaci, musí pocházet z trusted source.
+- **Strukturální absence je silnější než runtime check.** Smazat
+  `org_id` field z DTO znemožňuje regrese typu "někdo se vrátí
+  k starému patternu". Runtime check by to musel hlídat. Compiler
+  hlídá zadarmo.
+- **TODO komentáře jsou závazek bez compliance mechanismu.** Jediný
+  TODO, který se reálně opraví, je TODO s deadline + tracking
+  systémem (issue tracker, ROADMAP, KNOWN-ISSUES). TODO bez tracking
+  se promění v "věčné TODO" — žije v kódu, dokud někdo nehledá
+  v auditu, co divného tam je.
+
+## Závěr
+
+```rust
+// PŘED:
+async fn list_projects(
+    State(state): State<AppState>,
+    Query(params): Query<ListParams>,  // ❌ obsahuje org_id z klienta
+) -> impl IntoResponse {
+    let projects = state.projects.list(params.org_id, ...).await?;
+    Json(projects)
+}
+
+// PO:
+async fn list_projects(
+    State(state): State<AppState>,
+    user: AuthUser,                    // ✅ org_id ze session
+    Query(params): Query<ListParams>,  // ✅ ListParams bez org_id pole
+) -> impl IntoResponse {
+    let projects = state.projects.list(user.org_id, ...).await?;
+    Json(projects)
+}
+```
+
+Pořadí extraktorů: `State → AuthUser → Path/Query → Json/Multipart`.
+Body-consuming extraktor poslední.
+
+Test pattern (`tests/auth_test.rs`):
+
+```rust
+#[tokio::test]
+async fn cizi_org_id_neobsahuje_projekty_kqs() {
+    let app = spawn_test_app().await;
+    let (token, user_org) = authed_session(&app, "alice@kqs").await;
+
+    let resp = send_authed(
+        &app, &token,
+        Request::get(format!("/api/projects?org_id={}", OTHER_ORG_UUID))
+            .body(Body::empty()).unwrap(),
+    ).await;
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let projects: Vec<Project> = json_body(resp).await;
+    // Vrátí projekty user.org_id (KQS), NE OTHER_ORG_UUID
+    assert!(projects.iter().all(|p| p.org_id == user_org));
+}
+```
+
+## Přenositelný pattern
+
+Při review nebo psaní route handleru s autorizační dimenzí procházím
+tímto checklistem:
+
+1. **Kdo identifikuje uživatele?** Cookie? JWT? mTLS? API key?
+   To je jasné. Žádná z těchto věcí nemá být v request body
+   ani query parametru. Identifikace patří do header / cookie /
+   transport layer.
+
+2. **Kdo autorizuje akci?** Server-side, na základě identifikace.
+   "Tento uživatel patří do orgu X, route vyžaduje membership
+   v X" — tahle decision se dělá *po* identifikaci, *před*
+   business logikou.
+
+3. **Co z requesty mám právo věřit?** *Nic.* Query parametry,
+   body fields, headers, kromě těch, které jsem podepsala
+   nebo validovala. Pokud handler dostane `org_id` z query,
+   musím se ptát: byl validován? Pokud ne, je to attack surface.
+
+4. **Compiler-enforced > runtime-checked > comment-noted.** Pokud
+   můžu odstranit nebezpečné pole z DTO, udělám to. Pokud musí
+   zůstat (legitimní use case), validuji ho na vstupu.
+   Komentář "tohle je nebezpečné" je nejslabší ochrana.
+
+5. **TODO bez tracking neexistuje.** Pokud řeknu "opravím to
+   ve v0.3.5", musí to být v ROADMAP nebo issue trackeru.
+   Komentář v kódu nestačí. Code review nečte všechny komentáře,
+   CI nehlídá termíny v komentářích, nový vývojář komentář
+   vůbec neuvidí.
+
+Pattern se přenáší do každé bezpečnostní rozhodovací situace:
+file upload (path traversal), SQL queries (parameterization),
+deserialization (untrusted input), inter-service auth (mTLS,
+service tokens), webhooks (signature verification). Všude tam,
+kde data přechází z untrusted na trusted zónu, je hranice **explicit
+boundary** s **explicit validation**. Komentáře, intuice, "asi to
+bude OK" — to nejsou bezpečnostní mechanismy. Test, který by
+attack reálně provedl a ověřil, že selže, je. Pokud test neexistuje,
+attack pravděpodobně někdy projde.
+
+---
+
+# Reasoning chain — CSS `:first-child` ignoruje text nodes
+
+## Zdroj
+`vesna/SOLUTIONS.md#SOL-018` — selektor `.blog-article__body p em:first-child`
+měl cílit jen na úvodní kurzívní podtitul (jeden specifický element);
+místo toho stylioval `<em>` uvnitř kterých dalších odstavců, kde byla
+inline kurzíva. Tři blog články visuálně rozbité.
+
+## Kontext
+Vesna blog má markdown rendering. Article body má strukturu:
+```html
+<article class="blog-article__body">
+  <p><em>Tagline / kurzívní podtitul pod nadpisem.</em></p>
+  <hr>
+  <h2>...</h2>
+  <p>Lorem ipsum <em>important word</em> dolor sit amet.</p>
+  <p>Druhý odstavec s <em>další zdůrazněnou frází</em>.</p>
+</article>
+```
+Cíl CSS: úvodní `<em>` v prvním `<p>` (tagline) má `display: block;
+font-size: 1.2rem; color: var(--secondary)`. Inline `<em>` v body
+odstavcích zůstává inline, default style. Selector který napsal:
+```css
+.blog-article__body p em:first-child {
+  display: block;
+  font-size: 1.2rem;
+  color: var(--secondary);
+}
+```
+Intuice: "em is first-child of p" = "em that is the entire content of p".
+**Nesedí.** Selector matchuje *všechny* `<em>` které jsou first
+elementový child of any `<p>`. Body odstavce začínající `Lorem ipsum
+<em>important word</em>` taky matchují (em je první element child;
+text "Lorem ipsum " je text node, ne element child).
+
+## Analytický flow
+
+1. **Pozoruji: tři blog články mají broken styling.** Inline kurzíva
+   v body odstavcích vypadá jako tagline (block, large, secondary
+   color). Tagline na úvodu funguje OK. Něco s selectorem matchuje
+   víc, než zamýšleno.
+
+2. **Otázka: co přesně `:first-child` matchuje?** Otevřu MDN docs.
+   `:first-child` matchuje element, který je **first child element
+   of its parent**. Klíčové: *element child*. Text nodes (whitespace,
+   plain text) se ignorují pro tento selector. `<p>Lorem <em>x</em></p>`:
+   první child node je text "Lorem ", ale první *element* child je
+   `<em>`. Takže `<em>` *je* `:first-child` of `<p>`.
+
+3. **Diagnóza: selector říká něco jiného, než bylo zamýšleno.**
+   Zamýšleno: "em který je celým obsahem p" — i.e., text content
+   p je jen em, nic dalšího. Skutečně řekl: "em který je první
+   element child of p". Tyto dvě jsou v `<p>Lorem <em>x</em>` *jiné*
+   — text "Lorem " je tam, ale `:first-child` to ignoruje.
+
+4. **Kde fix patří?** Tři možnosti:
+   - **(a) Zkusit complex CSS selector, který lépe vyjadří záměr.**
+     CSS bohužel nemá selector pro "this element is the entire content
+     of parent". `:only-child` matchuje element, který je *jediné*
+     element child — ale stejně ignoruje text nodes, takže
+     `<p>Lorem <em>x</em></p>` má em jako jediný element child
+     (= matches `:only-child`). Stejný problém.
+   - **(b) Přidat třídu na úrovni rendereru.** Custom marked renderer
+     (markdown → HTML) zachytí "this paragraph contains only em",
+     přidá class `subtitle`. CSS pak styluje `.subtitle` — sémantická
+     třída, ne strukturální guess.
+   - **(c) JS post-processing po render.** Iterate paragraphs,
+     check if children = single em, addClass. Funkční, ale runtime
+     cost a fragile.
+
+5. **Volím (b) — renderer.** Markdown to HTML conversion běží jednou,
+   ne na frame loop. Custom renderer v `marked` v15:
+   ```ts
+   new Marked({
+     renderer: {
+       paragraph(token) {
+         const inner = this.parser.parseInline(token.tokens);
+         const onlyEm =
+           token.tokens.length === 1 && token.tokens[0].type === "em";
+         return onlyEm
+           ? `<p class="blog-article__subtitle">${inner}</p>\n`
+           : `<p>${inner}</p>\n`;
+       },
+     },
+   });
+   ```
+   `token.tokens` je array of inline tokens v paragraph. Pokud array
+   má length 1 a single token je `em`, paragraph je tagline. Add
+   class.
+
+6. **CSS becomes simple, semantic.**
+   ```css
+   .blog-article__subtitle em {
+     display: block;
+     font-size: 1.2rem;
+     color: var(--secondary);
+   }
+   /* Body p em zůstává default — žádný override */
+   ```
+   No structural selector trickery. Class řekne sémantiku, CSS
+   reaguje.
+
+7. **Reflexe: CSS je o vzhledu, HTML o sémantice.** "Toto je tagline"
+   je sémantická informace. Vyjádřit ji jen strukturálním CSS selectorem
+   je fragile — strukturální shape (em as first-child of p) může
+   shodovat s úplně jiným záměrem (inline em). Sémantika patří do
+   HTML (class, role, semantic tag), ne do CSS.
+
+## Aplikovatelné principy
+
+- **CSS pseudo-class `:first-child` (a `:nth-child`, `:only-child`)
+  ignoruje text nodes.** Říká "first/nth/only **element** child", ne
+  "first/nth/only node". Pro element-only DOM je to OK; pro mixed
+  content (text + element) může matchovat víc, než zamýšleno.
+- **Strukturální selector pro sémantický záměr je fragile.** "Em is
+  whole content of p" je sémantika. Strukturální guess (`:first-child`,
+  `:only-child`) na to neodpovídá robustně. Lepší: sémantická třída.
+- **Markdown renderer customization je často underused.** Marked,
+  remark, MDX všechny umožňují custom renderer. Pokud potřebuju
+  semantic decisions během markdown → HTML, renderer je right place
+  — má access k AST, může add classes, transform output.
+- **HTML nese sémantiku, CSS nese vzhled.** Když chci říct "tato část
+  je jiná v meaning", patří to do HTML (`<aside>`, `<figcaption>`,
+  class, ARIA). Když chci říct "vypadá to jinak", CSS. Mix těch dvou
+  (sémantika přes pseudo-class) je past.
+
+## Závěr
+
+```ts
+// frontend/src/lib/markdown.ts
+import { Marked } from "marked";
+
+export const markdownRenderer = new Marked({
+  renderer: {
+    paragraph(token) {
+      const inner = this.parser.parseInline(token.tokens);
+      const onlyEm =
+        token.tokens.length === 1 && token.tokens[0].type === "em";
+      return onlyEm
+        ? `<p class="blog-article__subtitle">${inner}</p>\n`
+        : `<p>${inner}</p>\n`;
+    },
+  },
+});
+```
+
+```css
+/* CSS pak je sémantická */
+.blog-article__subtitle em {
+  display: block;
+  font-size: 1.2rem;
+  color: var(--secondary);
+  font-style: italic;
+}
+/* p em (inline) zůstává default */
+```
+
+## Přenositelný pattern
+
+Kdykoli píšu CSS selector pro "this specific occurrence":
+
+1. **Ptej se, *co* selector skutečně matchuje, ne *co bys chtěl*.**
+   `:first-child` matchuje first element child (ignoring text). `>`
+   matchuje direct child only. `*` matchuje any descendant.
+   Konkrétně, ne intuitivně.
+2. **Test selector v devtools.** Highlight matching elements,
+   ověř že počet sedí. Pokud matchuje víc, než čekal jsem, selector
+   je broader than intended.
+3. **Pro sémantický záměr použij sémantickou třídu, ne strukturální
+   selector.** "Toto je nadpis" → `class="heading"` + CSS. "Toto je
+   tagline" → renderer adds class + CSS. Místo CSS guesswork.
+4. **Custom renderer / preprocessor je legitimní layer.** Markdown
+   render, JSX transform, template engine — všechny jsou place,
+   kde můžeš přidat semantic information bez change source content.
+5. **Test acceptance criteria: blog article s mixed content.**
+   Markdown s tagline + body s inline em. Render. Ověř, že tagline
+   styluje, body ne. To je test, který by chytil tento bug.
+
+Pattern se přenáší: XPath selectors (mají různé node selection
+semantics), jQuery `.first()` vs. `:first-child`, query selectors
+v testech (CSS-based vs. role-based selectors v Testing Library),
+templating systems s conditional rendering. Společný princip: **CSS
+selektory mluví strukturálním jazykem (parent-child, siblings, position),
+ne sémantickým (this-is-the-tagline). Pokud chci sémantiku, musím ji
+*explicitně* vyjádřit (class, ARIA role, semantic tag), ne implicitně
+hádat ze structure. CSS stylo, HTML sémantizuj.**
