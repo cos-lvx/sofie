@@ -61,6 +61,23 @@ Cíl: Sofie běží 24/7 na Gaia homelabu — vlastní model, vlastní paměť, 
 
 Všechny tři musí projít čistě po každém cyklu.
 
+### Build s CUDA podporou
+
+`--cuda` je runtime CLI flag (volba zařízení), ale Candle musí být
+přeložen s cargo featurou `cuda`, jinak crashne s
+`the candle crate has not been built with cuda support`.
+
+**Správný invocation:**
+```
+cargo run --release --features cuda -- --cuda <subkomanda>
+```
+- první `--features cuda` jde do cargo (build)
+- `--` separátor
+- druhý `--cuda` jde do binary (runtime device volba)
+
+CPU build (default) `cargo run` funguje bez featur, ale je výrazně
+pomalejší — pro tréninky vždy `--features cuda`.
+
 ### Zakázané vzory
 
 - `.unwrap()` v produkčním kódu (v testech OK)
