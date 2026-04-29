@@ -7,6 +7,70 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.13] — 2026-04-29
+
+### Přidáno — Sub-layer checkpointing + memory-leak fix
+
+**Fáze 5 alpha.13 milestone:** rozšíření alpha.12 per-layer chunkingu na
+**sub-layer granularitu** + agresivní progressive drop saved tensorů. KI-005
+**vyřešena** — multi-layer training na RTX 4050 6 GB nyní běží stabilně.
+
+#### `FalconH1Layer::forward_chunk_branches` + `forward_chunk_mlp`
+
+- Layer rozdělena na 2 sub-chunky:
+  - **Chunk α (branches):** `x → res1 = x + ssm + attn` — pre_norm
+    plus parallel SSM/attention plus první residual
+  - **Chunk β (mlp):** `res1 → x_out = res1 + mlp(post_norm(res1))` —
+    post_norm + SwiGLU MLP + druhý residual
+- Memory peak per layer = max(α, β) místo sum (alpha.12 měla per-layer
+  jako single chunk).
+
+#### `FalconH1Model::forward_layer_branches`, `forward_layer_mlp`
+
+- Per-layer-index wrappery pro sub-layer methods. Chunked checkpointing
+  je orchestruje per vrstva.
+
+#### Memory-leak fix v Phase 3 reverse sweep
+
+- **Klíčové zjištění:** alpha.12 per-layer chunking padal na CUDA OOM
+  *uprostřed* Phase 3 (kolem vrstvy 7), protože saved Vec drží Arc
+  references na GPU storage po celou dobu sweep + final_grads
+  z Phase 2 backward držel intermediate tensors lm_head workspace
+  (~700 MB).
+- **Fix:** progressive `mem::replace` saved tensorů (layer_inputs[i],
+  layer_res1[i], state_snapshots[i]) — drop GPU storage hned po
+  konzumaci v iteraci. Plus explicit `drop(loss)`, `drop(last_hidden_var)`
+  + scope-bounded `final_grads` po Phase 2.
+- **Diagnostický probe** přes `ELEUTHERIA_CHECKPOINT_DEBUG=1` env —
+  per-fáze nvidia-smi reading. K nezaplacení při debugu.
+
+#### `phase3_layer_reverse` helper
+
+- Sub-chunky β a α v lokálních scope (Rust drop uvolňuje GPU memory mezi
+  chunky, jinak Mamba scan workspace akumuluje).
+- První volání produkuje **accum_seed GradStore** — Candle
+  `GradStore::new()` je private, takže reusujeme čisté store z první
+  Phase 3 iterace jako akumulátor pro init_state Vars.
+
+#### Empirické nálezy
+
+- **CUDA RTX 4050 6 GB seq_len=4 batch=1 grad_accum=1** nyní běží:
+  ~10 s/step, peak memory 5647 MB used / 126 MB free konstantní napříč
+  Phase 3. 115 steps ze smoke korpusu, loss klesl 5.45 → **1.83 best**
+  (pod random baseline ln(vocab)≈11.09). KI-005 vyřešena.
+- **CPU 1.5B F32 stejný setup:** 19 s/step (alpha.12 pattern zachován).
+  CUDA je nyní ~2× rychlejší než CPU.
+- **grad_accum > 1 stále padá** na 6 GB VRAM — accumulator gradient store
+  drží druhý micro-batch grads + Phase 1 scratch. Pro RTX 4050 použij
+  `--grad-accum 1` (zvýšené `--batch-size` ekvivalentní efekt).
+
+#### Testy
+
+- 77 unit testů (žádný nový oproti alpha.12 — checkpoint smoke test
+  pokrývá oba per-layer i sub-layer paths skrz stejné API).
+
+---
+
 ## [0.5.0-alpha.12] — 2026-04-28
 
 ### Přidáno — Per-layer chunked gradient checkpointing

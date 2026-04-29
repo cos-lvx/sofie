@@ -141,6 +141,43 @@ impl FalconH1Model {
         self.layers[layer_idx].forward(x, pos, &mut state.layers[layer_idx])
     }
 
+    /// Sub-layer chunk α — `x → residual_1` (pre_norm + branches). Pro
+    /// alpha.13 sub-layer checkpointing.
+    pub fn forward_layer_branches(
+        &self,
+        layer_idx: usize,
+        x: &Tensor,
+        pos: usize,
+        state: &mut ModelState,
+    ) -> Result<Tensor> {
+        if layer_idx >= self.layers.len() {
+            return Err(candle_core::Error::Msg(format!(
+                "layer_idx={} mimo rozsah (num_layers={})",
+                layer_idx,
+                self.layers.len()
+            )));
+        }
+        self.layers[layer_idx].forward_chunk_branches(x, pos, &mut state.layers[layer_idx])
+    }
+
+    /// Sub-layer chunk β — `residual_1 → x_out` (post_norm + MLP + residual).
+    /// Doplněk k `forward_layer_branches`.
+    pub fn forward_layer_mlp(
+        &self,
+        layer_idx: usize,
+        res1: &Tensor,
+        state: &mut ModelState,
+    ) -> Result<Tensor> {
+        if layer_idx >= self.layers.len() {
+            return Err(candle_core::Error::Msg(format!(
+                "layer_idx={} mimo rozsah (num_layers={})",
+                layer_idx,
+                self.layers.len()
+            )));
+        }
+        self.layers[layer_idx].forward_chunk_mlp(res1, &mut state.layers[layer_idx])
+    }
+
     /// Final norm + lm_head + muP scaling — vrací logity.
     /// Pro chunked checkpointing: poslední chunk volá toto na hidden po
     /// vrstvě N-1.

@@ -144,6 +144,70 @@ impl FalconH1Layer {
         self.forward_until(x, pos, state, LayerStop::Full)
     }
 
+    /// Sub-layer chunk α — `x → residual_1` (pre_norm + parallel SSM/attention
+    /// branches + první residual sum). Používané pro sub-layer gradient
+    /// checkpointing (alpha.13). Modifikuje state (SSM scan, KV cache).
+    ///
+    /// Output: `x + ssm(pre_norm(x)) + attention(pre_norm(x))` — vstup pro
+    /// chunk β. Když gradient teče zpět přes residual sum, automaticky se
+    /// pokrývají obě parallel branche + skip connection.
+    pub fn forward_chunk_branches(
+        &self,
+        x: &Tensor,
+        pos: usize,
+        state: &mut LayerState,
+    ) -> Result<Tensor> {
+        let normed = self.pre_norm.forward(x)?;
+
+        let ssm_out = if normed.dim(1)? > 1 {
+            self.mixer.forward_prefill(&normed, state)?
+        } else {
+            self.mixer.forward(&normed, state)?
+        };
+        let ssm_scale = Tensor::new(&[self.ssm_out_multiplier as f32], ssm_out.device())?
+            .to_dtype(ssm_out.dtype())?;
+        let ssm_out = ssm_out.broadcast_mul(&ssm_scale)?;
+
+        let attn_out = self.attention.forward(&normed, pos, state)?;
+        let attn_scale = Tensor::new(&[self.attention_out_multiplier as f32], attn_out.device())?
+            .to_dtype(attn_out.dtype())?;
+        let attn_out = attn_out.broadcast_mul(&attn_scale)?;
+
+        let res1 = (x + ssm_out + attn_out)?;
+        Ok(res1)
+    }
+
+    /// Sub-layer chunk β — `residual_1 → x_out` (post_norm + MLP + druhý
+    /// residual). Doplněk k `forward_chunk_branches` pro sub-layer
+    /// checkpointing (alpha.13). Vrací finální output vrstvy.
+    ///
+    /// `forward_chunk_branches(x, pos, state)` + `forward_chunk_mlp(res1, state)`
+    /// = `forward(x, pos, state)`.
+    pub fn forward_chunk_mlp(&self, res1: &Tensor, _state: &mut LayerState) -> Result<Tensor> {
+        let normed = self.post_norm.forward(res1)?;
+        let gate = self.gate_proj.forward(&normed)?;
+        let up = self.up_proj.forward(&normed)?;
+
+        let mlp_in_scale = Tensor::new(&[self.mlp_multipliers[0] as f32], gate.device())?
+            .to_dtype(gate.dtype())?;
+        let gate = gate.broadcast_mul(&mlp_in_scale)?;
+
+        let gate_activated = {
+            let g = gate.to_dtype(candle_core::DType::F32)?;
+            let result = candle_nn::ops::silu(&g)?;
+            result.to_dtype(normed.dtype())?
+        };
+        let mlp_out = (gate_activated * up)?;
+        let mlp_out = self.down_proj.forward(&mlp_out)?;
+
+        let mlp_out_scale = Tensor::new(&[self.mlp_multipliers[1] as f32], mlp_out.device())?
+            .to_dtype(mlp_out.dtype())?;
+        let mlp_out = mlp_out.broadcast_mul(&mlp_out_scale)?;
+
+        let x_out = (res1 + mlp_out)?;
+        Ok(x_out)
+    }
+
     /// Forward pass s volitelným sub-layer cut bodem. Vrací hidden stream
     /// z požadované mezibodě. Pro `LayerStop::Full` je chování totožné
     /// s `forward`.

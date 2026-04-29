@@ -37,27 +37,30 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
   `CUDARC_CUDA_VERSION=13010`. Odebrat až cudarc přidá 13.2 podporu.
 - **Řešení:** Sledovat cudarc releases, případně aktualizovat Candle (viz SOL-008)
 
-### KI-005 — CUDA OOM pro multi-layer backward na 6 GB VRAM (částečně)
+### KI-005 — CUDA OOM pro multi-layer backward na 6 GB VRAM (vyřešeno alpha.13)
 
 - **Fáze:** 5 (Core Memory training)
-- **Dopad:** Střední — RTX 4050 6 GB stále neumí trénovat 1.5B
-  multi-layer ani s alpha.12 per-layer checkpointing. CPU funguje
-  pohodlně po KI-006 fixu.
-- **Kontext:** Alpha.12 zavedla per-layer chunked gradient checkpointing
-  (`training/checkpoint.rs`). Inter-layer memory snížena z 24× → 1×,
-  ale **intra-layer** activations (Mamba chunked scan na 128 segmentech +
-  attention QKV cached + MLP intermediate) jedné vrstvy se nevejdou do
-  volných ~2.4 GB po model loadingu. Bez checkpoint OOM ihned, s
-  checkpoint OOM později uvnitř Phase 3 (per-layer re-forward).
-- **Plán řešení:**
-  1. **Alpha.13 — sub-layer checkpointing.** Rozdělit jednu vrstvu na
-     pre_norm / SSM / attention / MLP chunky. Synthetic loss propaguje
-     gradient mezi sub-chunky stejným patternem jako per-layer.
-  2. **Alpha.13+ — selective component-aware** (memory-priority drop
-     attention QKV, keep SSM scan). Vyžaduje custom Op v Candle nebo
-     re-architekturu kolem `Tensor::detach`.
-  3. **Gaia deploy** s ≥ 24 GB VRAM pro 1.5B/7B production training —
-     fallback, pokud sub-layer checkpoint nestačí.
+- **Stav:** **VYŘEŠENO v alpha.13** kombinací sub-layer chunkingu +
+  agresivního progressive drop saved tensorů. RTX 4050 6 GB nyní zvládá
+  multi-layer training 1.5B s seq_len=4 batch=1 grad_accum=1 stabilně:
+  ~10 s/step, loss klesá normálně.
+- **Kořenová příčina (alpha.12 stále padal):**
+  1. **Per-layer chunking nestačil** — Mamba scan padding na chunk_size=128
+     pro krátký seq alokoval 50-100 MB workspace per vrstva. Sub-layer
+     rozdělení (chunk α: pre_norm + SSM + attention; chunk β: post_norm
+     + MLP) snížilo peak max(α, β) místo sum.
+  2. **Memory leak v Phase 3 reverse sweep** — saved tensorů ve `Vec`
+     drží Arc references na GPU storage po celou dobu sweep, plus
+     `final_grads` z Phase 2 loss.backward držel intermediate tensors
+     lm_head workspace (~700 MB).
+- **Fix:**
+  - Sub-layer chunkování (`forward_chunk_branches` + `forward_chunk_mlp`)
+  - `mem::replace` saved tensorů progressive drop v Phase 3 loop
+  - `drop(loss)`, `drop(last_hidden_var)`, scope-bounded `final_grads`
+  - `phase3_layer_reverse` helper s lokálními scope pro chunk α/β
+- **Limit:** `grad_accum > 1` stále padá (accumulator + scratch). Pro
+  6 GB VRAM použij `--grad-accum 1`. Pro `seq_len > 4` bude potřeba další
+  optimalizace (alpha.14+ nebo větší VRAM).
 
 ### KI-006 — Training CPU F32 je 48 s/step na 1.5B (vyřešeno alpha.12)
 

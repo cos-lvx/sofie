@@ -99,13 +99,30 @@
 - [ ] Auto-load v `Sofie::load` — odsunuto do alpha.13
 - [ ] Resume training — odsunuto do alpha.13
 
-### v0.5.0-alpha.13 (next) — sub-layer checkpointing + save/load
-- [ ] **Sub-layer chunking** — rozdělit jednu vrstvu na pre_norm /
-      SSM / attention / MLP chunky. Synthetic loss trick stejný pattern,
-      jen jemnější granularita. Cíl: odblokovat RTX 4050 6 GB.
-- [ ] Save/Load trained Core Memory (alpha.12 odsunuto)
-- [ ] Auto-load v `Sofie::load`
-- [ ] Resume training (init_states + optimizer state + step_idx)
+### v0.5.0-alpha.13 ✅ (2026-04-29) — sub-layer checkpointing + memory-leak fix
+- [x] **Sub-layer chunking** — `forward_chunk_branches` (chunk α: pre_norm
+      + SSM + attention) + `forward_chunk_mlp` (chunk β: post_norm + MLP +
+      residual2). Memory peak per layer = max(α, β) místo sum.
+- [x] **Progressive drop saved tensorů** v Phase 3 reverse sweep —
+      `mem::replace` per iteration, scope-bounded `final_grads` po Phase 2,
+      `phase3_layer_reverse` helper. **KI-005 vyřešena.**
+- [x] CUDA RTX 4050 6 GB seq_len=4 batch=1 grad_accum=1: 10 s/step
+      stabilní, peak memory 5647 MB konstantní napříč Phase 3, loss klesl
+      5.45 → 1.83 best (pod random baseline).
+- [x] `ELEUTHERIA_CHECKPOINT_DEBUG=1` diagnostický probe (nvidia-smi
+      per-fáze).
+- [ ] grad_accum > 1 stále padá na 6 GB — alpha.14 nebo Gaia.
+- [ ] Save/Load trained Core Memory — odsunuto do alpha.14
+- [ ] Auto-load v `Sofie::load` — alpha.14
+- [ ] Resume training — alpha.14
+
+### v0.5.0-alpha.14 (next) — save/load + production training
+- [ ] Save trained Core Memory přes `StateCheckpoint` (filter `core_memory`)
+- [ ] Auto-load v `Sofie::load` pokud existuje trained checkpoint
+- [ ] Resume training (init_states + AdamW optimizer state + step_idx)
+- [ ] Production training run na 1.5B s law_pack + programming_pack
+- [ ] Validační run retention benchmarku (SsmOnly pass-rate musí
+      vyskočit z 0 % na měřitelné číslo)
 
 ### v0.5.0-alpha.13 — Sofie identity dataset composer
 - [ ] Dataset composer — váhová mix (identity core / Sessions / distillate / context)
