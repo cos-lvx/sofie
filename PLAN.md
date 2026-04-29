@@ -210,7 +210,7 @@
       warmup snižuje step size ale nemění strukturu moments.
 - [x] RN-009 zaznamenán; KI-008 status update; pivot k KI-009.
 
-### v0.5.0-alpha.18 (next) — KI-009 best snapshot tracker (top priority)
+### v0.5.0-alpha.18 ✅ (2026-04-29) — KI-009 best snapshot tracker
 
 **Důvod priority:** Po RN-008/009 víme, že overshoot je hluboce
 strukturní — ani Adam state ani LR scheduling ho neadresují. Místo
@@ -218,18 +218,31 @@ dalších hypotéz o root cause potřebujeme **deterministický fix pro
 zachycení nejlepšího bodu trajektorie** navzdory noisy training. Pak
 empirické ablace identifikují skutečný root cause.
 
-- [ ] **`BestSnapshotTracker`** v `training/best_snapshot.rs` —
+- [x] **`BestSnapshotTracker`** v `training/best_snapshot.rs` —
       shadow CPU buffer per Var, aktualizuje se při každém best loss
-      improvement
-- [ ] Integrace v `train_core_memory` — po každém `optimizer.step()`
-      check `step_loss < best_loss` → snapshot Var hodnoty na CPU
-- [ ] `from_snapshot(...)` API v `CoreMemoryArtifact` — alternativa
-      k `from_stack(...)`, save volá `from_snapshot` pokud existuje
-      (a uživatel zapnul `--save-best`); jinak `from_stack` (final)
-- [ ] CLI `--save-best` flag — opt-in (default off, alpha.16 chování)
-- [ ] Round-trip test: noisy 50-step run, verify save je z best step,
-      ne z final
-- [ ] Aktualizace KI-009 status
+      improvement (lazy: copy GPU→CPU jen při skutečném zlepšení)
+- [x] **`CoreMemoryArtifact::from_snapshot`** — alternativní konstruktor,
+      přijímá `Vec<Tensor>` F32 CPU + validuje shape per layer
+- [x] **Integrace v `train_core_memory`** — `TrainingConfig.track_best`
+      opt-in, signature change `(TrainingResult, EleutheriaAdamW,
+      Option<BestSnapshotTracker>)`, update calls po každém step
+- [x] **CLI `--save-best`** flag (default off — alpha.16/17
+      backwards-compatible)
+- [x] **run_train rozhoduje:** tracker.has_snapshot → from_snapshot,
+      jinak fallback from_stack. Save line ukazuje `zdroj: best
+      snapshot @ step N` nebo `zdroj: final state`.
+- [x] **Round-trip testy:** synthetic 5-step trajektorie [10, 5, 2.5,
+      8, 6.5] ověřuje zachycení step 2 hodnoty (best=2.5), ne step 4
+      (final=6.5). Plus 3 from_snapshot edge case testy.
+- [x] 120 testů (+9), clippy clean.
+
+### Alpha.18 smoke validation (čeká na Ondrův spuštění)
+- [ ] Stage 1 s `--save-best` na 1.5B + CUDA, dataset
+      `/tmp/smoke_prog.txt`. Predikce: uložený stav má loss ~0.99
+      (best ze step ~110 v alpha.16 baseline), ne 3.69 (final).
+- [ ] Inspect output: `best_loss: 0.99` + verifikovat REPL kvalitu
+      (uložený stav by měl být kvalitativně lepší než alpha.16 final).
+- [ ] Pokud splněno, KI-009 → vyřešená.
 
 ### Empirické ablace (alpha.18+)
 

@@ -7,6 +7,79 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.18] — 2026-04-29
+
+### Přidáno — Best snapshot tracker (KI-009 deterministický fix)
+
+**Fáze 5 alpha.18 milestone:** Po RN-008 (KI-007 hypotéza refutovaná)
+a RN-009 (KI-008 hypotéza refutovaná) víme, že Phase 2 overshoot je
+hluboce strukturní — žádná LR/Adam intervence ho neeliminuje.
+**Pivot k deterministickému fixu:** místo dalších hypotéz o root cause
+implementujeme infrastrukturu, která zajistí, že **uložíme nejlepší
+bod trajektorie**, ne final state. Pro noisy training (RN-002 ukazuje
+final 3.69 vs best 0.99 = ~4× rozdíl) je to dramatický rozdíl
+v kvalitě uloženého artefaktu.
+
+#### Nový modul: `training/best_snapshot.rs`
+
+- **`BestSnapshotTracker`** — shadow CPU buffer per Var (F32, matchuje
+  native dtype `Var` v `CoreMemoryStack` a CPU layout
+  `CoreMemoryArtifact` → bez konverze v save).
+- **`update_if_better(loss, step, stack)`** — copy GPU→CPU **jen pokud
+  loss zlepšuje historický best**. Pro typickou noisy trajektorii
+  s 5-10 best update events za 156 stepů je overhead ~150-300 ms
+  (~30 ms PCIe transfer 24 vrstev × 3 MB na 1.5B per update). NaN/Inf
+  loss skip.
+- **API:** `has_snapshot`, `best_loss`, `best_step`, `total_updates`,
+  `successful_updates`, `into_snapshot() -> Option<Vec<Tensor>>`.
+
+#### `CoreMemoryArtifact::from_snapshot`
+
+- Alternativní konstruktor — přijímá `Vec<Tensor>` F32 CPU místo
+  `&CoreMemoryStack`. Validuje shape per layer proti config mamba
+  rozměrům (3D: `[n_heads, headdim, d_state]`).
+- Symetrie API s `from_stack`. Save/load round-trip identický.
+
+#### Wiring v `train_core_memory`
+
+- `TrainingConfig.track_best: bool` — opt-in, default `false`
+  (alpha.16/17 chování — save final).
+- Signature změna: vrací `(TrainingResult, EleutheriaAdamW,
+  Option<BestSnapshotTracker>)`. Caller volí `from_snapshot` (pokud
+  tracker has_snapshot) nebo `from_stack` (fallback).
+- Update calls: po každém successful `optimizer.step()` (i tail step
+  na konci epoch) `tracker.update_if_better(step_loss, total_steps - 1,
+  stack)`.
+
+#### CLI změny v `train-core-memory`
+
+- `--save-best` flag (default off) zapíná tracker. Při save log ukazuje
+  `zdroj: best snapshot @ step N` místo `zdroj: final state`.
+- run_train rozhoduje: pokud tracker has_snapshot, použij
+  `from_snapshot`, jinak fallback na `from_stack`.
+
+#### Testy (+9, total 120)
+
+- **`best_snapshot` (6 nových):** `fresh_tracker_has_no_snapshot`,
+  `first_finite_loss_creates_snapshot`, `worse_loss_does_not_overwrite`,
+  `nan_loss_skips_update`, `captures_state_at_best_step_not_final`
+  (klíčový — synthetic 5-step trajektorie [10, 5, **2.5**, 8, 6.5],
+  verifikuje, že snapshot drží step 2 hodnoty), `no_finite_loss_yields_none_snapshot`.
+- **`core_memory_io::from_snapshot` (3 nové):** `from_snapshot_round_trip`
+  (save → load → verify tensor values), `from_snapshot_rejects_wrong_layer_count`,
+  `from_snapshot_rejects_wrong_shape`.
+
+#### Co dál (alpha.18 validation)
+
+- Smoke test stage 1 s `--save-best` — verify save zachytil best step,
+  ne final
+- Predikce: best_loss=0.99 ze step ~110 (alpha.16 reference) vs final=3.69
+  → uložený stav po alpha.18 by měl mít loss=0.99
+- Po validaci: empirické ablace (LR sweep, β1 sweep, batch size sweep)
+  na identifikaci skutečného root cause overshoot
+
+---
+
 ## [0.5.0-alpha.17] — 2026-04-29
 
 ### Přidáno — LR warmup + cosine decay (KI-008 high-priority fix)

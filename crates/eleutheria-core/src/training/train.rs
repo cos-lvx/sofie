@@ -21,6 +21,7 @@ use candle_nn::optim::Optimizer;
 
 use crate::Sofie;
 use crate::training::adamw_state::EleutheriaAdamW;
+use crate::training::best_snapshot::BestSnapshotTracker;
 use crate::training::core_memory::CoreMemoryStack;
 use crate::training::loss::cross_entropy_next_token;
 use crate::training::lr_schedule::LrSchedule;
@@ -55,6 +56,13 @@ pub struct TrainingConfig {
     /// běh (alpha.16 chování). Per-run step counter — resume run prochází
     /// warmupem znovu (záměrně).
     pub lr_schedule: Option<LrSchedule>,
+    /// Track best loss snapshot (alpha.18, KI-009). Pokud `true`,
+    /// `train_core_memory` drží shadow CPU buffer per Var a aktualizuje
+    /// při každém best loss improvement. Vrácený `BestSnapshotTracker`
+    /// pak slouží jako alternativní zdroj pro `CoreMemoryArtifact::from_snapshot`
+    /// (místo `from_stack` = final state). Pro noisy training (RN-002,
+    /// RN-009) je rozdíl dramatický.
+    pub track_best: bool,
 }
 
 impl Default for TrainingConfig {
@@ -69,6 +77,7 @@ impl Default for TrainingConfig {
             log_every_n_steps: 10,
             checkpoint: false,
             lr_schedule: None,
+            track_best: false,
         }
     }
 }
@@ -107,8 +116,10 @@ impl Sofie {
     ///   `EleutheriaAdamW` před prvním stepem. Pokud `None`, AdamW startuje
     ///   s prázdným state (warmup overshoot, RN-006).
     ///
-    /// Vrací `(TrainingResult, EleutheriaAdamW)` — caller (run_train) má
-    /// optimizer pro `OptimizerArtifact::from_optimizer` save.
+    /// Vrací `(TrainingResult, EleutheriaAdamW, Option<BestSnapshotTracker>)`
+    /// — caller (run_train) má optimizer pro `OptimizerArtifact::from_optimizer`
+    /// save a (pokud `config.track_best`) tracker pro
+    /// `CoreMemoryArtifact::from_snapshot` (místo final stavu).
     ///
     /// Volá se z `run_train` v main.rs po načtení datasetu a CoreMemoryStack.
     ///
@@ -121,7 +132,7 @@ impl Sofie {
         dataset: &crate::training::dataset::TokenDataset,
         config: &TrainingConfig,
         resume_optim: Option<&OptimizerArtifact>,
-    ) -> Result<(TrainingResult, EleutheriaAdamW)> {
+    ) -> Result<(TrainingResult, EleutheriaAdamW, Option<BestSnapshotTracker>)> {
         let start = std::time::Instant::now();
 
         if config.epochs == 0 {
@@ -159,6 +170,15 @@ impl Sofie {
         let mut last_loss: f64 = f64::NAN;
         let mut best_loss: f64 = f64::INFINITY;
         let mut loss_per_epoch: Vec<f64> = Vec::with_capacity(config.epochs);
+
+        // Best snapshot tracker (alpha.18, KI-009). Aktivovaný pouze pokud
+        // config.track_best — copy GPU→CPU per Var je drahý PCIe transfer,
+        // nechceme zaplatit pokud uživatel nevyžádal.
+        let mut best_tracker: Option<BestSnapshotTracker> = if config.track_best {
+            Some(BestSnapshotTracker::new())
+        } else {
+            None
+        };
 
         for epoch in 0..config.epochs {
             let seed = config.shuffle_seed.wrapping_add(epoch as u64);
@@ -233,6 +253,11 @@ impl Sofie {
                     if step_loss < best_loss {
                         best_loss = step_loss;
                     }
+                    // Best snapshot — copy Var hodnoty na CPU jen pokud
+                    // step_loss zlepší historický best (alpha.18, KI-009).
+                    if let Some(t) = best_tracker.as_mut() {
+                        t.update_if_better(step_loss, total_steps - 1, stack)?;
+                    }
 
                     if total_steps.is_multiple_of(config.log_every_n_steps) {
                         tracing::info!(
@@ -272,6 +297,9 @@ impl Sofie {
                 if step_loss < best_loss {
                     best_loss = step_loss;
                 }
+                if let Some(t) = best_tracker.as_mut() {
+                    t.update_if_better(step_loss, total_steps - 1, stack)?;
+                }
             }
 
             let epoch_mean = epoch_loss_sum / epoch_batch_count.max(1) as f64;
@@ -298,7 +326,7 @@ impl Sofie {
             wall_time_ms,
             loss_decreased,
         };
-        Ok((result, opt))
+        Ok((result, opt, best_tracker))
     }
 
     /// Interní: jeden forward + backward na micro-batch. Vrací

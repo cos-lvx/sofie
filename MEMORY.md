@@ -4,6 +4,58 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | v0.5.0-alpha.18 — Best snapshot tracker (KI-009 fix)
+
+Po dvou refutovaných hypotézách (RN-008, RN-009) jsme pivotovali od
+LR-based intervencí k **deterministickému fixu**. Místo dalších hypotéz
+o root cause overshoot — implementujeme infrastrukturu, která **zachycuje
+nejlepší bod trajektorie**, takže final state už není fatální.
+
+**Nový modul `training/best_snapshot.rs`:** `BestSnapshotTracker` se
+shadow CPU buffer per Var (F32). `update_if_better(loss, step, stack)`
+kopíruje Var hodnoty na CPU **jen pokud loss zlepšuje historický best**.
+Pro noisy run s 5-10 successful updates za 156 stepů je overhead
+~150-300 ms (PCIe transfer 24 × 3 MB na 1.5B). 6 unit testů včetně
+klíčového `captures_state_at_best_step_not_final` (synthetic 5-step
+trajektorie ověřuje zachycení best=2.5 ve step 2, ne final=6.5).
+
+**`CoreMemoryArtifact::from_snapshot`:** Alternativní konstruktor —
+přijímá `Vec<Tensor>` F32 CPU místo `&CoreMemoryStack`. Validuje shape
+per layer proti config mamba rozměrům. Symetrický s `from_stack`. 3
+nové unit testy.
+
+**Wiring:** `TrainingConfig.track_best: bool` (opt-in), `train_core_memory`
+vrací `(TrainingResult, EleutheriaAdamW, Option<BestSnapshotTracker>)`.
+CLI `--save-best` flag default off. run_train: tracker has_snapshot
+→ `from_snapshot`, jinak fallback `from_stack`.
+
+**Klíčové designové rozhodnutí — opt-in:** Default off zachovává
+alpha.16/17 chování (save final). PCIe transfer per best update je
+drahý, nechceme zaplatit pokud uživatel nevyžádá. Pro production
+training na Gaia bude vždy `--save-best`.
+
+**Sémantika save line změna:** "Core Memory uložena: ... best_loss=0.99,
+**zdroj: best snapshot @ step 110**" místo původního "best_loss=0.99"
+(matoucí — best v meta byl historical record, ale tensors patřily k
+final). Teď je vidět, který bod trajektorie je v souboru.
+
+**Čísla:** 120 testů (+9 nových: 6 best_snapshot, 3 from_snapshot),
+clippy clean, fmt OK.
+
+**Co dál (alpha.18 validation):**
+- Smoke test stage 1 s `--save-best` na 1.5B + CUDA. Predikce: uložený
+  stav má loss=~0.99 (best ze step ~110 v alpha.16 baseline), ne 3.69
+  (final).
+- Inspect output ukáže `best_loss: 0.99` (kumulativní), tenzory v
+  artefaktu jsou ze step kdy loss byla 0.99 — verifikovatelné přes
+  REPL: state by měl být **kvalitativně lepší** než final state alpha.16.
+- Po validaci: empirické ablace (LR sweep, β1 sweep, batch size)
+  na identifikaci skutečného root cause overshoot. Tato analýza už
+  bude **nezávislá** na save-final problému (best snapshot zachytí
+  ten nejlepší bod každého ablation runu).
+
+---
+
 ## 2026-04-29 | alpha.17 smoke validation na 1.5B + CUDA — RN-009
 
 Stage 1 fresh train s `--warmup-steps 30 --lr-min 1e-5` proti alpha.16

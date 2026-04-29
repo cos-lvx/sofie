@@ -20,6 +20,7 @@
 //!   Bootstrap, Ondra context), validace přes re-run retention benchmarku.
 
 pub mod adamw_state;
+pub mod best_snapshot;
 pub mod checkpoint;
 pub mod clip;
 pub mod core_memory;
@@ -34,6 +35,7 @@ pub mod trace;
 pub mod train;
 
 pub use adamw_state::{EleutheriaAdamW, VarAdamW};
+pub use best_snapshot::BestSnapshotTracker;
 pub use clip::clip_grad_norm;
 pub use core_memory::{CoreMemory, CoreMemoryStack};
 pub use core_memory_io::{CoreMemoryArtifact, CoreMemoryMeta};

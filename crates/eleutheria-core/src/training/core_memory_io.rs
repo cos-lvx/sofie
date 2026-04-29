@@ -248,6 +248,57 @@ impl CoreMemoryArtifact {
         Ok(Self { meta, layers })
     }
 
+    /// Build artefakt z `BestSnapshotTracker` snapshotu (alpha.18, KI-009).
+    ///
+    /// Alternativa k `from_stack` — místo aktuálních Var hodnot ze stacku
+    /// (= final state) použije F32 CPU tensory zachycené trackerem
+    /// v okamžiku nejnižší loss během trajektorie. Pro noisy training
+    /// (RN-002, RN-009) je rozdíl dramatický — final loss může být 4×
+    /// horší než best.
+    ///
+    /// Tensory se očekávají F32 na CPU (jak je tracker udržuje).
+    pub fn from_snapshot(
+        snapshot: Vec<Tensor>,
+        config: &FalconH1Config,
+        training_steps: Option<usize>,
+        best_loss: Option<f64>,
+        final_loss: Option<f64>,
+        notes: Option<String>,
+    ) -> Result<Self> {
+        if snapshot.len() != config.num_hidden_layers {
+            return Err(candle_core::Error::Msg(format!(
+                "snapshot má {} vrstev, config má {} — musí souhlasit",
+                snapshot.len(),
+                config.num_hidden_layers
+            )));
+        }
+        // Validace shape per layer — dotykem proti config mamba rozměrům.
+        let expected = (
+            config.mamba_n_heads,
+            config.mamba_d_head,
+            config.mamba_d_state,
+        );
+        for (i, t) in snapshot.iter().enumerate() {
+            let dims = t.dims();
+            if dims.len() != 3
+                || dims[0] != expected.0
+                || dims[1] != expected.1
+                || dims[2] != expected.2
+            {
+                return Err(candle_core::Error::Msg(format!(
+                    "snapshot[{i}]: shape {:?} ≠ očekávané [{}, {}, {}]",
+                    dims, expected.0, expected.1, expected.2,
+                )));
+            }
+        }
+
+        let meta = CoreMemoryMeta::new(config, training_steps, best_loss, final_loss, notes);
+        Ok(Self {
+            meta,
+            layers: snapshot,
+        })
+    }
+
     /// Uloží artefakt na disk jako safetensors s metadaty.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let metadata = self.meta.to_metadata_map();
@@ -645,6 +696,84 @@ mod tests {
         assert!(msg.contains("kind="), "chyba má zmínit kind: {msg}");
 
         std::fs::remove_file(&path).ok();
+        Ok(())
+    }
+
+    /// from_snapshot accepts F32 CPU tensors a vyrobí kompatibilní artefakt.
+    #[test]
+    fn from_snapshot_round_trip() -> Result<()> {
+        let config = dummy_config();
+        let device = Device::Cpu;
+        // Synthetic snapshot: per-layer tensor s value=42.
+        let shape = (
+            config.mamba_n_heads,
+            config.mamba_d_head,
+            config.mamba_d_state,
+        );
+        let mut snapshot = Vec::with_capacity(config.num_hidden_layers);
+        for _ in 0..config.num_hidden_layers {
+            let t = Tensor::ones(shape, DType::F32, &device)?;
+            snapshot.push((t * 42.0)?);
+        }
+
+        let artifact = CoreMemoryArtifact::from_snapshot(
+            snapshot,
+            &config,
+            Some(100),
+            Some(0.5),
+            Some(2.0),
+            Some("best snapshot test".into()),
+        )?;
+        let path = unique_path("from_snapshot");
+        artifact.save(&path)?;
+
+        let loaded = CoreMemoryArtifact::load(&path)?;
+        assert_eq!(loaded.meta.best_loss, Some(0.5));
+        assert_eq!(loaded.meta.final_loss, Some(2.0));
+        assert_eq!(loaded.meta.training_steps, Some(100));
+        // Verify tensor values
+        for (i, layer) in loaded.layers.iter().enumerate() {
+            let mean: f32 = layer.mean_all()?.to_scalar()?;
+            assert!(
+                (mean - 42.0).abs() < 1e-5,
+                "layer {i} mean should be 42, got {mean}"
+            );
+        }
+
+        std::fs::remove_file(&path).ok();
+        Ok(())
+    }
+
+    /// from_snapshot odmítne snapshot s nesprávným počtem vrstev.
+    #[test]
+    fn from_snapshot_rejects_wrong_layer_count() -> Result<()> {
+        let config = dummy_config();
+        let shape = (
+            config.mamba_n_heads,
+            config.mamba_d_head,
+            config.mamba_d_state,
+        );
+        let snapshot = vec![Tensor::zeros(shape, DType::F32, &Device::Cpu)?]; // jen 1, čekáme num_hidden_layers
+        let result = CoreMemoryArtifact::from_snapshot(snapshot, &config, None, None, None, None);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("vrstev"));
+        Ok(())
+    }
+
+    /// from_snapshot odmítne snapshot s nesprávným shape.
+    #[test]
+    fn from_snapshot_rejects_wrong_shape() -> Result<()> {
+        let config = dummy_config();
+        let mut snapshot = Vec::with_capacity(config.num_hidden_layers);
+        for _ in 0..config.num_hidden_layers {
+            // Nesprávný shape — 4D místo 3D
+            snapshot.push(Tensor::zeros((1, 2, 3, 4), DType::F32, &Device::Cpu)?);
+        }
+        let result = CoreMemoryArtifact::from_snapshot(snapshot, &config, None, None, None, None);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("shape"));
         Ok(())
     }
 

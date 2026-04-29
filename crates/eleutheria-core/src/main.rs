@@ -279,6 +279,16 @@ struct TrainCoreMemoryArgs {
     /// Doporučeno: 1e-5 pro produkční tréninky pro jemnější závěr.
     #[arg(long, default_value_t = 0.0)]
     lr_min: f64,
+
+    /// **Best snapshot tracker (alpha.18, KI-009).** Pokud zapnuto,
+    /// trackuje stav s nejnižší loss během trajektorie a uloží **ten**
+    /// stav místo final. Pro noisy training (RN-002, RN-009 — Phase 2
+    /// overshoot 10×, final 4×, best 1×) je rozdíl dramatický. Cena:
+    /// per-best-update GPU→CPU copy 24 vrstev × ~3 MB (~30 ms na 1.5B,
+    /// 5-10 successful updates za 156 stepů → ~150-300 ms total overhead).
+    /// Default off (alpha.16/17 chování — save final).
+    #[arg(long, default_value_t = false)]
+    save_best: bool,
 }
 
 /// Argumenty pro `train-core-memory-multi` subkomand — multi-layer smoke
@@ -756,12 +766,16 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         log_every_n_steps: ta.log_every,
         checkpoint: ta.checkpoint,
         lr_schedule,
+        track_best: ta.save_best,
     };
     if ta.checkpoint {
         println!("  gradient checkpointing: ON (per-layer chunked backward)");
     }
+    if ta.save_best {
+        println!("  best snapshot tracker: ON (uloží stav s nejnižší loss, ne final)");
+    }
 
-    let (result, optimizer) =
+    let (result, optimizer, best_tracker) =
         sofie.train_core_memory(&stack, &dataset, &config, resume_optim.as_ref())?;
 
     println!("\nVýsledky tréninku:");
@@ -809,25 +823,52 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
             };
         let combined_notes = compose_notes(prior_meta.as_ref(), ta.notes.as_deref());
 
-        let artifact = CoreMemoryArtifact::from_stack(
-            &stack,
-            sofie.config(),
-            Some(cumulative_steps),
-            best_loss_combined,
-            final_loss,
-            combined_notes,
-        )
-        .map_err(|e| anyhow!("CoreMemoryArtifact build: {e}"))?;
+        // Best snapshot vs final state. Pokud tracker má zachycený snapshot,
+        // ulozíme ten (alpha.18, KI-009) — pro noisy trajektorii je rozdíl
+        // dramatický. Jinak fallback na from_stack (final state, alpha.16/17).
+        let (artifact, source_label, source_step) = match best_tracker.and_then(|t| {
+            let step = t.best_step();
+            t.into_snapshot().map(|snap| (snap, step))
+        }) {
+            Some((snapshot, best_step)) => {
+                let art = CoreMemoryArtifact::from_snapshot(
+                    snapshot,
+                    sofie.config(),
+                    Some(cumulative_steps),
+                    best_loss_combined,
+                    final_loss,
+                    combined_notes,
+                )
+                .map_err(|e| anyhow!("CoreMemoryArtifact::from_snapshot: {e}"))?;
+                (art, "best snapshot", best_step)
+            }
+            None => {
+                let art = CoreMemoryArtifact::from_stack(
+                    &stack,
+                    sofie.config(),
+                    Some(cumulative_steps),
+                    best_loss_combined,
+                    final_loss,
+                    combined_notes,
+                )
+                .map_err(|e| anyhow!("CoreMemoryArtifact::from_stack: {e}"))?;
+                (art, "final state", None)
+            }
+        };
         artifact
             .save(out_path)
             .map_err(|e| anyhow!("CoreMemoryArtifact save: {e}"))?;
         println!(
-            "Core Memory uložena: {} ({} vrstev, {} steps total, +{} this run, best_loss={:.4})",
+            "Core Memory uložena: {} ({} vrstev, {} steps total, +{} this run, best_loss={:.4}, zdroj: {}{})",
             out_path.display(),
-            stack.num_layers(),
+            artifact.num_layers(),
             cumulative_steps,
             result.total_steps,
-            best_loss_combined.unwrap_or(f64::NAN)
+            best_loss_combined.unwrap_or(f64::NAN),
+            source_label,
+            source_step
+                .map(|s| format!(" @ step {s}"))
+                .unwrap_or_default(),
         );
 
         // AdamW state vedle Core Memory (alpha.16, KI-007). Sourozenec
