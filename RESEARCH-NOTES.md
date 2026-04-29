@@ -142,15 +142,15 @@ Každá entry má strukturu:
 - **Hypotéza:** Pokud trajektorie konverguje monotónně (alpha.13 očekávání,
   RN-001), final == best a tahle disonance neexistuje. V realitě
   oscilační trajektorie (RN-002) zahazuje nejlepší body.
-- **Status:** `confirmed` (mechanická vlastnost API, ne empirický nález)
-- **Implications:**
-  - **Production training potřebuje "save when best improves" mechanismus.**
-    Možnosti: (a) periodic snapshot s min loss tracking, (b) shadow copy
-    Var values do CPU bufferu při každém best update, (c) save-on-eval
-    při validation loss improvement
-  - Pro alpha.14/15 smoke je to dokumentovaná limitace, ne blocker
-  - Plánovaný fix: nový patch po alpha.16, dedikovaný snapshot mechanism
-- **Ref:** RN-002; plán pro nový alpha.17 nebo dedikovaný patch
+- **Status:** `superseded` (vyřešeno alpha.18 — viz RN-010). Mechanická
+  vlastnost API se změnila: `BestSnapshotTracker` + `from_snapshot`
+  zachycuje state v okamžiku nejnižší loss; `--save-best` flag
+  v CLI uloží tento snapshot místo final stavu. Smoke alpha.18
+  potvrdil `zdroj: best snapshot @ step 113` v save line.
+- **Implications (historické):**
+  - Pro alpha.14–17 byla tato disonance dokumentovaná limitace.
+    Production training s `--save-best` (alpha.18+) ji eliminuje.
+- **Ref:** RN-002; vyřešeno RN-010 (alpha.18 implementace KI-009)
 
 ---
 
@@ -387,6 +387,56 @@ Každá entry má strukturu:
   je teď definitivně dataset-driven, ne Adam-driven); KI-007 vyřešená
   per spec ale nezmírnila overshoot; KI-008 eskaluje priority
 
+### RN-010 — Best snapshot tracker funguje (KI-009 deterministicky vyřešena)
+
+- **Datum:** 2026-04-29
+- **Verze:** alpha.18 (`a86b4b1`)
+- **Setup:** Stage 1 fresh train s `--save-best` na `/tmp/smoke_prog.txt`,
+  jinak identický s alpha.16 stage 1 (RN-008). 156 steps, ~29 min.
+- **Pozorování:** Trajektorie loss byte-identická s alpha.16 (tracker
+  je pasivní pozorovatel — neovlivňuje training algoritmus). Step 20
+  loss=1.6956, step 40 loss=10.5793, step 156 loss=3.6877 — všechna
+  čísla shoda na 4 desetinná místa s alpha.16 RN-008 baseline.
+- **Klíčový výstup:**
+  ```
+  Core Memory uložena: /tmp/alpha18_cm.safetensors (24 vrstev,
+    156 steps total, +156 this run, best_loss=0.9965,
+    zdroj: best snapshot @ step 113)
+  ```
+  Tracker zachytil bod ve step 113 (mezi step 110 best=1.6956 a
+  step 120 best=0.9965 → improvement nastalo někde 110-119, tracker
+  zalogoval konkrétní step 113). Tensors v souboru patří k tomuto
+  bodu, ne k final stavu (step 156 loss=3.69).
+- **Kontrast s alpha.16/17:**
+  - alpha.16: save line ukázala `best_loss=0.9965`, ale **tensors v
+    souboru byly z final stavu** (RN-003). Meta lhala — nejlepší loss
+    byl historický record, ne uložený stav.
+  - alpha.18: meta + tensors ladí. `best_loss=0.9965` znamená
+    **artefakt drží stav s touto loss**, ne final loss=3.69.
+- **Kvalitativní validace (volitelná, čeká na Ondrovo spuštění):**
+  REPL s alpha.18 artefaktem by měl být kvalitativně lepší než alpha.16
+  final state (RN-005) — méně halucinace, lépe reflektuje persona +
+  programming domain (best step ~113 byl trénovaný 113 stepů místo
+  156, ale s lepší konvergencí). Není to nutná validace pro KI-009
+  (mechanika je prokázaná), ale dává empirický důkaz proč best snapshot
+  tracker matter pro production.
+- **Status:** `confirmed` — KI-009 deterministicky vyřešena. Drát
+  save/best funguje, žádná hypotéza o root cause overshoot není
+  vyžadována.
+- **Implications:**
+  - **Production training potřebuje `--save-best` jako default** pro
+    všechny multi-step tréninky (raději noisy training s good final
+    artifact, než clean training s špatným save).
+  - **Empirické ablace (alpha.19+) jsou teď isolované od save-final
+    problému** — každý ablation run zachytí svůj nejlepší bod,
+    porovnatelný napříč setupy.
+  - **Pro identifikaci root cause overshoot:** LR sweep (1e-4 / 5e-5
+    / 1e-5), pak β1 sweep, pak batch size na Gaia. Schedule + tracker
+    + AdamW persistence infrastruktura zůstává — ablace ji ne mění.
+- **Ref:** vyřeš KI-009; navazuje na RN-003 (artefakt drží final
+  state, ne best snapshot — refutováno samotnou implementací RN-010);
+  empirické ablace pro RN-011+ čekají na spuštění
+
 ### RN-009 — LR warmup neeliminoval Phase 2 overshoot (refutace KI-008 hypotézy)
 
 - **Datum:** 2026-04-29
@@ -478,10 +528,11 @@ důvodu, ne mazáním_
 
 - **RN-001** — Alpha.13 reportovala jen best, final byl pravděpodobně vysoký · `confirmed`
 - **RN-002** — Loss má 4 fáze: rapid descent → overshoot → noisy recovery → slow descent · `open`
-- **RN-003** — Artefakt drží final, ne best snapshot · `confirmed`
+- **RN-003** — Artefakt drží final, ne best snapshot · `superseded` (RN-010, alpha.18)
 - **RN-004** — Stage 1 smoke: state tuning funguje, final 3.69 · `confirmed`
 - **RN-005** — REPL: model echoes persona, halucinuje fakta s loss=3.69 Core Memory · `open`
 - **RN-006** — Cross-domain resume: trained init snižuje Phase 2 overshoot magnitude · `refuted` (RN-008)
 - **RN-007** — Alpha.15 smoke validation kompletní: save/load/resume drát funguje · `confirmed`
 - **RN-008** — AdamW persistence drát funguje, ale Phase 2 overshoot zůstává (refutuje RN-006) · `confirmed`
 - **RN-009** — LR warmup neeliminoval overshoot (refutace KI-008 hypotézy) · `confirmed`
+- **RN-010** — Best snapshot tracker funguje (KI-009 deterministicky vyřešena) · `confirmed`

@@ -236,13 +236,62 @@ empirické ablace identifikují skutečný root cause.
       (final=6.5). Plus 3 from_snapshot edge case testy.
 - [x] 120 testů (+9), clippy clean.
 
-### Alpha.18 smoke validation (čeká na Ondrův spuštění)
-- [ ] Stage 1 s `--save-best` na 1.5B + CUDA, dataset
-      `/tmp/smoke_prog.txt`. Predikce: uložený stav má loss ~0.99
-      (best ze step ~110 v alpha.16 baseline), ne 3.69 (final).
-- [ ] Inspect output: `best_loss: 0.99` + verifikovat REPL kvalitu
-      (uložený stav by měl být kvalitativně lepší než alpha.16 final).
-- [ ] Pokud splněno, KI-009 → vyřešená.
+### Alpha.18 smoke validation ✅ (2026-04-29) — RN-010, KI-009 vyřešena
+- [x] Stage 1 s `--save-best` na 1.5B + CUDA. Trajektorie byte-identická
+      s alpha.16 (tracker pasivní), save line ukázala
+      `zdroj: best snapshot @ step 113`.
+- [x] Tensors v artefaktu patří ke step 113 (loss ~1.0), ne k final
+      step 156 (loss 3.69). Meta + tensors konečně ladí.
+- [x] KI-009 → vyřešená; RN-003 → superseded RN-010.
+
+### v0.5.0-alpha.19 (next) — Empirické LR ablace pro root cause overshoot
+
+**Cíl:** Po RN-008/009 (refutace KI-007/008 hypotéz) a RN-010 (KI-009
+vyřešena) máme **správnou infrastrukturu** ale **neznámý root cause**
+Phase 2 overshoot. Tři ablace bez kódových změn — jen runy s různým HP
++ `--save-best` pro fair comparison napříč setupy.
+
+#### Ablace A: LR sweep (priorita 1)
+
+Tři runy s `--save-best`, `/tmp/smoke_prog.txt`, jinak identické
+s alpha.16 setupem (seq_len=4, batch=1, grad_accum=1, clip=1):
+- [ ] LR=1e-4 (10× nižší) → `/tmp/abla_lr1e-4.safetensors`
+- [ ] LR=5e-5 (20× nižší) → `/tmp/abla_lr5e-5.safetensors`
+- [ ] LR=1e-5 (100× nižší) → `/tmp/abla_lr1e-5.safetensors`
+
+Pozorování:
+- Phase 2 overshoot magnitude per setup
+- best_loss per setup (fair: tracker zachytí nejlepší bod každého)
+- best_step (kdy v trajektorii nejlepší bod)
+- Wall time × kolik epoch budeme potřebovat pro stejnou kvalitu
+
+Predikce: pokud LR=1e-4 produkuje monotónní descent bez overshoot,
+KI-008 root cause je LR hodnota (nekorelovaná s warmup hypothesis).
+Pokud i 1e-5 stále má overshoot, root cause je jinde (β1, batch noise,
+landscape).
+
+#### Ablace B: β1 sweep (priorita 2, podmíněně)
+
+Pokud LR ablace neuspokojivá, Adam β1 sweep:
+- [ ] β1=0.5 (kratší momentum window)
+- [ ] β1=0.0 (efektivně RMSProp — žádné velocity buffer)
+
+Vyžaduje malou kódovou změnu — `--adam-beta1` CLI flag, nebo přímo
+test v `EleutheriaAdamW::set_params`.
+
+#### Ablace C: Batch size sweep (priorita 3, vyžaduje Gaia)
+
+Pokud A i B neuspokojivé, root cause je gradient noise z tiny batch:
+- [ ] batch_size=4 (na Gaia)
+- [ ] batch_size=16 (na Gaia)
+
+Vyžaduje větší VRAM, RTX 4050 6 GB nezvládne.
+
+### Po ablacích — production training s identifikovaným setupem
+- [ ] Identifikovaný HP setup (LR / β1 / batch) + `--save-best` →
+      production run na sofie identity packu na Gaia
+- [ ] Validace přes re-run retention benchmarku (SsmOnly pass-rate
+      musí vyskočit z 0 % — kritický důkaz Fáze 5)
 
 ### Empirické ablace (alpha.18+)
 

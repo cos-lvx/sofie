@@ -52,23 +52,26 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
   - **Schedule infrastruktura zůstává cenná** pro production training
     s nižším LR + větším batch (Gaia), kde její efekt může být skutečný.
 
-### KI-009 — Artefakt drží final state, ne best snapshot
+### KI-009 — Artefakt drží final state, ne best snapshot (vyřešeno alpha.18)
 
 - **Fáze:** 5 (alpha.14/.15)
-- **Dopad:** Střední — pro noisy training (KI-008) zahodíme nejlepší
-  state. Ve smoke best=0.85 ephemerálně dosažen, uložen state s loss=8.86.
-- **Kontext:** Mechanická vlastnost API (RN-003): `from_stack(&CoreMemoryStack)`
-  čte aktuální `Var.as_tensor()` v okamžiku volání. `train_core_memory`
-  volá save *po* posledním `optimizer.step()`, takže artefakt obsahuje
-  state z **posledního** stepu, ne z best step.
-- **Workaround:** zatím žádný; lze ručně checkpoint po N krocích, ale
-  není API support
-- **Řešení:** Dedikovaný patch (alpha.16+):
-  - `BestSnapshotTracker` v `train_core_memory` — drží shadow CPU buffer
-    Var values, aktualizuje při každém best loss improvement
-  - Save volá `from_snapshot()` místo `from_stack()` pokud snapshot
-    existuje
-  - Alternativa: periodic save každých N kroků s rolling best mark
+- **Stav:** **VYŘEŠENO v alpha.18.** `BestSnapshotTracker` v
+  `training/best_snapshot.rs` se shadow CPU F32 buffer per Var,
+  `update_if_better` lazy copy GPU→CPU jen při skutečném best loss
+  improvement. `CoreMemoryArtifact::from_snapshot` alternativní
+  konstruktor. CLI `--save-best` flag (default off pro
+  backwards-compatibility). Ověřeno alpha.18 smoke (RN-010): save
+  line ukázala `zdroj: best snapshot @ step 113` s
+  `best_loss=0.9965`. Tensors v souboru patří k tomuto bodu, ne
+  k final stavu (step 156 loss=3.69).
+- **Kontext (historický):** Mechanická vlastnost alpha.14–17 API
+  (RN-003): `from_stack(&CoreMemoryStack)` četla aktuální
+  `Var.as_tensor()` v okamžiku volání. Save volaný po posledním
+  `optimizer.step()` → artefakt obsahoval state z final stepu, ne
+  z best step. Pro noisy training (RN-008/009 trajektorie:
+  best=0.99 ephemerálně, final=3.69) byl rozdíl dramatický (~4×).
+- **Pro production:** `--save-best` doporučeno jako default pro
+  všechny multi-step tréninky.
 
 ### KI-011 — `train_core_memory` reportuje "loss nedecreased" pro úspěšný resume
 

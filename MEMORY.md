@@ -4,6 +4,43 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | alpha.18 smoke validation na 1.5B + CUDA — RN-010 PASSED
+
+Stage 1 fresh train s `--save-best` na `/tmp/smoke_prog.txt`. KI-009
+empiricky vyřešena.
+
+**Trajektorie byte-identická s alpha.16/RN-008** (jak očekáváno —
+tracker je pasivní pozorovatel):
+- step 20=1.6956, step 40=10.5793, step 156=3.6877
+- best_loss zachycen ve step 113 (mezi step 110 best=1.6956 a
+  step 120 best=0.9965)
+
+**Klíčový výstup save line:**
+```
+Core Memory uložena: /tmp/alpha18_cm.safetensors
+  (24 vrstev, 156 steps total, +156 this run,
+   best_loss=0.9965, zdroj: best snapshot @ step 113)
+AdamW state uložen: /tmp/alpha18_cm.optim.safetensors (step_t=156)
+```
+
+**Důkaz fixu:** alpha.16 stage 1 skončil identickou trajektorií (RN-008),
+ale save line tehdy ukázala `zdroj: final state` s tensors ze step
+156 (loss 3.69). Alpha.18 stejná trajektorie, ale tensors v souboru
+patří ke step 113 (loss ~1.0). Meta + tensors konečně ladí.
+
+**Status update:**
+- KI-009 → vyřešená alpha.18
+- RN-003 → superseded RN-010
+- RN-010 → confirmed
+
+**Co dál:** Empirické LR ablace pro identifikaci skutečného root cause
+overshoot (KI-008 hypotéza refutovaná, ale problém zůstává). 3 runy
+s `--save-best` a postupně nižším LR (1e-4, 5e-5, 1e-5) — best snapshot
+tracker zachytí nejlepší bod každého ablation runu, takže porovnání
+napříč setupy bude isolované od save-final problému.
+
+---
+
 ## 2026-04-29 | v0.5.0-alpha.18 — Best snapshot tracker (KI-009 fix)
 
 Po dvou refutovaných hypotézách (RN-008, RN-009) jsme pivotovali od
