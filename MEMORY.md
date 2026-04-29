@@ -4,6 +4,55 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | alpha.17 smoke validation na 1.5B + CUDA — RN-009
+
+Stage 1 fresh train s `--warmup-steps 30 --lr-min 1e-5` proti alpha.16
+baseline (no warmup). Druhá refutovaná hypotéza za sebou.
+
+**Schedule funguje per spec:** Log ukazuje LR ramp 0→1e-3 přes 30
+stepů (step 10 lr=3e-4 ✓, step 30 lr=9.67e-4 ✓), pak cosine decay
+1e-3→1e-5 (step 100 lr=4.31e-4, step 150 lr=1.75e-5 ✓). Numericky
+správné.
+
+**Phase 2 overshoot stejný, trajektorie horší:**
+| step | alpha.16 | alpha.17 |
+|------|----------|----------|
+| 40 (peak) | 10.58 | 10.78 |
+| final | 3.69 | **4.37** (+18 %) |
+| best | 0.9965 | 0.9754 |
+
+**Mechanismus refutace:** Adam `m`, `v` jsou EMA **gradientu**, ne
+**updatu**. Warmup snižuje update size (`lr * m_hat / sqrt(v_hat)`),
+ale **nemění strukturu moments**. Když LR doroste na 1e-3, gradient
+je stále strong → moments naskakují stejně → overshoot proběhne
+stejně. Cosine decay v Phase 4 zhoršil final — snížil step size, ale
+moments produkovaly oscilace → random walk s menšími kroky.
+
+**Druhá refutovaná hypotéza za sebou:**
+- KI-007 (Adam persistence) → drát funguje, overshoot zůstal (RN-008)
+- KI-008 (LR warmup) → schedule funguje, overshoot zůstal (RN-009)
+
+**Phase 2 overshoot je hluboce strukturní.** Skutečný root cause leží
+v jednom z těchto směrů:
+1. Loss landscape geometry (Mamba-2 + SSM saddle points / flat regions)
+2. Tiny batch (1) gradient noise → Adam moments si pamatují špatný směr
+3. High-vocab cross-entropy (65537) — drobný posun → drastická změna
+4. LR 1e-3 příliš vysoké pro tento setup — chce LR sweep
+
+**Pivot:** Místo dalších LR-based intervencí implementovat **KI-009
+best snapshot tracker** (deterministický fix, nezávisí na hypotéze
+o root cause). Pak ablation runs (LR sweep) na empirické zúžení root
+cause. Schedule infrastruktura zůstává v repu — bude užitečná pro
+production na Gaia s nižším LR + větším batch.
+
+**Záznamy:**
+- **RN-009** (nový) — LR warmup neeliminoval overshoot
+- **KI-008** — status update: hypotéza refutovaná, infrastruktura OK,
+  workaround = KI-009; root cause hledá ablation
+- **PLAN** — alpha.18 = KI-009 best snapshot tracker (priorita Vysoký)
+
+---
+
 ## 2026-04-29 | v0.5.0-alpha.17 — LR warmup + cosine decay (KI-008 fix)
 
 Po RN-008 vidíme, že KI-007 (AdamW persistence) byla správná infrastruktura

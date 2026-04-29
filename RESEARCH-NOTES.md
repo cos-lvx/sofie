@@ -387,6 +387,84 @@ Každá entry má strukturu:
   je teď definitivně dataset-driven, ne Adam-driven); KI-007 vyřešená
   per spec ale nezmírnila overshoot; KI-008 eskaluje priority
 
+### RN-009 — LR warmup neeliminoval Phase 2 overshoot (refutace KI-008 hypotézy)
+
+- **Datum:** 2026-04-29
+- **Verze:** alpha.17 (`78f9864`)
+- **Setup:** Stage 1 fresh train s `--warmup-steps 30 --lr-min 1e-5`
+  na `/tmp/smoke_prog.txt` (30 řádků programming pack, 156 chunks),
+  jinak identický s alpha.16 stage 1 (RN-008). LR ramp 0 → 1e-3 přes
+  prvních 30 stepů, pak cosine decay 1e-3 → 1e-5 přes zbývajících 126.
+- **Pozorování — schedule funguje per spec:** Log line ukazuje LR ramp
+  v reálném čase: step 10 lr=3.00e-4 (linear: 10/30 * 1e-3 ✓), step 30
+  lr=9.67e-4 (29/30, off-by-one v warmup formuli — viz Discussion),
+  step 40 lr=9.88e-4 (peak post-warmup), step 70 lr=7.84e-4, step 100
+  lr=4.31e-4, step 150 lr=1.75e-5 (cosine descent ✓).
+- **Pozorování — overshoot stejný, trajektorie horší:**
+  ```
+  step    | alpha.16 (no warmup) | alpha.17 (warmup=30, decay) | Δ
+  20      | 1.70                 | 1.79                        | +0.10
+  30      | 7.95                 | 8.42                        | +0.47
+  40      | 10.58 (peak)         | 10.78 (peak)                | +0.20
+  60      | 8.94                 | 9.16                        | +0.22
+  100     | 4.73                 | 5.05                        | +0.32
+  130     | 4.30                 | 4.78                        | +0.48
+  final   | 3.69                 | 4.37 (+18 %)                | +0.69
+  best    | 0.9965               | 0.9754                      | -0.02
+  ```
+- **Hypotéza (mechanismus refutace KI-008):** Adam moments `m`, `v`
+  jsou exponential moving averages **gradientu**, ne **updatu**.
+  Update size je `lr * m_hat / (sqrt(v_hat) + eps)`. Warmup snižuje
+  pouze finální update size, **nemění strukturu** `m`, `v`. Když LR
+  doroste na 1e-3 (step ~30), gradient je stále strong (Var hodnoty
+  se posunuly pouze méně, ale loss landscape geometry je stejná) →
+  moments naskakují stejně → overshoot proběhne stejně. Cosine decay
+  v Phase 4 zhoršil final (snížil step size, ale Adam moments produkovaly
+  oscilace → random walk s menšími kroky místo monotonní konvergence).
+- **Důsledky — Phase 2 overshoot je hluboce strukturní:**
+  - Refutuje druhou hypotézu po RN-008. Ani Adam state, ani LR
+    scheduling Phase 2 overshoot **nezeliminují**.
+  - Skutečný root cause leží jinde:
+    1. **Loss landscape geometry** — Mamba-2 + SSM v hluboké síti má
+       saddle points, deep loss basins, flat regions
+    2. **Tiny batch size (1) gradient noise** — stochastic gradient
+       může být úplně mimo true direction; Adam moments si pamatují
+       špatný směr
+    3. **High-vocab cross-entropy (65537)** — drobný posun parametrů
+       → drastická změna probability mass napříč 65k tokenů
+    4. **LR 1e-3 možná příliš vysoké** — chce LR sweep, ne warmup
+  - **Pivot pro alpha.18:** místo dalších LR-based intervencí
+    implementovat **KI-009 best snapshot tracker** (deterministicky
+    zachycuje nejlepší state přes celý běh) → noisy training pak
+    není fatální, save proběhne na best, ne final. Pak ablation runs
+    (LR sweep) na empirické zúžení root cause.
+- **Důsledky — schedule infrastruktura zůstává cenná:**
+  - LR scheduler (alpha.17) je **správně implementovaný**, čísla v logu
+    odpovídají specifikaci (HF konvence, cosine decay matematicky
+    správně).
+  - Pro production training na Gaia bude mít smysl s **menším LR**
+    (1e-4 nebo 5e-5) bez warmupu, případně s **větším batch size**
+    (Gaia má víc VRAM, můžeme batch 16+) — pak by warmup mohl mít
+    skutečný efekt (méně gradient noise → moments stabilnější).
+  - Cosine decay na LR=1e-5 floor je vhodný pro **single-domain long
+    training** (sofie identity, jeden korpus) — Adam pak konverguje
+    pomalu ale jistě.
+- **Otevřená otázka pro alpha.18+ ablace:**
+  - LR sweep: 1e-3 / 5e-4 / 1e-4 / 5e-5 / 1e-5 — najde minimální LR,
+    který produkuje monotónní descent
+  - β1 sweep: 0.9 / 0.5 / 0.0 (efektivně RMSProp) — ověří, jestli
+    velocity buffer je opravdu primary
+  - Batch size sweep (na Gaia): 1 / 4 / 16 — testuje gradient noise
+    jako root cause
+- **Status:** `confirmed` — single-run empirický nález, ale velmi jasný
+  signál (final +18 %, overshoot magnitude bez zmírnění). Refutuje
+  KI-008 hypotézu, ne celý KI-008 problém (overshoot existuje, řešení
+  je jinde).
+- **Ref:** refutuje KI-008 hypotézu; navazuje na RN-008 (druhá
+  refutovaná hypotéza za sebou — Adam state ani LR scheduling
+  neřeší overshoot); KI-008 status update pending; pivot k KI-009
+  jako alpha.18 prioritě
+
 ---
 
 ## Uzavřené (confirmed/refuted/superseded)
@@ -406,3 +484,4 @@ důvodu, ne mazáním_
 - **RN-006** — Cross-domain resume: trained init snižuje Phase 2 overshoot magnitude · `refuted` (RN-008)
 - **RN-007** — Alpha.15 smoke validation kompletní: save/load/resume drát funguje · `confirmed`
 - **RN-008** — AdamW persistence drát funguje, ale Phase 2 overshoot zůstává (refutuje RN-006) · `confirmed`
+- **RN-009** — LR warmup neeliminoval overshoot (refutace KI-008 hypotézy) · `confirmed`

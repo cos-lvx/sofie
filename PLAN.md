@@ -201,15 +201,45 @@
 - [x] **Pre-compute total steps** v `run_train` z dataset/epochs/batch/grad_accum.
 - [x] 111 testů (+12 v `lr_schedule`), clippy clean.
 
-### Alpha.17 smoke validation (čeká na Ondrův spuštění)
-- [ ] Stage 1 s `--warmup-steps 30 --lr-min 1e-5` na 1.5B + CUDA, dataset
-      `/tmp/smoke_prog.txt`. Predikce: monotónní trajektorie bez Phase 2
-      overshoot (proti alpha.16 stage 1 baseline z RN-008 step 40=10.58).
-- [ ] Pokud splněno, zaznamenat RN-009; KI-008 → vyřešená.
-- [ ] Pokud trajektorie stále vykazuje overshoot, alpha.18 ablace
-      (sweep warmup_steps, smaller LR, SGD baseline).
+### Alpha.17 smoke validation ✅ (2026-04-29) — RN-009 refutoval KI-008 hypotézu
+- [x] Stage 1 s `--warmup-steps 30 --lr-min 1e-5` na 1.5B + CUDA
+- [x] **Schedule funguje per spec** — log ukazuje správný ramp + decay
+- [x] **Phase 2 overshoot zůstal stejný** — step 40 alpha.17=10.78
+      vs alpha.16=10.58. Final loss horší o 18 % (3.69 → 4.37).
+- [x] Mechanismus refutace: Adam `m, v` jsou EMA gradientu, ne updatu —
+      warmup snižuje step size ale nemění strukturu moments.
+- [x] RN-009 zaznamenán; KI-008 status update; pivot k KI-009.
 
-### Quality patches (po alpha.17 validation, libovolné pořadí)
+### v0.5.0-alpha.18 (next) — KI-009 best snapshot tracker (top priority)
+
+**Důvod priority:** Po RN-008/009 víme, že overshoot je hluboce
+strukturní — ani Adam state ani LR scheduling ho neadresují. Místo
+dalších hypotéz o root cause potřebujeme **deterministický fix pro
+zachycení nejlepšího bodu trajektorie** navzdory noisy training. Pak
+empirické ablace identifikují skutečný root cause.
+
+- [ ] **`BestSnapshotTracker`** v `training/best_snapshot.rs` —
+      shadow CPU buffer per Var, aktualizuje se při každém best loss
+      improvement
+- [ ] Integrace v `train_core_memory` — po každém `optimizer.step()`
+      check `step_loss < best_loss` → snapshot Var hodnoty na CPU
+- [ ] `from_snapshot(...)` API v `CoreMemoryArtifact` — alternativa
+      k `from_stack(...)`, save volá `from_snapshot` pokud existuje
+      (a uživatel zapnul `--save-best`); jinak `from_stack` (final)
+- [ ] CLI `--save-best` flag — opt-in (default off, alpha.16 chování)
+- [ ] Round-trip test: noisy 50-step run, verify save je z best step,
+      ne z final
+- [ ] Aktualizace KI-009 status
+
+### Empirické ablace (alpha.18+)
+
+Po alpha.18 pak: ablation runs pro identifikaci skutečného root cause
+overshoot:
+- [ ] LR sweep — 1e-3 / 5e-4 / 1e-4 / 5e-5 / 1e-5
+- [ ] β1 sweep — 0.9 / 0.5 / 0.0 (efektivně RMSProp)
+- [ ] Batch size sweep (vyžaduje Gaia) — 1 / 4 / 16
+
+### Quality patches (po alpha.18 + ablace, libovolné pořadí)
 - [ ] **Ablation runs** (RN-002 driven) — LR sweep + warmup variants,
       identifikovat dominantní noise factor (LR / Adam / batch / dataset)
 - [ ] **KI-009** — best snapshot tracker (shadow CPU buffer) — RN-008

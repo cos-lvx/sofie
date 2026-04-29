@@ -10,13 +10,22 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
 
 ### KI-008 — Adam bez warmup overshoots, loss osciluje místo monotonního descentu
 
-- **Fáze:** 5 (alpha.15+; eskalováno alpha.16 po RN-008)
-- **Dopad:** **Vysoký** — po RN-008 (alpha.16 smoke validace) je toto
-  **jediná spolehlivá cesta** k eliminaci Phase 2 overshoot. Original
-  předpoklad, že KI-007 (AdamW persistence) ji vyřeší, byl **refutovaný**
-  — restored Adam state nezabrání overshoot, protože m, v se přepíší
-  novými cross-domain gradienty rychleji než stihnou pomoci. Vysoká
-  priorita pro alpha.17.
+- **Fáze:** 5 (alpha.15+; eskalováno alpha.16 po RN-008; **hypotéza
+  refutovaná alpha.17 po RN-009**)
+- **Dopad:** **Vysoký** — overshoot pořád existuje, ale **nelze ho
+  vyřešit ani Adam state persistence ani LR warmup**. Phase 2 overshoot
+  je hluboce strukturní (loss landscape geometry, tiny batch gradient
+  noise, high-vocab cross-entropy, případně LR=1e-3 příliš vysoké).
+- **Stav infrastruktury:**
+  - **Schedule kód v alpha.17** funguje per spec (`LrSchedule` modul,
+    HF konvence, 12 unit testů). Logging ukazuje správný ramp + decay.
+  - **Empiricky LR warmup neeliminoval overshoot** (RN-009): step 40
+    overshoot peak alpha.16=10.58 vs alpha.17=10.78. Final loss horší
+    o 18 % (3.69 → 4.37) — cosine decay ve Phase 4 snížil step size,
+    ale Adam moments pořád oscilovaly → random walk s menšími kroky.
+  - **Důvod:** Adam `m`, `v` jsou EMA gradientu, ne updatu. Warmup
+    snižuje update size, ale nemění strukturu moments. Když LR doroste,
+    moments naskakují stejně → overshoot proběhne stejně.
 - **Kontext:** Empiricky pozorováno 2026-04-29 ve smoke testu
   (RN-002, RN-006). Loss má 4-fázový pattern:
   1. Phase 1 (step 1-20): rapid descent na lokální minimum
@@ -26,12 +35,22 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
   4. Phase 4 (step 100+): slow descent s spike'y
   Best loss je ephemerálně dosažený někde v Phase 1 nebo začátku Phase 2,
   pak ztracen. Final loss reflektuje noisy stav, ne best.
-- **Workaround:** žádný akutní; smoke validace funguje navzdory tomuto
-- **Řešení:** Samostatný research patch (alpha.15.X nebo dedikovaný):
-  - Linear LR warmup 0 → target přes prvních ~50 kroků (odstraní Phase 2)
-  - LR cosine/linear decay v Phase 4 (stabilizuje convergenci)
-  - Větší effective batch (Gaia, ne RTX 4050) sníží Phase 3 noise
-  - Před implementací uděláme ablation runs (RN-006..00X)
+- **Workaround:** akceptovat noisy training, použít best snapshot
+  tracker (KI-009) — ulozí state na nejlepším bodu navzdory noisy
+  trajektorii. Smoke validace beztak proběhne, jen final loss není
+  reprezentativní.
+- **Řešení (revize 2026-04-29 po RN-009):**
+  - **Pivot:** KI-009 (best snapshot tracker) je teď top alpha.18
+    prioritou — deterministický fix, nezávisí na hypotéze o root cause.
+  - **Empirické ablace** pro identifikaci root cause:
+    1. **LR sweep** — 1e-3 / 5e-4 / 1e-4 / 5e-5 / 1e-5; najít minimální
+       LR pro monotónní descent
+    2. **β1 sweep** — 0.9 / 0.5 / 0.0 (RMSProp) — ověřit, jestli velocity
+       buffer je opravdu primární
+    3. **Batch size sweep** (vyžaduje Gaia) — 1 / 4 / 16; testuje
+       gradient noise jako root cause
+  - **Schedule infrastruktura zůstává cenná** pro production training
+    s nižším LR + větším batch (Gaia), kde její efekt může být skutečný.
 
 ### KI-009 — Artefakt drží final state, ne best snapshot
 
