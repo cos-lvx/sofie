@@ -94,21 +94,22 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
   `TrainCoreMemory{,Smoke,Multi}` subkomandy auto-attach přeskočit.
   Inference flow (REPL, single-shot) auto-attach pochopitelně potřebuje.
 
-### KI-007 — AdamW optimizer state se nepersistuje při resume
+### KI-007 — AdamW optimizer state se nepersistuje při resume (vyřešeno alpha.16)
 
 - **Fáze:** 5 (alpha.15)
-- **Dopad:** Střední — pro multi-stage tréninky má lehkou disrupci v
-  efektivním LR po resume (Adam bias correction kompenzuje warmup okno
-  ~prvních 100–500 kroků, ne dlouhodobou trajektorii momentum/velocity)
-- **Kontext:** `train-core-memory --resume-from <path>` načte init_states
-  přes `CoreMemoryArtifact::into_stack`, ale `AdamW::new` startuje
-  s prázdnými `m, v` moments. Pro krátký fine-tune nebo single-shot
-  resume (alpha.15 use case) je to akceptovatelné. Pro long training
-  s checkpoint/restart cyklem je to skutečná limitace.
-- **Workaround:** vyšší LR warmup po resume nebo nižší LR.
-- **Řešení:** alpha.16 — `core_memory.optim.safetensors` vedle
-  artefaktu, per-Var m + v moments + step counter, auto-load při
-  `--resume-from`.
+- **Stav:** **VYŘEŠENO v alpha.16** — `EleutheriaAdamW` (vlastní wrapper
+  s veřejným state) + `OptimizerArtifact` (sourozenec
+  `<core>.optim.safetensors`). Auto-load při `--resume-from` pokud
+  sourozenec existuje, auto-save při `--output`. Soft resume (sourozenec
+  chybí → prázdný Adam) zachován pro backwards-compatibility.
+- **Kontext:** `train-core-memory --resume-from <path>` v alpha.15 načetl
+  init_states přes `CoreMemoryArtifact::into_stack`, ale `AdamW::new`
+  startoval s prázdnými `m, v` moments. Adam bias correction kompenzoval
+  warmup okno (~prvních 100–500 kroků), ale velocity buffer naskakoval
+  znova → Phase 2 overshoot fáze (RN-002, RN-006).
+- **Fix:** Re-implementace AdamW algoritmu (`adamw_state.rs`,
+  byte-identická s Candle), `OptimizerArtifact` v `optim_io.rs`,
+  konvence `<core>.optim.safetensors`.
 
 ### KI-001 — Hardcoded cesty k modelům v CLI
 

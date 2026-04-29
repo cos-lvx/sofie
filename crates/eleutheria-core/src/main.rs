@@ -255,11 +255,12 @@ struct TrainCoreMemoryArgs {
     /// init_states. Counter `training_steps` v output metadatech je
     /// kumulativní (saved + tento run).
     ///
-    /// **Limitace (alpha.15):** AdamW optimizer state (m, v moments) se
-    /// **neperzistuje** — startuje od nuly. Adam bias correction
-    /// kompenzuje warmup okno (~první stovky kroků). Plný state
-    /// persistence je práce pro alpha.16. Pokud je tato limitace
-    /// problémem, použij větší LR warmup nebo nižší LR po resume.
+    /// **AdamW state (alpha.16+):** Pokud vedle artefaktu existuje
+    /// sourozenec `<resume-from>.optim.safetensors`, načte se i AdamW
+    /// state (m, v moments + step_t) přes `OptimizerArtifact`. Eliminuje
+    /// to overshoot fázi po resume (RN-006). Pokud sourozenec chybí,
+    /// proběhne soft resume — AdamW startuje s prázdným state (alpha.15
+    /// chování, backwards-compatible).
     #[arg(long)]
     resume_from: Option<PathBuf>,
 }
@@ -603,6 +604,7 @@ fn run_train_smoke_sweep(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result
 /// Načte textový korpus, tokenizuje, chunkuje, trénuje přes epochs.
 fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
     use eleutheria_core::CoreMemoryArtifact;
+    use eleutheria_core::training::optim_io::{OptimizerArtifact, sibling_path};
     use eleutheria_core::training::{CoreMemoryStack, TokenDataset, TrainingConfig};
 
     println!("\nCore Memory training — dataset: {}", ta.dataset.display());
@@ -628,8 +630,10 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
 
     // 3) Vytvoř trainable Core Memory stack — buď randn_small nebo resume.
     //    Při resume akumulujeme původní training_steps a notes do meta
-    //    output artefaktu, ať historie tréninku nezmizí.
-    let (stack, prior_meta) = if let Some(resume_path) = &ta.resume_from {
+    //    output artefaktu, ať historie tréninku nezmizí. Pokud existuje
+    //    sourozenec `<core>.optim.safetensors`, načteme i AdamW state
+    //    (alpha.16, KI-007) — eliminuje overshoot fázi po resume (RN-006).
+    let (stack, prior_meta, resume_optim) = if let Some(resume_path) = &ta.resume_from {
         println!("  resume z: {}", resume_path.display());
         let art = CoreMemoryArtifact::load(resume_path)
             .map_err(|e| anyhow!("CoreMemoryArtifact::load: {e}"))?;
@@ -645,13 +649,52 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
             prior.best_loss,
             prior.timestamp
         );
-        println!("  AdamW state: NEPERZISTOVÁN (alpha.15 limitace) — m, v startují od nuly\n");
-        (stack, Some(prior))
+
+        // Auto-discovery sourozeneckého .optim.safetensors (alpha.16).
+        let optim_path = sibling_path(resume_path);
+        let resume_optim = if optim_path.exists() {
+            match OptimizerArtifact::load(&optim_path) {
+                Ok(art) => match art.validate_config(sofie.config()) {
+                    Ok(()) => {
+                        println!(
+                            "  AdamW state: {} (step_t={})",
+                            optim_path.display(),
+                            art.meta().step_t,
+                        );
+                        Some(art)
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "  AdamW sourozenec na {} nekompatibilní s modelem: {} — pokračuji s prázdným Adamem",
+                            optim_path.display(),
+                            e
+                        );
+                        None
+                    }
+                },
+                Err(e) => {
+                    eprintln!(
+                        "  AdamW sourozenec na {} nelze načíst: {} — pokračuji s prázdným Adamem",
+                        optim_path.display(),
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            println!(
+                "  AdamW state: prázdný (sourozenec {} neexistuje, soft resume)",
+                optim_path.display()
+            );
+            None
+        };
+        println!();
+        (stack, Some(prior), resume_optim)
     } else {
         let stack = CoreMemoryStack::randn_small(sofie.config(), sofie.device_ref())
             .map_err(|e| anyhow!("CoreMemoryStack: {e}"))?;
         println!("  CoreMemory: {} vrstev, randn init\n", stack.num_layers());
-        (stack, None)
+        (stack, None, None)
     };
 
     // 4) Trénuj
@@ -674,7 +717,8 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         println!("  gradient checkpointing: ON (per-layer chunked backward)");
     }
 
-    let result = sofie.train_core_memory(&stack, &dataset, &config)?;
+    let (result, optimizer) =
+        sofie.train_core_memory(&stack, &dataset, &config, resume_optim.as_ref())?;
 
     println!("\nVýsledky tréninku:");
     println!("  total steps:           {}", result.total_steps);
@@ -740,6 +784,21 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
             cumulative_steps,
             result.total_steps,
             best_loss_combined.unwrap_or(f64::NAN)
+        );
+
+        // AdamW state vedle Core Memory (alpha.16, KI-007). Sourozenec
+        // <out_path>.optim.safetensors umožní příští `--resume-from` pokračovat
+        // bez warmup overshoot fáze.
+        let optim_path = sibling_path(out_path);
+        let optim_art = OptimizerArtifact::from_optimizer(&optimizer, sofie.config())
+            .map_err(|e| anyhow!("OptimizerArtifact build: {e}"))?;
+        optim_art
+            .save(&optim_path)
+            .map_err(|e| anyhow!("OptimizerArtifact save: {e}"))?;
+        println!(
+            "AdamW state uložen: {} (step_t={})",
+            optim_path.display(),
+            optimizer.step_t()
         );
     } else {
         println!("(Core Memory neuložena — bez --output flagu zůstává pouze v paměti.)");

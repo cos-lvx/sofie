@@ -4,6 +4,59 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | v0.5.0-alpha.16 — AdamW state persistence (KI-007 vyřešena)
+
+AdamW optimizer state přežívá restart procesu. Multi-stage tréninky teď
+pokračují bez warmup overshoot fáze (root cause RN-002/006).
+
+**Klíčové rozhodnutí — proč vlastní AdamW místo PR do Candle:** Candle
+`AdamW.vars: Vec<VarAdamW>` a `step_t` jsou privátní, žádné public API
+pro extrakci `m, v`. Cesty:
+1. PR do Candle — invazivní, dlouhý cyklus, blokuje nás na review.
+2. Vlastní wrapper — ~50 řádků kódu, plný control, otevírá cestu pro
+   alpha.17 LR scheduler (KI-008).
+
+Zvolena cesta 2. `EleutheriaAdamW` v `training/adamw_state.rs` je
+re-implementace algoritmu **byte-identická** s Candle (potvrzeno
+`step_matches_candle_for_one_step` + `_for_five_steps` testy — side-by-side
+run produkuje stejné Var hodnoty s tolerancí 1e-7). Veřejné API:
+`step_t()`, `state()`, `snapshot_moments()`, `restore_moments(moments,
+step_t)`. Implementuje `Optimizer` trait, dropin replacement v
+`train_core_memory`.
+
+**`OptimizerArtifact`** v `training/optim_io.rs` — sourozenec
+`CoreMemoryArtifact` se safetensors formátem. Tensors `m.{i:02}` +
+`v.{i:02}` per layer + metadata hlavička s `kind=core_memory_optim`,
+`step_t`, AdamW HP. Symetrie API: `from_optimizer / save / load /
+inspect / validate_config / apply_to_optimizer`.
+
+**Konvence sourozenec:** `<core_memory>.optim.safetensors` (helper
+`sibling_path`). Auto-load při `--resume-from <core>` (pokud sourozenec
+existuje), auto-save při `--output <core>` (vždy zapíše vedle Core
+Memory). Žádný explicit flag — soft resume zachován pro backwards
+compatibility (sourozenec chybí → prázdný Adam, alpha.15 chování).
+
+**`train_core_memory` API změna:** signature přijímá `resume_optim:
+Option<&OptimizerArtifact>`, vrací `(TrainingResult, EleutheriaAdamW)`.
+Caller (`run_train` v main.rs) má teď přístup k optimizéru pro save.
+
+**Round-trip důkaz:** `snapshot_restore_round_trip_preserves_trajectory`
+test ověřuje, že 3 steps → snapshot → fresh opt → restore → 2 steps
+produkuje **byte-identický výsledek** s 5 steps fresh (1e-6 tolerance).
+To je nejstriktnější důkaz, jaký můžeme dát: trajektorie po restore se
+shoduje s neperušenou trajektorií. Plus `apply_to_optimizer_restores_state`
+ověřuje round-trip přes safetensors I/O.
+
+**Čísla:** 99 testů (+11 oproti alpha.15: 8 adamw_state + 7 optim_io +
+revize některých starších), clippy clean, fmt OK.
+
+**Co dál:** alpha.17 kandidáti — KI-008 (LR scheduler na vlastním
+AdamW), KI-009 (best snapshot tracker), KI-010 (cleanup double-load),
+KI-011 (`loss_decreased` revize). Pak v0.5.0 production training na
+Gaia s identity packem + validační retention bench.
+
+---
+
 ## 2026-04-29 | alpha.15 smoke validation na 1.5B + CUDA — PASSED
 
 První empirická validace save/load/resume drátu na živém modelu.

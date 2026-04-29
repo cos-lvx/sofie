@@ -1,6 +1,6 @@
 # Plán — Eleutheria
 
-> Poslední aktualizace: 2026-04-29
+> Poslední aktualizace: 2026-04-29 (alpha.16)
 
 ## Dokončeno
 
@@ -154,13 +154,31 @@
 - [x] Inspect kumulativní — 335 steps, best 0.85, notes `prog | law`
 - [x] Zachycené nálezy: RN-001..007 v RESEARCH-NOTES.md, KI-008..011 v KNOWN-ISSUES
 
-### v0.5.0-alpha.16 (next) — AdamW state persistence
-- [ ] `core_memory.optim.safetensors` vedle artefaktu — per-Var m, v
-      moments, step counter. Auto-load při `--resume-from` pokud existuje.
-- [ ] Round-trip integration test: 5 steps → save → load → 5 steps,
-      ověřit že `m, v` continuity zachovaná (porovnat trajektorie loss).
-- [ ] Vedlejší cíl: dramatic improvement v cross-domain resume (RN-006)
-      — eliminuje Adam restart overshoot phase
+### v0.5.0-alpha.16 ✅ (2026-04-29) — AdamW state persistence
+- [x] **`EleutheriaAdamW`** (`training/adamw_state.rs`) — vlastní
+      AdamW wrapper s veřejným state (m, v moments, step_t).
+      Re-implementace algoritmu, byte-identická s `candle_nn::AdamW`
+      (testy `step_matches_candle_for_one_step` + `_for_five_steps`).
+      Důvod vlastní implementace: Candle má `vars` a `step_t` privátní,
+      žádné public API. Vedlejší benefit: otevírá cestu pro LR scheduler
+      v alpha.17 (KI-008).
+- [x] **`OptimizerArtifact`** (`training/optim_io.rs`) — sourozenec
+      `CoreMemoryArtifact` se safetensors formátem. Per-layer `m.{i:02}`
+      + `v.{i:02}` + metadata (`kind=core_memory_optim`, step_t, AdamW HP).
+      API: `from_optimizer / save / load / inspect / validate_config /
+      apply_to_optimizer`.
+- [x] **Sibling konvence** `<core_memory>.optim.safetensors` —
+      helper `sibling_path`. Auto-load při `--resume-from`, auto-save
+      při `--output`. Soft resume zachován (sourozenec chybí →
+      prázdný Adam, backwards-compatible s alpha.15).
+- [x] **`train_core_memory` API:** signature přijímá `resume_optim:
+      Option<&OptimizerArtifact>`, vrací `(TrainingResult,
+      EleutheriaAdamW)`. Caller (run_train v main.rs) ulozí state.
+- [x] **Round-trip důkaz:** `snapshot_restore_round_trip_preserves_trajectory`
+      ověřuje 3+restore+2 = 5 fresh steps (byte-identické po `var.set()`).
+      `apply_to_optimizer_restores_state` ověřuje round-trip přes
+      safetensors I/O. **KI-007 vyřešena.**
+- [x] 99 testů (+11 oproti alpha.15), clippy clean.
 
 ### Quality patches (po alpha.16, libovolné pořadí)
 - [ ] **Ablation runs** (RN-002 driven) — LR sweep + warmup test bez

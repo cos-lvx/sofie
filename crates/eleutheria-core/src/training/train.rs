@@ -16,12 +16,14 @@
 use anyhow::{Result, anyhow};
 use candle_core::Tensor;
 use candle_core::backprop::GradStore;
+use candle_nn::ParamsAdamW;
 use candle_nn::optim::Optimizer;
-use candle_nn::{AdamW, ParamsAdamW};
 
 use crate::Sofie;
+use crate::training::adamw_state::EleutheriaAdamW;
 use crate::training::core_memory::CoreMemoryStack;
 use crate::training::loss::cross_entropy_next_token;
+use crate::training::optim_io::OptimizerArtifact;
 
 /// Konfigurace training loopu.
 #[derive(Debug, Clone)]
@@ -90,10 +92,15 @@ impl Sofie {
     ///
     /// - `stack`: multi-layer trainable Core Memory (in/out — Vars se
     ///   modifikují in-place přes AdamW)
-    /// - `batches_per_epoch`: pre-shuffled batches pro každou epoch.
-    ///   Každý tensor je `[batch_size, seq_len]` U32. Volá se
-    ///   `TokenDataset::iter_batches` externě — loop jen konzumuje.
+    /// - `dataset`: tokenizovaný korpus, batches se shufflují per epoch
     /// - `config`: `TrainingConfig`
+    /// - `resume_optim`: volitelný `OptimizerArtifact` pro restore m, v,
+    ///   step_t (KI-007). Pokud `Some`, aplikuje se na čerstvý
+    ///   `EleutheriaAdamW` před prvním stepem. Pokud `None`, AdamW startuje
+    ///   s prázdným state (warmup overshoot, RN-006).
+    ///
+    /// Vrací `(TrainingResult, EleutheriaAdamW)` — caller (run_train) má
+    /// optimizer pro `OptimizerArtifact::from_optimizer` save.
     ///
     /// Volá se z `run_train` v main.rs po načtení datasetu a CoreMemoryStack.
     ///
@@ -105,7 +112,8 @@ impl Sofie {
         stack: &CoreMemoryStack,
         dataset: &crate::training::dataset::TokenDataset,
         config: &TrainingConfig,
-    ) -> Result<TrainingResult> {
+        resume_optim: Option<&OptimizerArtifact>,
+    ) -> Result<(TrainingResult, EleutheriaAdamW)> {
         let start = std::time::Instant::now();
 
         if config.epochs == 0 {
@@ -115,15 +123,27 @@ impl Sofie {
             return Err(anyhow!("grad_accum_steps musí být > 0"));
         }
 
-        // AdamW optimizer — vezme všech 24 Vars najednou.
+        // AdamW optimizer — vezme všech 24 Vars najednou. Vlastní wrapper
+        // s veřejným state pro persistence (alpha.16, KI-007).
         let vars = stack.vars_owned();
-        let mut opt = AdamW::new(
+        let mut opt = EleutheriaAdamW::new(
             vars.clone(),
             ParamsAdamW {
                 lr: config.learning_rate,
                 ..ParamsAdamW::default()
             },
         )?;
+        if let Some(art) = resume_optim {
+            art.apply_to_optimizer(&mut opt)
+                .map_err(|e| anyhow!("resume optimizer state: {e}"))?;
+            tracing::info!(
+                "AdamW state restored: step_t={}, prior HP lr={:.4e} β1={:.3} β2={:.4}",
+                opt.step_t(),
+                art.meta().lr,
+                art.meta().beta1,
+                art.meta().beta2,
+            );
+        }
 
         let mut total_steps = 0usize;
         let mut total_micro_batches = 0usize;
@@ -249,7 +269,7 @@ impl Sofie {
         let initial = initial_loss.unwrap_or(f64::NAN);
         let loss_decreased = last_loss.is_finite() && initial.is_finite() && last_loss < initial;
 
-        Ok(TrainingResult {
+        let result = TrainingResult {
             total_steps,
             total_micro_batches,
             initial_loss: initial,
@@ -258,7 +278,8 @@ impl Sofie {
             loss_per_epoch,
             wall_time_ms,
             loss_decreased,
-        })
+        };
+        Ok((result, opt))
     }
 
     /// Interní: jeden forward + backward na micro-batch. Vrací

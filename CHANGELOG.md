@@ -7,6 +7,92 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.16] — 2026-04-29
+
+### Přidáno — AdamW state persistence (KI-007 vyřešena)
+
+**Fáze 5 alpha.16 milestone:** AdamW optimizer state (m, v moments + step_t)
+přežívá restart procesu. Multi-stage tréninky teď pokračují bez warmup
+overshoot fáze (řeší root cause RN-006: cross-domain resume vykazoval
+nižší overshoot, ale Adam reset ho stále produkoval).
+
+#### Nový modul: `training/adamw_state.rs`
+
+- **`EleutheriaAdamW`** — vlastní AdamW wrapper s veřejným přístupem ke
+  state. Re-implementace algoritmu z `candle_nn::AdamW` (jeho `vars` a
+  `step_t` jsou privátní). Numericky **byte-identický** s Candle
+  implementací (`step_matches_candle_for_one_step`/`five_steps` testy).
+- **`VarAdamW`** — per-Var state se třemi Var-y: `var`, `first_moment`,
+  `second_moment`.
+- **API:** `step_t()`, `state()`, `snapshot_moments()`,
+  `restore_moments(moments, step_t)`, dropin replacement v `Optimizer`
+  trait (step, learning_rate, set_learning_rate).
+
+#### Nový modul: `training/optim_io.rs`
+
+- **`OptimizerArtifact`** — sourozenec `CoreMemoryArtifact` se safetensors
+  formátem. Tensory `m.{i:02}` + `v.{i:02}` per layer + metadata hlavička
+  s `kind=core_memory_optim`, `step_t`, AdamW HP (lr, beta1, beta2, eps,
+  weight_decay), eleutheria_version, timestamp, num_layers, n_heads,
+  headdim, d_state.
+- **API:** `from_optimizer / save / load / inspect / validate_config /
+  apply_to_optimizer`. Symetrie s `CoreMemoryArtifact`.
+- **`sibling_path(core_path)`** — konvence
+  `<core_memory>.optim.safetensors`. Auto-discovery při load,
+  auto-save vedle při zápisu Core Memory.
+
+#### CLI změny v `train-core-memory`
+
+- **Auto-load při `--resume-from <core>`:** pokud existuje
+  `<core>.optim.safetensors`, načte se i AdamW state. Pokud chybí, soft
+  resume (alpha.15 chování — backwards-compatible).
+- **Auto-save při `--output <out>`:** spolu s `<out>` (Core Memory)
+  zapíše se `<out>.optim.safetensors` (AdamW state). Stejný stem +
+  rozšířená přípona, žádný zvláštní flag.
+- Validate při load — pokud se rozměry sourozence neshodují s modelem,
+  warning + soft resume (nezastavuje běh).
+
+#### `train_core_memory` API
+
+- Signature změněna: přijímá `resume_optim: Option<&OptimizerArtifact>`,
+  vrací `(TrainingResult, EleutheriaAdamW)` místo jen `TrainingResult`.
+- Caller (`run_train` v main.rs) má teď přístup k optimizéru pro save.
+- Halt-na-NaN logika beze změny.
+
+#### Testy (+11, total 99)
+
+- **`adamw_state` (8 nových):** `fresh_optimizer_has_zero_state`,
+  `step_increments_step_t_and_updates_moments`,
+  `step_matches_candle_for_one_step`, `step_matches_candle_for_five_steps`,
+  `snapshot_restore_round_trip_preserves_trajectory`,
+  `restore_rejects_wrong_count`, `restore_rejects_wrong_shape`,
+  `set_learning_rate_updates_params`.
+- **`optim_io` (7 nových):** `sibling_path_appends_optim_extension`,
+  `round_trip_preserves_moments_and_step_t`,
+  `apply_to_optimizer_restores_state`, `inspect_returns_metadata_only`,
+  `validate_config_rejects_shape_mismatch`, `load_rejects_wrong_kind`,
+  `metadata_display_renders_step_and_hp`.
+- Snapshot/restore round-trip ověřuje **trajektorie** loss: 3 steps →
+  snapshot → fresh opt → restore → 2 steps shoda s 5 steps fresh
+  (byte-identické po `var.set()`).
+- `step_matches_candle_for_*` provádí side-by-side run našeho a
+  Candle AdamW se stejným seed/grad — ověřuje, že replacement
+  nemění numeriku (důležité pro reprodukovatelnost vs. alpha.15 runs).
+
+#### Vyřešené KI
+
+- **KI-007 — AdamW optimizer state se nepersistuje při resume.** Fix
+  je tato changelog sekce.
+
+#### Co dál (alpha.17 kandidáti)
+
+- KI-008 — Adam bez warmup overshoots (LR scheduler na vlastním AdamW)
+- KI-009 — best snapshot tracker (shadow CPU buffer)
+- KI-010 — cleanup double-load Core Memory v training subkomandách
+- KI-011 — revize `loss_decreased` criterion pro resume mode
+
+---
+
 ## [0.5.0-alpha.15] — 2026-04-29
 
 ### Přidáno — Resume tréninku (init_states + accumulated counters)

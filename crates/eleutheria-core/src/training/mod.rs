@@ -19,21 +19,25 @@
 //! - **v0.5.0:** tréning Core Memory na reálném datasetu (Sofie identity,
 //!   Bootstrap, Ondra context), validace přes re-run retention benchmarku.
 
+pub mod adamw_state;
 pub mod checkpoint;
 pub mod clip;
 pub mod core_memory;
 pub mod core_memory_io;
 pub mod dataset;
 pub mod loss;
+pub mod optim_io;
 pub mod repro;
 pub mod smoke;
 pub mod trace;
 pub mod train;
 
+pub use adamw_state::{EleutheriaAdamW, VarAdamW};
 pub use clip::clip_grad_norm;
 pub use core_memory::{CoreMemory, CoreMemoryStack};
 pub use core_memory_io::{CoreMemoryArtifact, CoreMemoryMeta};
 pub use dataset::TokenDataset;
 pub use loss::cross_entropy_next_token;
+pub use optim_io::{OptimizerArtifact, OptimizerMeta};
 pub use smoke::SmokeTrainResult;
 pub use train::{TrainingConfig, TrainingResult};
