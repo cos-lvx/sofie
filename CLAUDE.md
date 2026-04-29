@@ -206,6 +206,14 @@ Všechny tyto soubory se aktualizují po každém implementačním cyklu:
 | `KNOWN-ISSUES.md` | Známé problémy (KI-NNN) |
 | `SOLUTIONS.md` | Vyřešené problémy (SOL-NNN) |
 | `BUGS.md` | Aktivní bugy (BUG-NNN) |
+| `RESEARCH-NOTES.md` | Lab notebook — empirické nálezy, hypotézy (RN-NNN) |
+
+**Kdy psát do `RESEARCH-NOTES.md` vs ostatní:** RN-NNN je pro pozorování
+a hypotézy bez konkrétního fixu — empirické nálezy z experimentů,
+audit zjištění, otevřené výzkumné otázky. Konkrétní bugy jdou do BUGS,
+hotová řešení do SOLUTIONS, plánovaná práce do PLAN. RESEARCH-NOTES
+slouží jako *suroviny* pro budoucí research writeupy v Nexus
+`70-Eleutheria/Research/`.
 
 ---
 
