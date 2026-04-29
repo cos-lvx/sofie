@@ -4,6 +4,87 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | v0.5.0-alpha.13 — Sub-layer checkpointing + memory-leak fix
+
+**KI-005 vyřešena.** Multi-layer Core Memory training na RTX 4050 6 GB
+nyní funguje stabilně.
+
+Sub-layer chunking: `FalconH1Layer::forward_chunk_branches` (chunk α —
+pre_norm + parallel SSM/attention + residual1) + `forward_chunk_mlp`
+(chunk β — post_norm + SwiGLU MLP + residual2). Memory peak per layer =
+max(α, β) místo sum. `FalconH1Model::forward_layer_branches` /
+`forward_layer_mlp` per-layer-idx wrappery.
+
+**Klíčové zjištění:** alpha.12 OOM nebyla primárně intra-layer
+activations, ale **memory-leak v Phase 3 reverse sweep** — saved
+tensorů `Vec` drží Arc references na GPU storage po celou Phase 3,
+plus `final_grads` z Phase 2 `loss.backward` držel intermediate refs
+lm_head workspace (~700 MB skok). Fix: `mem::replace` saved tensorů
+progresivně po konzumaci, scope-bounded `final_grads` ihned po extract
+`grad_target`, `phase3_layer_reverse` helper s lokálními scope pro
+chunk α/β.
+
+**Diagnostika:** `ELEUTHERIA_CHECKPOINT_DEBUG=1` env probe — per-fáze
+`nvidia-smi` reading. Bez něj OOM vypadal jako hardware limit, s ním
+se ukázal lineární růst +64-96 MB per Phase 3 iterace = leak.
+
+**Empirie na CUDA RTX 4050 6 GB:** seq_len=4 batch=1 grad_accum=1 —
+~10 s/step (2× rychlejší než CPU 19 s/step), peak memory **5647 MB
+konstantní napříč 24 vrstev**, loss 5.45 → 1.83 best (pod random
+baseline ln(vocab)≈11.09).
+
+**Limit:** `grad_accum > 1` stále padá na 6 GB. Pro production
+training použij `--grad-accum 1` s zvýšeným batch_size. seq_len > 4
+také hraniční. Větší VRAM (alpha.14 / Gaia) odblokuje pohodlnější
+parametry.
+
+77 unit testů, clippy clean, zero warnings. SOL-013 dokumentuje
+progressive drop pattern v SOLUTIONS.md.
+
+**Co dál (alpha.14):** save/load trained Core Memory přes
+`StateCheckpoint` (filter `core_memory` už existuje), auto-load
+v `Sofie::load`, resume training (init_states + AdamW state + step_idx),
+production training run s law_pack + programming_pack.
+
+---
+
+## 2026-04-28 | v0.5.0-alpha.12 — Per-layer gradient checkpointing
+
+**KI-006 vyřešena.** Custom 3-fázový gradient checkpointing pro
+multi-layer Core Memory training. Synthetic loss trick (`sum(out *
+grad_target)`) propaguje libovolný tensor gradient skrz chunk hranici
+v Candle (které nemá `torch.utils.checkpoint` ekvivalent).
+
+Phase 1 — no-grad forward sweep s `Tensor::detach()`, save state
+snapshotů. Phase 2 — re-forward `final_norm + lm_head` s autograd,
+cross_entropy loss, `loss.backward()`. Phase 3 — reverse layer sweep:
+restore stavu, fresh `Var::from_tensor(saved_input)`, re-forward s
+autograd, synth.backward vrátí `d_init_state[i]` + `grad_target` pro
+chunk i-1.
+
+**FalconH1Model per-layer API:** `embed`, `forward_layer`, `final_head`,
+`num_layers`. `LayerState::snapshot` (deep copy 4 tensorů). CLI
+`--checkpoint`, `TrainingConfig::checkpoint`.
+
+**Empirie:** CPU 1.5B F32 seq_len=8 batch=1 grad_accum=2 — **19 s/step**
+(2.5× rychleji než alpha.11 baseline 48 s/step — menší memory traffic
+vyhrává nad 2× compute z re-forward). Loss 7.11 → 3.70 best, pod random
+baseline.
+
+**KI-005 částečně:** RTX 4050 6 GB stále OOM během Phase 3 — per-layer
+nebyla dost agresivní granulrita. Sub-layer chunking je práce pro
+alpha.13.
+
+77 unit testů (+1 nový — `checkpointed_forward_backward_runs_on_short_seq`),
+clippy clean. SOL-012 v SOLUTIONS.md dokumentuje synthetic loss trick.
+
+**Paralelní track 2026-04-28:** dataset prep — 67 reasoning chains (43
+NS judikátů + 24 KQS programming SOLUTIONS). 186k tokenů celkem,
+ratio law:programming 1.75:1. Pack: `dataset/training/`. Manifest +
+generátory v `dataset/scripts/`.
+
+---
+
 ## 2026-04-17 | v0.5.0-alpha.11 — Training loop + dataset loader
 
 Produkční variant single-iteration smoke testu. Core Memory se umí

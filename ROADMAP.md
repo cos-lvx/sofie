@@ -139,17 +139,30 @@ vzdálenostmi). Core Memory **musí být trénovaný** — potvrzeno empiricky.
   AdamW), CLI subkomanda. Ověřeno na 1.5B CPU F32: loss klesá pod
   random baseline (5.71 vs. 11.09, best 4.64). Training funkční,
   ale 48 s/step je pomalé — CUDA path potřebuje gradient checkpointing.
+- [x] **alpha.12** — Per-layer gradient checkpointing s synthetic loss
+  trickem (`training/checkpoint.rs`). Phase 1 no-grad forward sweep +
+  state snapshots, Phase 2 final chunk loss.backward, Phase 3 reverse
+  layer sweep. CLI `--checkpoint`. CPU 1.5B F32: 19 s/step (2.5×
+  rychleji než alpha.11 baseline 48 s/step) — KI-006 vyřešena.
+  CUDA RTX 4050 6 GB stále OOM (intra-layer activations).
+- [x] **alpha.13** — Sub-layer chunking + memory-leak fix.
+  `forward_chunk_branches` (chunk α: pre_norm + SSM + attention) +
+  `forward_chunk_mlp` (chunk β: post_norm + MLP). `mem::replace`
+  saved tensorů + scope-bounded backward. CUDA RTX 4050 6 GB nyní
+  stabilní 10 s/step, peak 5647 MB konstantní napříč Phase 3, loss
+  5.45 → 1.83 best — KI-005 vyřešena. Diagnostický probe
+  `ELEUTHERIA_CHECKPOINT_DEBUG=1`.
+- [x] **Programming + Law distillation v1** (paralelní track) — 67
+  reasoning chains v `dataset/reasoning_chains/{law,programming}/`,
+  186k tokenů. Pack: `dataset/training/{law,programming}_pack.txt`.
 
-**Implementace (alpha.12+):**
-- [ ] **alpha.12** — Gradient checkpointing (odblokovat CUDA) + Save/Load
-  trained Core Memory, AdamW (0.9, 0.95),
-  cosine/WSD schedule, grad clip 1.0, gradient accumulation
-- [ ] **alpha.12** — Save/Load trained Core Memory přes `StateCheckpoint`
-  (filter `core_memory` už existuje), auto-load v `Sofie::load`
-- [ ] **alpha.13** — Sofie identity dataset (persona seed + Nexus docs +
-  syntetická dialog generace)
-- [ ] **v0.5.0** — Production training run; **validace přes re-run
-  retention benchmarku** (SsmOnly pass-rate musí vyskočit z 0 %)
+**Implementace (alpha.14+):**
+- [ ] **alpha.14** — Save/Load trained Core Memory přes `StateCheckpoint`
+  (filter `core_memory` už existuje), auto-load v `Sofie::load`,
+  resume training (init_states + AdamW optimizer state + step_idx)
+- [ ] **v0.5.0** — Production training run na 1.5B s law/programming
+  pack; **validace přes re-run retention benchmarku** (SsmOnly
+  pass-rate musí vyskočit z 0 %)
 - [ ] **Episodic Memory** — echo embeddings z Falcon-H1 (self-retrieval
   bez separátního modelu), PostgreSQL + pgvector na Mnémosyné,
   `MemoryInjection` stage v pipeline
