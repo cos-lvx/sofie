@@ -10,9 +10,13 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
 
 ### KI-008 — Adam bez warmup overshoots, loss osciluje místo monotonního descentu
 
-- **Fáze:** 5 (alpha.15)
-- **Dopad:** Střední — limituje konvergenci na současné HP, viditelné
-  oscilace 1↔11 v loss trajektorii
+- **Fáze:** 5 (alpha.15+; eskalováno alpha.16 po RN-008)
+- **Dopad:** **Vysoký** — po RN-008 (alpha.16 smoke validace) je toto
+  **jediná spolehlivá cesta** k eliminaci Phase 2 overshoot. Original
+  předpoklad, že KI-007 (AdamW persistence) ji vyřeší, byl **refutovaný**
+  — restored Adam state nezabrání overshoot, protože m, v se přepíší
+  novými cross-domain gradienty rychleji než stihnou pomoci. Vysoká
+  priorita pro alpha.17.
 - **Kontext:** Empiricky pozorováno 2026-04-29 ve smoke testu
   (RN-002, RN-006). Loss má 4-fázový pattern:
   1. Phase 1 (step 1-20): rapid descent na lokální minimum
@@ -110,6 +114,15 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
 - **Fix:** Re-implementace AdamW algoritmu (`adamw_state.rs`,
   byte-identická s Candle), `OptimizerArtifact` v `optim_io.rs`,
   konvence `<core>.optim.safetensors`.
+- **Důležitá poznámka — empiricky validováno alpha.16 (RN-008):** Drát
+  funguje (m, v, step_t persistují, restore proběhne, trajektorie stage 1
+  byte-identická s alpha.15). **Ale predikovaný kvalitativní benefit
+  pro cross-domain resume nepozorován** — Phase 2 overshoot stage 2
+  zůstal stejné magnitude (8.18 alpha.15 vs 8.35 alpha.16). KI-007 řeší
+  KI-007, neřeší overshoot. Pro overshoot eliminaci viz KI-008.
+  AdamW persistence je stále cenná pro **single-domain long training**
+  (checkpoint/restart na stejném datasetu), kde Adam reset by byl
+  skutečná regrese.
 
 ### KI-001 — Hardcoded cesty k modelům v CLI
 

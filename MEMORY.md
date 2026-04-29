@@ -4,6 +4,56 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | alpha.16 smoke validation na 1.5B + CUDA — RN-008
+
+Replay alpha.15 stage 1+2 setupu s alpha.16 binárkou. Dva klíčové
+empirické nálezy:
+
+**1. Stage 1 byte-identický s alpha.15 (numerická reproducibility
+prokázána end-to-end):** EleutheriaAdamW step trajektorie se shoduje
+s alpha.15 candle_nn::AdamW na step 20 (1.6956 vs 1.70), step 40
+(10.5793 vs 10.58), step 100 (4.7305 vs 4.73), final (3.6877 vs 3.69),
+best (0.9965 v obou). Unit testy `step_matches_candle_for_*` slibovaly
+1e-7 toleranci, full-scale CUDA run to potvrdil. Žádný drift, žádná
+regrese. EleutheriaAdamW je dropin replacement.
+
+**2. Stage 2 — KI-007 fix neeliminoval Phase 2 overshoot
+(RN-006 refuted):** Restored Adam state měl podle RN-006 hypotézy
+zabránit overshoot fázi v cross-domain resume. **Nezabránil.** Stage 2
+trajektorie alpha.16 se shoduje s alpha.15 stage 2 (Δ < 0.2 napříč
+všemi kroky): step 40=8.35 vs 8.18, final=8.89 vs 8.86, best=0.8975
+vs 0.8535. Restored m, v se přepíší novými cross-domain gradienty
+rychleji než stihnou pomoci.
+
+**Co to znamená:**
+- Mechanika alpha.16 je správná, KI-007 vyřešena per spec (drát funguje,
+  step_t=156→335, save/load proběhne).
+- **Cross-domain curriculum nepřináší benefit z AdamW persistence** —
+  Phase 2 overshoot je dataset-driven, ne Adam-driven.
+- **KI-008 (LR warmup) eskaluje na top alpha.17 prioritu** — jediná
+  spolehlivá cesta k eliminaci overshoot.
+- Pro v0.5.0 production: raději **mix datasetů v jednom korpusu** + LR
+  warmup, ne curriculum.
+- AdamW persistence je stále cenná pro **single-domain long training**
+  (checkpoint/restart) kde by Adam reset byl skutečná regrese.
+
+**Záznamy:**
+- **RN-008** (nový) — AdamW persistence: drát funguje, overshoot zůstává
+- **RN-006** → status `refuted` (revize)
+- **RN-002** → status doplněn ("dataset-driven, ne Adam-driven")
+- **KI-008** → priorita Vysoký (eskalace)
+- **KI-007** → poznámka že drát funguje, ale overshoot to neřešilo
+
+**Co dál:**
+- alpha.17 prioritně KI-008 (LR warmup + cosine decay), ne původně
+  plánovaná posloupnost. AdamW persistence z alpha.16 zůstává jako
+  infrastruktura, kterou warmup potřebuje (LR scheduler na vlastním
+  AdamW je triviální — `set_learning_rate` už máme).
+- Pak ablation runs (RN-002 driven, KI-009 best snapshot).
+- Pak v0.5.0 production na Gaia s identity packem.
+
+---
+
 ## 2026-04-29 | v0.5.0-alpha.16 — AdamW state persistence (KI-007 vyřešena)
 
 AdamW optimizer state přežívá restart procesu. Multi-stage tréninky teď

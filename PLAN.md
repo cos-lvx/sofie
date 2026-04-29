@@ -180,12 +180,28 @@
       safetensors I/O. **KI-007 vyřešena.**
 - [x] 99 testů (+11 oproti alpha.15), clippy clean.
 
-### Quality patches (po alpha.16, libovolné pořadí)
-- [ ] **Ablation runs** (RN-002 driven) — LR sweep + warmup test bez
-      kódových změn, RN-006..00X entries, identifikovat dominantní
-      noise factor (LR / Adam / batch / dataset)
-- [ ] **KI-008** — LR warmup + cosine decay (alpha.15.X po ablaci)
-- [ ] **KI-009** — best snapshot tracker (shadow CPU buffer)
+### Alpha.16 smoke validation ✅ (2026-04-29)
+- [x] Stage 1 alpha.16 byte-identický s alpha.15 RN-002 (EleutheriaAdamW
+      numerická reproducibility prokázaná end-to-end, ne jen v unit testech)
+- [x] Stage 2 alpha.16 trajektorie se shoduje s alpha.15 stage 2 RN-006
+      (Δ < 0.2 napříč všemi kroky) → **RN-006 refuted**, AdamW persistence
+      drát funguje per spec, ale Phase 2 overshoot zůstává
+- [x] RN-008 zaznamenán; KI-008 eskalována na Vysoký dopad
+
+### v0.5.0-alpha.17 (next) — LR warmup + cosine decay (KI-008, top priority)
+- [ ] LR scheduler na `EleutheriaAdamW` (`set_learning_rate` API už máme)
+      — linear warmup 0 → target přes ~50 stepů
+- [ ] Cosine decay v Phase 4 (target → 0 přes zbývající steps)
+- [ ] CLI flagy: `--warmup-steps N`, `--cosine-decay`
+- [ ] Smoke validace stage 1: trajektorie monotónní (žádný Phase 2 overshoot)
+- [ ] Pokud monotónní, fix overshoot je za námi — production training
+      na Gaia může jet bez disrupcí
+
+### Quality patches (po alpha.17, libovolné pořadí)
+- [ ] **Ablation runs** (RN-002 driven) — LR sweep + warmup variants,
+      identifikovat dominantní noise factor (LR / Adam / batch / dataset)
+- [ ] **KI-009** — best snapshot tracker (shadow CPU buffer) — RN-008
+      ukázalo, že best=0.9 je zahozený stejně jako alpha.15 (RN-003)
 - [ ] **KI-010** — cleanup double-load v training subkomandách
 - [ ] **KI-011** — revize `loss_decreased` criterion pro resume mode
 

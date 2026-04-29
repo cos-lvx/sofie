@@ -105,9 +105,13 @@ Každá entry má strukturu:
   Tři faktory pořád platí (tiny batch, Adam velocity amplifikace,
   členitý loss landscape), ale dohromady neprodukují *random walk* —
   produkují **delayed convergence with overshoot phase**.
-- **Status:** `open` — Phase 1-4 model je popisný, ne mechanistický.
-  Otázka: byla by trajektorie monotonní s LR warmup? S menším LR? Bez
-  Adamu (SGD)? Toto chce ablaci.
+- **Status:** `open` (refined po RN-008) — overshoot je **dataset-driven,
+  ne Adam-driven**. RN-008 prokázalo, že restored Adam state nezabrání
+  Phase 2 overshoot v stage 2 (cross-domain resume). Phase 1-4 model
+  zůstává popisný, ale teď víme: vyřešení vyžaduje LR warmup (KI-008),
+  ne Adam state persistence (KI-007 vyřešená, ale neúčinná na overshoot).
+  Otevřená otázka: byla by trajektorie monotonní s LR warmup? S menším
+  LR? Bez Adamu (SGD)? Toto chce ablaci v alpha.17+.
 - **Implications:**
   - Final loss 3.69 je *použitelný* (3× lepší než random baseline,
     state tuning prokazatelně funguje)
@@ -211,16 +215,25 @@ Každá entry má strukturu:
   - **Dataset switch + Adam reset** přesto produkuje noisy oscilaci
     (Phase 3-4) jako ve fresh runu — KI-007 (AdamW persistence) by ji
     dramaticky redukoval
-- **Status:** `confirmed` (empirické pozorování); `open` (hypotéza
-  o meta-struktuře neověřená — chce SsmOnly retention bench na
-  programming-tématech vs. law-tématech)
-- **Implications:**
+- **Status:** `refuted` (revize 2026-04-29 alpha.16) — viz RN-008.
+  Alpha.16 stage 2 s **restored Adam state** vykazuje téměř identickou
+  trajektorii jako alpha.15 stage 2 s prázdným Adamem (Δ < 0.2 na všech
+  krocích). Phase 2 overshoot je tedy způsobený dataset shiftem, ne
+  Adam restartem — restored m, v se přepíší stejně rychle jako z nul,
+  protože gradient pro stage 2 distribuci je v jiném směru.
+- **Implications (po refutaci):**
   - Multi-stage training curriculum (Sofie identity → law → programming)
-    je životaschopná cesta na úrovni mechaniky
-  - Pro production: vystaba pevnější warmup mechanismy než Adam reset
-  - Alpha.16 AdamW persistence by **dramaticky** zlepšil cross-domain
-    resume (žádný overshoot phase znova)
-- **Ref:** RN-002, RN-004, KI-007 (AdamW persistence)
+    je životaschopná **mechanicky**, ale **ne kvalitativně lepší** než
+    fresh trainings na sloučeném datasetu. Pro production raději mix
+    všeho v jednom epochu, ne curriculum.
+  - **KI-008 (LR warmup) je teď jediná spolehlivá cesta** k eliminaci
+    overshoot — eskaluje na top alpha.17 prioritu.
+  - AdamW persistence je stále cenná pro **single-domain long training**
+    (checkpoint/restart cyklus na stejném datasetu) — tam Adam restart
+    by byl skutečná regrese. Cross-domain switch (smoke setup) její
+    benefit nepotvrdil.
+- **Ref:** RN-002, RN-004, RN-008, KI-007 (vyřešená alpha.16, ale
+  nevyřešila overshoot per se), KI-008 (now top priority)
 
 ### RN-005 — REPL s trénovaným Core Memory: model ozvěnově opakuje persona, halucinuje fakta
 
@@ -306,6 +319,74 @@ Každá entry má strukturu:
 - **Ref:** RN-001/002/003; navazuje na alpha.13 milestone; pre-baseline
   pro v0.5.0 production run
 
+### RN-008 — AdamW persistence: drát funguje, ale Phase 2 overshoot zůstává
+
+- **Datum:** 2026-04-29
+- **Verze:** alpha.16 (`d67cbb7`)
+- **Setup:** Replay alpha.15 stage 1+2 smoke setupu s alpha.16 binárkou.
+  - Stage 1: `/tmp/smoke_prog.txt` 30 řádků, fresh train, 156 steps,
+    `--output /tmp/alpha16_cm.safetensors`. Vyprodukovala i sourozence
+    `/tmp/alpha16_cm.optim.safetensors` (step_t=156).
+  - Stage 2: `/tmp/smoke_law.txt`, `--resume-from /tmp/alpha16_cm.safetensors`,
+    sourozenec auto-loaded → `AdamW state restored: step_t=156` v
+    tracing logu. 179 steps. Identické HP s alpha.15.
+- **Pozorování — Stage 1 byte-identické s alpha.15 RN-002:**
+  ```
+  step    | alpha.15 | alpha.16
+  20      | 1.70     | 1.6956
+  40      | 10.58    | 10.5793
+  60      | 8.94     | 8.9421
+  100     | 4.73     | 4.7305
+  156     | 3.69     | 3.6877
+  best    | 0.9965   | 0.9965
+  ```
+  EleutheriaAdamW je numericky identický s candle_nn::AdamW na full-scale
+  runu (potvrzeno už unit testy `step_matches_candle_for_*`, ale tohle je
+  end-to-end důkaz na 1.5B + CUDA).
+- **Pozorování — Stage 2 NENÍ rozdíl od alpha.15 navzdory restored Adam:**
+  ```
+  step    | alpha.15 (Adam reset) | alpha.16 (Adam restored)
+  initial | 7.13                  | 7.1346
+  20      | 5.15                  | 5.29
+  40      | 8.18 (overshoot)      | 8.35 (overshoot)
+  60      | 5.57                  | 5.52
+  100     | 5.18                  | 5.21
+  140     | 5.03                  | 5.08
+  final   | 8.86                  | 8.89
+  best    | 0.8535                | 0.8975
+  ```
+  **Δ < 0.2 napříč všemi měřenými kroky.** Phase 2 overshoot stále
+  existuje, magnitude prakticky identický (8.18 vs 8.35).
+- **Hypotéza (revize):** RN-006 očekávala, že restored velocity buffer
+  zabrání overshoot fázi. **Nezabránil.** Mechanismus, který za to může:
+  - Adam moments m, v jsou exponential moving averages s β1=0.9, β2=0.999
+  - Stage 1 produkoval m, v reflektující programming gradients
+  - Stage 2 spustí law gradients **v jiném směru** (cross-domain shift)
+  - První ~10 stepů přepíše m (β1=0.9 → 65 % přepsáno za 10 stepů)
+  - Po step ~10 je m efektivně z law domény, jako by startovalo z nul
+  - Velocity v převažuje pomaleji (β2=0.999), ale magnitude g.sqr()
+    je dominantní → stejná Phase 2 overshoot pattern
+- **Důsledky:**
+  - **AdamW persistence (KI-007 alpha.16) drát funguje** — mechanika
+    je správná, save/load/restore prokazatelně proběhne. Pro
+    **single-domain long training** (checkpoint/restart na stejném
+    datasetu) zůstává cenná: tam by Adam reset byl skutečná regrese.
+  - **Pro cross-domain curriculum nepřináší benefit.** Multi-stage
+    training (sofie identity → law → programming) bude mít stejný
+    overshoot na každé hranici jako fresh runs.
+  - **KI-008 (LR warmup) je teď jediná spolehlivá cesta** k eliminaci
+    overshoot. Eskalace na top alpha.17 prioritu.
+  - Pro v0.5.0 production: raději **mix všech datasetů v jednom korpusu**
+    + LR warmup na začátku, místo curriculum.
+  - Stage 2 best=0.8975 (alpha.16) vs 0.8535 (alpha.15) → **alpha.16
+    marginálně horší o ~5%** — pravděpodobně single-run noise (KI-009
+    best snapshot tracker by to vyřešil), ne strukturní efekt.
+- **Status:** `confirmed` — robustní empirický nález, dva runy
+  s identickými HP a daty. Refutuje RN-006 hypotézu.
+- **Ref:** refutuje RN-006; navazuje na RN-002 (4-phase trajektorie
+  je teď definitivně dataset-driven, ne Adam-driven); KI-007 vyřešená
+  per spec ale nezmírnila overshoot; KI-008 eskaluje priority
+
 ---
 
 ## Uzavřené (confirmed/refuted/superseded)
@@ -322,5 +403,6 @@ důvodu, ne mazáním_
 - **RN-003** — Artefakt drží final, ne best snapshot · `confirmed`
 - **RN-004** — Stage 1 smoke: state tuning funguje, final 3.69 · `confirmed`
 - **RN-005** — REPL: model echoes persona, halucinuje fakta s loss=3.69 Core Memory · `open`
-- **RN-006** — Cross-domain resume: trained init snižuje Phase 2 overshoot magnitude · `confirmed`/`open`
+- **RN-006** — Cross-domain resume: trained init snižuje Phase 2 overshoot magnitude · `refuted` (RN-008)
 - **RN-007** — Alpha.15 smoke validation kompletní: save/load/resume drát funguje · `confirmed`
+- **RN-008** — AdamW persistence drát funguje, ale Phase 2 overshoot zůstává (refutuje RN-006) · `confirmed`
