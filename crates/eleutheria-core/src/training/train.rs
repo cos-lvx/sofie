@@ -23,6 +23,7 @@ use crate::Sofie;
 use crate::training::adamw_state::EleutheriaAdamW;
 use crate::training::core_memory::CoreMemoryStack;
 use crate::training::loss::cross_entropy_next_token;
+use crate::training::lr_schedule::LrSchedule;
 use crate::training::optim_io::OptimizerArtifact;
 
 /// Konfigurace training loopu.
@@ -48,6 +49,12 @@ pub struct TrainingConfig {
     /// Sníží peak memory cca 10–20× za cenu ~2× delšího kroku — určeno
     /// pro CUDA, kde plný 24-vrstvý backward graf nesedí do VRAM (KI-005).
     pub checkpoint: bool,
+    /// Volitelný LR schedule (alpha.17, KI-008). Pokud `Some`, volá se
+    /// `opt.set_learning_rate(schedule.lr_at_step(step))` před každým
+    /// `optimizer.step()`. Pokud `None`, drží se `learning_rate` po celý
+    /// běh (alpha.16 chování). Per-run step counter — resume run prochází
+    /// warmupem znovu (záměrně).
+    pub lr_schedule: Option<LrSchedule>,
 }
 
 impl Default for TrainingConfig {
@@ -61,6 +68,7 @@ impl Default for TrainingConfig {
             shuffle_seed: 0,
             log_every_n_steps: 10,
             checkpoint: false,
+            lr_schedule: None,
         }
     }
 }
@@ -211,6 +219,13 @@ impl Sofie {
                         )?;
                     }
 
+                    // LR schedule (alpha.17): set lr před step. Per-run
+                    // counter = `total_steps` (před inkrementací = aktuální
+                    // step index, 0-indexovaný).
+                    if let Some(schedule) = &config.lr_schedule {
+                        opt.set_learning_rate(schedule.lr_at_step(total_steps));
+                    }
+
                     opt.step(&final_grads)?;
                     total_steps += 1;
                     let step_loss = accum_loss_sum / accum_count as f64;
@@ -221,12 +236,13 @@ impl Sofie {
 
                     if total_steps.is_multiple_of(config.log_every_n_steps) {
                         tracing::info!(
-                            "step {} (epoch {}, micro-batch {}): loss={:.4}, best={:.4}",
+                            "step {} (epoch {}, micro-batch {}): loss={:.4}, best={:.4}, lr={:.4e}",
                             total_steps,
                             epoch,
                             total_micro_batches,
                             step_loss,
-                            best_loss
+                            best_loss,
+                            opt.learning_rate(),
                         );
                     }
 
@@ -245,6 +261,9 @@ impl Sofie {
                 if let Some(max_norm) = config.grad_clip {
                     let var_refs: Vec<&candle_core::Var> = vars.iter().collect();
                     crate::training::clip::clip_grad_norm(&mut final_grads, &var_refs, max_norm)?;
+                }
+                if let Some(schedule) = &config.lr_schedule {
+                    opt.set_learning_rate(schedule.lr_at_step(total_steps));
                 }
                 opt.step(&final_grads)?;
                 total_steps += 1;

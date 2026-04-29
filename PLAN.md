@@ -188,16 +188,28 @@
       drát funguje per spec, ale Phase 2 overshoot zůstává
 - [x] RN-008 zaznamenán; KI-008 eskalována na Vysoký dopad
 
-### v0.5.0-alpha.17 (next) — LR warmup + cosine decay (KI-008, top priority)
-- [ ] LR scheduler na `EleutheriaAdamW` (`set_learning_rate` API už máme)
-      — linear warmup 0 → target přes ~50 stepů
-- [ ] Cosine decay v Phase 4 (target → 0 přes zbývající steps)
-- [ ] CLI flagy: `--warmup-steps N`, `--cosine-decay`
-- [ ] Smoke validace stage 1: trajektorie monotónní (žádný Phase 2 overshoot)
-- [ ] Pokud monotónní, fix overshoot je za námi — production training
-      na Gaia může jet bez disrupcí
+### v0.5.0-alpha.17 ✅ (2026-04-29) — LR warmup + cosine decay (KI-008 fix)
+- [x] **`training/lr_schedule.rs`** — `LrSchedule` (Constant | Warmup |
+      WarmupCosine), `lr_at_step(step)` per-run counter, HF konvence
+      (step 0 = 0, lineární ramp, cosine decay).
+- [x] **`TrainingConfig.lr_schedule: Option<LrSchedule>`** — None =
+      alpha.16 chování (backwards-compatible).
+- [x] **Wiring v `train_core_memory`** — `set_learning_rate` před každým
+      `opt.step()` (i pro tail step). Logging ukazuje aktuální LR.
+- [x] **CLI flagy:** `--warmup-steps N`, `--lr-min FLOAT`. Default 0/0 =
+      konstantní LR.
+- [x] **Pre-compute total steps** v `run_train` z dataset/epochs/batch/grad_accum.
+- [x] 111 testů (+12 v `lr_schedule`), clippy clean.
 
-### Quality patches (po alpha.17, libovolné pořadí)
+### Alpha.17 smoke validation (čeká na Ondrův spuštění)
+- [ ] Stage 1 s `--warmup-steps 30 --lr-min 1e-5` na 1.5B + CUDA, dataset
+      `/tmp/smoke_prog.txt`. Predikce: monotónní trajektorie bez Phase 2
+      overshoot (proti alpha.16 stage 1 baseline z RN-008 step 40=10.58).
+- [ ] Pokud splněno, zaznamenat RN-009; KI-008 → vyřešená.
+- [ ] Pokud trajektorie stále vykazuje overshoot, alpha.18 ablace
+      (sweep warmup_steps, smaller LR, SGD baseline).
+
+### Quality patches (po alpha.17 validation, libovolné pořadí)
 - [ ] **Ablation runs** (RN-002 driven) — LR sweep + warmup variants,
       identifikovat dominantní noise factor (LR / Adam / batch / dataset)
 - [ ] **KI-009** — best snapshot tracker (shadow CPU buffer) — RN-008

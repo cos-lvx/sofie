@@ -257,12 +257,28 @@ struct TrainCoreMemoryArgs {
     ///
     /// **AdamW state (alpha.16+):** Pokud vedle artefaktu existuje
     /// sourozenec `<resume-from>.optim.safetensors`, načte se i AdamW
-    /// state (m, v moments + step_t) přes `OptimizerArtifact`. Eliminuje
-    /// to overshoot fázi po resume (RN-006). Pokud sourozenec chybí,
-    /// proběhne soft resume — AdamW startuje s prázdným state (alpha.15
-    /// chování, backwards-compatible).
+    /// state (m, v moments + step_t) přes `OptimizerArtifact`. RN-008
+    /// ukázalo, že to **nezabraňuje** Phase 2 overshoot v cross-domain
+    /// resume — overshoot je dataset-driven. Pokud sourozenec chybí,
+    /// proběhne soft resume.
     #[arg(long)]
     resume_from: Option<PathBuf>,
+
+    /// **LR warmup (alpha.17, KI-008).** Lineární ramp `0 → learning_rate`
+    /// přes prvních N optimizer stepů. Eliminuje Phase 2 overshoot
+    /// (RN-002). Default 0 = žádný warmup (alpha.16 chování).
+    /// Doporučeno: 50 pro tiny smoke runs, 5 % `total_steps` pro
+    /// produkční tréninky. Per-run counter — resume run prochází
+    /// warmupem znovu (záměrně).
+    #[arg(long, default_value_t = 0)]
+    warmup_steps: usize,
+
+    /// **Cosine decay floor (alpha.17, KI-008).** Pokud > 0, LR po
+    /// warmupu cosine-decayuje z `learning_rate` na `lr_min` přes
+    /// zbývající steps. Default 0 = žádné decay (po warmupu konstantní LR).
+    /// Doporučeno: 1e-5 pro produkční tréninky pro jemnější závěr.
+    #[arg(long, default_value_t = 0.0)]
+    lr_min: f64,
 }
 
 /// Argumenty pro `train-core-memory-multi` subkomand — multi-layer smoke
@@ -605,7 +621,7 @@ fn run_train_smoke_sweep(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result
 fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
     use eleutheria_core::CoreMemoryArtifact;
     use eleutheria_core::training::optim_io::{OptimizerArtifact, sibling_path};
-    use eleutheria_core::training::{CoreMemoryStack, TokenDataset, TrainingConfig};
+    use eleutheria_core::training::{CoreMemoryStack, LrSchedule, TokenDataset, TrainingConfig};
 
     println!("\nCore Memory training — dataset: {}", ta.dataset.display());
     println!(
@@ -703,6 +719,33 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
     } else {
         None
     };
+    // Pre-compute total optimizer steps pro LR schedule. Per-epoch:
+    // micro-batches = ceil(num_chunks / batch_size), optimizer steps =
+    // ceil(micro-batches / grad_accum). Při tail micro-batchu (méně než
+    // grad_accum, viz train.rs:249) se přidá +1 step na konci epoch,
+    // pokud něco zbývá. Konzervativně počítáme bez tailu — total_steps
+    // je horní odhad pro warmup prvků; cosine decay si saharuje
+    // clampem v lr_at_step.
+    let micro_batches_per_epoch = dataset.num_chunks().div_ceil(ta.batch_size);
+    let optimizer_steps_per_epoch = micro_batches_per_epoch.div_ceil(ta.grad_accum);
+    let total_steps = ta.epochs * optimizer_steps_per_epoch;
+
+    // LR schedule (alpha.17). None → konstantní LR (alpha.16 chování).
+    let lr_schedule = if ta.warmup_steps > 0 || ta.lr_min > 0.0 {
+        let s = if ta.lr_min > 0.0 {
+            LrSchedule::warmup_cosine(ta.learning_rate, ta.warmup_steps, total_steps, ta.lr_min)
+        } else {
+            LrSchedule::warmup(ta.learning_rate, ta.warmup_steps)
+        };
+        println!(
+            "  LR schedule: warmup={} stepů, total={} stepů, target={:.4e}, min={:.4e}, kind={:?}",
+            ta.warmup_steps, total_steps, ta.learning_rate, ta.lr_min, s.kind,
+        );
+        Some(s)
+    } else {
+        None
+    };
+
     let config = TrainingConfig {
         epochs: ta.epochs,
         batch_size: ta.batch_size,
@@ -712,6 +755,7 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         shuffle_seed: ta.seed,
         log_every_n_steps: ta.log_every,
         checkpoint: ta.checkpoint,
+        lr_schedule,
     };
     if ta.checkpoint {
         println!("  gradient checkpointing: ON (per-layer chunked backward)");

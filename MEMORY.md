@@ -4,6 +4,53 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | v0.5.0-alpha.17 — LR warmup + cosine decay (KI-008 fix)
+
+Po RN-008 vidíme, že KI-007 (AdamW persistence) byla správná infrastruktura
+pro špatnou hypotézu. Phase 2 overshoot je **dataset-driven** — Adam state
+nepomohl. Alpha.17 řeší KI-008 přímo: LR warmup brání velocity buffer
+Adamu naskočit na strong gradient prvních kroků. Cosine decay v Phase 4
+zlepší konvergenci pod baseline.
+
+**Nový modul `training/lr_schedule.rs`:** `LrSchedule` struct s třemi
+kindy (Constant | Warmup | WarmupCosine), `lr_at_step(step) -> f64`
+implementující HuggingFace Trainer konvenci (`step 0 = 0`, lineární
+ramp `0 → target` přes `warmup_steps`, cosine decay `target → min_lr`
+přes zbývající steps).
+
+**Klíčové designové rozhodnutí — per-run step counter:** Schedule
+počítá kroky v rámci aktuálního běhu, **ne** globální
+`EleutheriaAdamW.step_t`. Resume run prochází warmupem znovu. To je
+záměrné: schedule je tréninkový režim (jak rampovat *tento* běh),
+ne globální kontinuita Adam state. Po RN-008 vidíme, že restored Adam
+state je beztak v praxi přepsán novými gradienty během prvních ~10
+stepů, takže "globální kontinuita LR schedule" by byla iluze.
+
+**Wiring v `train_core_memory`:** Před každým `opt.step()` volá
+`opt.set_learning_rate(schedule.lr_at_step(total_steps))`. Logging
+nyní ukazuje aktuální LR v každém log stepu (vidíme warmup ramp
+v reálném čase). Pro tail step na konci epoch (méně než
+grad_accum micro-batches) také aplikováno.
+
+**CLI:** `--warmup-steps N` (default 0 = alpha.16 chování),
+`--lr-min FLOAT` (default 0 = no decay). Doporučení: 50 stepů warmup
+pro smoke runs, 5 % `total_steps` pro produkční. `lr_min=1e-5` pro
+jemnější závěr.
+
+**Pre-compute total steps v `run_train`:** `epochs *
+ceil(num_chunks/batch_size) / grad_accum`. Předáno do `LrSchedule::warmup_cosine`
+jako horní endpoint pro decay.
+
+**Čísla:** 111 testů (+12 nových v `lr_schedule`), clippy clean, fmt OK.
+
+**Co dál:** Smoke test alpha.17 stage 1 s `--warmup-steps 30 --lr-min 1e-5`
+na 1.5B + CUDA. Pokud trajektorie monotónní (RN-002 Phase 2 overshoot
+zmizí), KI-008 empiricky vyřešena → můžeme rovnou jet production
+training na Gaia s identity packem. Side-by-side s alpha.16 stage 1
+(byte-identický baseline z RN-008) ukáže, kolik warmup vyhrál.
+
+---
+
 ## 2026-04-29 | alpha.16 smoke validation na 1.5B + CUDA — RN-008
 
 Replay alpha.15 stage 1+2 setupu s alpha.16 binárkou. Dva klíčové

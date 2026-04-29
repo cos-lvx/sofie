@@ -7,6 +7,80 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.17] — 2026-04-29
+
+### Přidáno — LR warmup + cosine decay (KI-008 high-priority fix)
+
+**Fáze 5 alpha.17 milestone:** Po RN-008 (alpha.16 smoke) víme, že
+Phase 2 overshoot je dataset-driven, ne Adam-driven. AdamW persistence
+ho neeliminovala. **LR warmup** je teď naše jediná spolehlivá cesta —
+pomalý ramp 0 → target_lr přes prvních N stepů zabrání velocity
+buffer Adamu nasycení strong gradientem prvních kroků.
+
+#### Nový modul: `training/lr_schedule.rs`
+
+- **`LrSchedule`** — struct s `target_lr`, `warmup_steps`, `total_steps`,
+  `min_lr`, `kind`. API: `constant / warmup / warmup_cosine`.
+- **`LrScheduleKind`** — enum `Constant | Warmup | WarmupCosine`.
+- **`lr_at_step(step) -> f64`** — per-run step counter (0-indexovaný),
+  konvence HuggingFace Trainer linear warmup (`step 0 = 0`, `step
+  warmup_steps = target`).
+- **Cosine decay:** standardní `0.5 * (1 + cos(π * progress))`, mapuje
+  `[warmup_steps, total_steps)` na `[target_lr, min_lr]`.
+
+#### CLI změny v `train-core-memory`
+
+- `--warmup-steps N` (default 0) — počet stepů lineárního rampu.
+  Doporučeno: 50 pro tiny smoke, 5 % `total_steps` pro produkční runs.
+- `--lr-min FLOAT` (default 0.0) — pokud > 0, cosine decay na tento floor;
+  jinak konstantní LR po warmupu. Doporučeno: 1e-5 pro produkční tréninky.
+
+#### Wiring do training loop
+
+- `TrainingConfig.lr_schedule: Option<LrSchedule>` — None = konstantní
+  LR (alpha.16 chování, backwards-compatible).
+- `train_core_memory` volá `opt.set_learning_rate(schedule.lr_at_step(total_steps))`
+  před každým `optimizer.step()` — i pro tail step na konci epoch.
+- Logging: každý log step ukazuje `lr={:.4e}` (vidíme warmup ramp v reálném
+  čase).
+- **Per-run step counter:** schedule používá lokální `total_steps`,
+  ne `EleutheriaAdamW.step_t`. Resume run prochází warmupem znovu —
+  schedule je tréninkový režim, ne globální kontinuita.
+
+#### Pre-compute total steps v `run_train`
+
+- `micro_batches_per_epoch = ceil(num_chunks / batch_size)`
+- `optimizer_steps_per_epoch = ceil(micro_batches_per_epoch / grad_accum)`
+- `total_steps = epochs * optimizer_steps_per_epoch`
+- Cosine decay používá tuto hodnotu jako endpoint; `lr_at_step` clampuje
+  beyond pro bezpečnost (tail step + 1).
+
+#### Testy (+12, total 111)
+
+Všech 12 testů `lr_schedule`:
+- `constant_returns_target_at_every_step`
+- `warmup_zero_steps_jumps_to_target`
+- `warmup_step_zero_is_zero` (HF konvence: step 0 = 0)
+- `warmup_linear_ramp_at_midpoint`
+- `warmup_reaches_target_at_end`
+- `warmup_cosine_first_phase_matches_warmup` (warmup phase identická
+  pro `Warmup` i `WarmupCosine`)
+- `warmup_cosine_peak_at_warmup_end`
+- `warmup_cosine_midpoint_is_halfway` (cos(π/2)=0 → factor=0.5 → midpoint)
+- `warmup_cosine_decays_to_min_at_total`
+- `warmup_cosine_monotonic_descent_after_warmup`
+- `warmup_cosine_monotonic_ascent_during_warmup`
+- `warmup_cosine_clamps_total_to_at_least_warmup_plus_one` (defensive)
+
+#### Co dál (alpha.17 validation)
+
+- Smoke test stage 1 s `--warmup-steps 30 --lr-min 1e-5` na 1.5B + CUDA
+- Pokud trajektorie monotónní (žádný Phase 2 overshoot), KI-008
+  empiricky vyřešena → můžeme jet production training na Gaia
+- Side-by-side porovnání s RN-002 baseline (alpha.16 stage 1)
+
+---
+
 ## [0.5.0-alpha.16] — 2026-04-29
 
 ### Přidáno — AdamW state persistence (KI-007 vyřešena)
