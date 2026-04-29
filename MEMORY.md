@@ -4,6 +4,49 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | alpha.15 smoke validation na 1.5B + CUDA — PASSED
+
+První empirická validace save/load/resume drátu na živém modelu.
+Stage 1 (`/tmp/smoke_prog.txt` 30 řádků): final loss 3.69, best 0.99
+(ephemerální), 156 steps, 26 min wall time. Stage 2 resume
+(`/tmp/smoke_law.txt`): initial 7.13 (vs. random 9.85 = `into_stack`
+přenesl trained state), 179 steps, kumulativní 335 steps, best=0.85
+(akumulované minimum), notes `"prog | law resume"` (compose_notes
+kompozice). Validate_config implicitně prošel (load neodmítl), dtype
+F32→BF16 konverze v `apply_to_state` nepanikla, REPL auto-attach
+funkční.
+
+**Smoke prokázal mechaniku, ne kvalitu:** Core Memory s loss 3.69-8.86
+echoes persona fragmenty + halucinuje fakta (RN-005). Smysluplnou
+trénovanou Sofii identity uděláme až s Sofie identity packem na Gaia
+s alpha.16+ stack (AdamW state, případně warmup).
+
+**Zachycené nálezy** (RESEARCH-NOTES.md):
+- **RN-001** — alpha.13 reportovala jen best, audit kódu potvrzuje, že
+  measure final byl pravděpodobně 5-10 (jen jsme nedetekovali)
+- **RN-002** — 4-fázová trajektorie loss (descent → overshoot → noisy
+  recovery → slow descent), částečně refutuje pure-oscilace teorii
+- **RN-003** — artefakt drží final state, ne best snapshot
+- **RN-004** — stage 1 final 3.69, prokazatelný state tuning na 1.5B
+- **RN-005** — REPL s trained Core Memory: persona echoes + halucinace
+- **RN-006** — cross-domain transfer (prog → law) snižuje Phase 2
+  overshoot magnitude (resume effect)
+- **RN-007** — alpha.15 smoke kompletní, drát validován
+
+**Nová KI** (KNOWN-ISSUES.md):
+- **KI-008** — Adam bez warmup overshoots, loss osciluje
+- **KI-009** — artefakt drží final state, ne best snapshot
+- **KI-010** — training subkomandy double-loadují Core Memory
+- **KI-011** — `loss_decreased` criterion buggy pro resume (false negative)
+
+**Co dál:** alpha.16 (AdamW state persistence, řeší KI-007 a vedlejším
+efektem dramaticky zlepší cross-domain resume — RN-006). Pak
+quality patche (KI-008 warmup, KI-009 best snapshot, KI-010 cleanup,
+KI-011 fix). Pak v0.5.0 production na Gaia s identity packem +
+validační retention bench.
+
+---
+
 ## 2026-04-29 | v0.5.0-alpha.15 — Resume tréninku (init_states + accumulated counters)
 
 Trénování může pokračovat tam, kde předchozí běh skončil. Multi-stage

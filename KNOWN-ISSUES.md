@@ -8,6 +8,92 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
 
 ## Aktivní
 
+### KI-008 — Adam bez warmup overshoots, loss osciluje místo monotonního descentu
+
+- **Fáze:** 5 (alpha.15)
+- **Dopad:** Střední — limituje konvergenci na současné HP, viditelné
+  oscilace 1↔11 v loss trajektorii
+- **Kontext:** Empiricky pozorováno 2026-04-29 ve smoke testu
+  (RN-002, RN-006). Loss má 4-fázový pattern:
+  1. Phase 1 (step 1-20): rapid descent na lokální minimum
+  2. Phase 2 (step 20-40): overshoot — Adam velocity buffer naskočil
+     na strong gradient, udělá obří krok ven z lokálního minima
+  3. Phase 3 (step 40-100): noisy recovery
+  4. Phase 4 (step 100+): slow descent s spike'y
+  Best loss je ephemerálně dosažený někde v Phase 1 nebo začátku Phase 2,
+  pak ztracen. Final loss reflektuje noisy stav, ne best.
+- **Workaround:** žádný akutní; smoke validace funguje navzdory tomuto
+- **Řešení:** Samostatný research patch (alpha.15.X nebo dedikovaný):
+  - Linear LR warmup 0 → target přes prvních ~50 kroků (odstraní Phase 2)
+  - LR cosine/linear decay v Phase 4 (stabilizuje convergenci)
+  - Větší effective batch (Gaia, ne RTX 4050) sníží Phase 3 noise
+  - Před implementací uděláme ablation runs (RN-006..00X)
+
+### KI-009 — Artefakt drží final state, ne best snapshot
+
+- **Fáze:** 5 (alpha.14/.15)
+- **Dopad:** Střední — pro noisy training (KI-008) zahodíme nejlepší
+  state. Ve smoke best=0.85 ephemerálně dosažen, uložen state s loss=8.86.
+- **Kontext:** Mechanická vlastnost API (RN-003): `from_stack(&CoreMemoryStack)`
+  čte aktuální `Var.as_tensor()` v okamžiku volání. `train_core_memory`
+  volá save *po* posledním `optimizer.step()`, takže artefakt obsahuje
+  state z **posledního** stepu, ne z best step.
+- **Workaround:** zatím žádný; lze ručně checkpoint po N krocích, ale
+  není API support
+- **Řešení:** Dedikovaný patch (alpha.16+):
+  - `BestSnapshotTracker` v `train_core_memory` — drží shadow CPU buffer
+    Var values, aktualizuje při každém best loss improvement
+  - Save volá `from_snapshot()` místo `from_stack()` pokud snapshot
+    existuje
+  - Alternativa: periodic save každých N kroků s rolling best mark
+
+### KI-011 — `train_core_memory` reportuje "loss nedecreased" pro úspěšný resume
+
+- **Fáze:** 5 (alpha.15)
+- **Dopad:** Nízký (špatný exit code + matoucí UX) — ne datová ztráta
+- **Kontext:** `TrainingResult.loss_decreased = final < initial` byl
+  rozumný criterion pro **fresh** training (initial = random baseline
+  ~9.85, final by měl klesnout). Pro **resume** training je špatný:
+  - Initial loss je už nízká (díky trained state přes `into_stack`)
+  - Final loss může být cokoli v noisy oscilaci pásmu (RN-002)
+  - `final < initial` je teď spíš **noise gate**, ne signal of success
+  Empirický příklad ze smoke testu 2026-04-29: stage 2 resume,
+  initial=7.13, final=8.86 → engine reportuje
+  `✗ Loss neklesl, Err("training loss nedecreased")` přestože:
+  - Best ephemerální=0.8535 (lepší než stage 1 best=0.9965)
+  - Save proběhl s kumulativním 335 steps
+  - State tuning prokazatelně pokračoval z trained init
+- **Workaround:** ignorovat exit code; verifikuj přes
+  `--inspect-core-memory` že artefakt má smysluplná metadata.
+- **Řešení:** alpha.16+ revidovat `loss_decreased` criterion:
+  - Buď `final < ln(vocab_size)` (random baseline jako sanity)
+  - Nebo per-mode logika: fresh → final < initial, resume → final < ln(vocab)
+  - Nebo úplně odstranit (engine signalizuje úspěch save vs. NaN halt,
+    quality judgement nech na uživateli skrz inspect)
+
+### KI-010 — Training subkomandy double-loadují Core Memory
+
+- **Fáze:** 5 (alpha.14/.15)
+- **Dopad:** Nízký — funkční, ale redundantní I/O a matoucí logging
+- **Kontext:** Pokud uživatel spustí
+  `train-core-memory --resume-from <path>` a artefakt existuje na default
+  cestě (`~/.eleutheria/core_memory.safetensors`), proběhnou **dva
+  loady**:
+  1. `Sofie::load` v main.rs auto-discoveruje soubor a připojí ho přes
+     `attach_core_memory` (alpha.14 logika). Sofie::core_memory = Some(...).
+  2. `run_train` pak načte stejný (nebo jiný) soubor přes `--resume-from`,
+     `into_stack` zkonstruuje trainable CoreMemoryStack.
+  Training compute path **nepoužívá Sofie::core_memory** vůbec (stack
+  injektuje vlastní Var-y), takže auto-attach v této cestě je dead
+  weight. Logging vypisuje "Core Memory: ..." dvakrát.
+- **Workaround:** žádný akutní není potřeba — funkční chování. Pokud
+  uživatel chce čisté logy, použije `--no-core-memory` při training
+  subkomandě.
+- **Řešení:** alpha.16+ clean-up patch — v `main.rs` rozhodnout o
+  auto-attachi na základě `args.command`: pro
+  `TrainCoreMemory{,Smoke,Multi}` subkomandy auto-attach přeskočit.
+  Inference flow (REPL, single-shot) auto-attach pochopitelně potřebuje.
+
 ### KI-007 — AdamW optimizer state se nepersistuje při resume
 
 - **Fáze:** 5 (alpha.15)

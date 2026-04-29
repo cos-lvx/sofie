@@ -146,11 +146,30 @@
       warmup, ale pro dlouhé multi-stage tréninky lehce disruptivní.
 - [x] 88 testů (+4 oproti alpha.14), clippy clean.
 
+### Alpha.15 smoke validation ✅ (2026-04-29)
+- [x] Stage 1 fresh train (smoke_prog 30 řádků) — final 3.69, save OK
+- [x] Inspect metadata round-trip — všechny rozměry/dtype/notes ✓
+- [x] REPL auto-attach + multi-turn — žádný panic, drát funguje
+- [x] Stage 2 resume (smoke_law) — into_stack přenesl state (initial 7.13)
+- [x] Inspect kumulativní — 335 steps, best 0.85, notes `prog | law`
+- [x] Zachycené nálezy: RN-001..007 v RESEARCH-NOTES.md, KI-008..011 v KNOWN-ISSUES
+
 ### v0.5.0-alpha.16 (next) — AdamW state persistence
 - [ ] `core_memory.optim.safetensors` vedle artefaktu — per-Var m, v
       moments, step counter. Auto-load při `--resume-from` pokud existuje.
 - [ ] Round-trip integration test: 5 steps → save → load → 5 steps,
       ověřit že `m, v` continuity zachovaná (porovnat trajektorie loss).
+- [ ] Vedlejší cíl: dramatic improvement v cross-domain resume (RN-006)
+      — eliminuje Adam restart overshoot phase
+
+### Quality patches (po alpha.16, libovolné pořadí)
+- [ ] **Ablation runs** (RN-002 driven) — LR sweep + warmup test bez
+      kódových změn, RN-006..00X entries, identifikovat dominantní
+      noise factor (LR / Adam / batch / dataset)
+- [ ] **KI-008** — LR warmup + cosine decay (alpha.15.X po ablaci)
+- [ ] **KI-009** — best snapshot tracker (shadow CPU buffer)
+- [ ] **KI-010** — cleanup double-load v training subkomandách
+- [ ] **KI-011** — revize `loss_decreased` criterion pro resume mode
 
 ### v0.5.0 — Production training run + validace
 - [ ] Production training na 1.5B s law_pack + programming_pack

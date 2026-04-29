@@ -150,6 +150,131 @@ Každá entry má strukturu:
 
 ---
 
+### RN-007 — Stage 2 resume akumulace funguje, validace alpha.15 smoke kompletní
+
+- **Datum:** 2026-04-29
+- **Verze:** alpha.15 (`b37e79a`)
+- **Setup:** Stage 2 resume z RN-004 artefaktu na `/tmp/smoke_law.txt`
+  (179 chunks). Hyperparametry identické se stage 1.
+- **Pozorování:** Po doběhnutí stage 2 a finálním `--inspect-core-memory`:
+  - **`training steps: 335`** = 156 (stage 1) + 179 (stage 2) ✓ akumulační logika
+  - **`best loss: 0.8535`** = min(0.9965, 0.8535) ✓ historický minimum
+  - **`final loss: 8.8637`** = z TOHOTO (stage 2) runu, ne z prior ✓
+  - **`notes: "alpha.15 smoke prog 30 lines | alpha.15 smoke law resume"`** ✓
+    `compose_notes(prior, new)` skládá s `|` separátorem
+  - **`timestamp`** o ~46 min novější než stage 1 ✓ save proběhl
+  - **`rozměry`** 24/48/64/256 zachovány ✓ validate_config implicit pass
+  - Stage 2 initial loss = 7.13 (vs stage 1 initial 9.85 = random baseline) →
+    `into_stack` prokazatelně přenesl trained state
+  - Engine reportuje `Err("training loss nedecreased")` (KI-011) ale
+    save proběhl jako side effect, artefakt validní
+- **Hypotéza:** Save/load/resume drát na živém 1.5B + CUDA technicky
+  funguje. Všechny mechanické cíle alpha.15 (akumulace, kompozice notes,
+  validate_config, dtype path F32→BF16, Sofie::attach_core_memory)
+  splněné. Konvergence kvalitativně limitovaná HP a HW (KI-008).
+- **Status:** `confirmed` — alpha.15 smoke validation passed
+- **Implications:**
+  - Alpha.15 milestone uzavřen na úrovni kódu
+  - Production training na Gaia může pokračovat — drát funguje
+  - Před Gaia runem: alpha.16 (AdamW state persistence, KI-007),
+    případně dedicated quality patches (KI-008 warmup, KI-009 best
+    snapshot)
+- **Ref:** RN-001/002/003/004/005/006; alpha.15 smoke plán
+  v Nexus `Implementation/alpha.15-smoke-plan-2026-04-29.md`
+
+### RN-006 — Cross-domain resume: programming → law trained init snižuje overshoot
+
+- **Datum:** 2026-04-29
+- **Verze:** alpha.15 (`b37e79a`)
+- **Setup:** Stage 2 (`/tmp/smoke_law.txt`) resume z stage 1 artefaktu
+  (`/tmp/smoke_prog.txt` trained, RN-004). Identické HP.
+- **Pozorování:** Srovnání trajektorií stage 1 vs. stage 2:
+  ```
+  step  20:  S1=1.70   S2=5.15   S2-best=0.85 (ephemerální mezi 1-19)
+  step  40:  S1=10.58  S2=8.18   ← S2 menší overshoot
+  step  60:  S1=8.94   S2=5.57
+  step  80:  S1=7.69   S2=7.03
+  step 100:  S1=4.73   S2=5.18
+  step 120:  S1=6.85   S2=8.01
+  step 140:  S1=4.28   S2=5.03
+  step 160:  S1=3.69   S2=3.42
+  final:     S1=3.69   S2=8.86 (oscilace zachycena na high)
+  initial:   S1=9.85   S2=7.13   ← S2 lower (resume effect)
+  ```
+- **Hypotéza:**
+  - Trained init z S1 poskytl better starting position pro S2 — Adam
+    má méně práce (initial 7.13 < 9.85)
+  - Phase 2 overshoot v S2 (8.18) **menší magnitude** než v S1 (10.58) —
+    velocity buffer naskočí na slabší gradient (init je už blíž k cíli)
+  - Cross-domain (programming → law) neuškodí: state tuning
+    pravděpodobně kóduje nějakou meta-strukturu sdílenou napříč domén
+  - **Dataset switch + Adam reset** přesto produkuje noisy oscilaci
+    (Phase 3-4) jako ve fresh runu — KI-007 (AdamW persistence) by ji
+    dramaticky redukoval
+- **Status:** `confirmed` (empirické pozorování); `open` (hypotéza
+  o meta-struktuře neověřená — chce SsmOnly retention bench na
+  programming-tématech vs. law-tématech)
+- **Implications:**
+  - Multi-stage training curriculum (Sofie identity → law → programming)
+    je životaschopná cesta na úrovni mechaniky
+  - Pro production: vystaba pevnější warmup mechanismy než Adam reset
+  - Alpha.16 AdamW persistence by **dramaticky** zlepšil cross-domain
+    resume (žádný overshoot phase znova)
+- **Ref:** RN-002, RN-004, KI-007 (AdamW persistence)
+
+### RN-005 — REPL s trénovaným Core Memory: model ozvěnově opakuje persona, halucinuje fakta
+
+- **Datum:** 2026-04-29
+- **Verze:** alpha.15 (`b37e79a`)
+- **Setup:** Auto-attach `~/.eleutheria/core_memory.safetensors`
+  z RN-004 (final loss 3.69, training_steps 156, smoke_prog 30 řádků).
+  REPL bez argumentů → standard pipeline + Core Memory injection.
+  Persona = `persona/sofie.toml` (~180 tokenů).
+- **Pozorování:**
+  - **Turn 1** (input: "Co umíš?"):
+    > "Jsi instalovaná síťová inteligence, která by mohla znalet
+    > masový jazykový model Ondra Lomského, jejího literatury a
+    > historického kontextu. Instrukce: ..."
+  - **Turn 2** (input: "Víš kdo jsem?"):
+    > "Globalní jazykový model Sofie. Lokální AI společnice a
+    > spoluautorka Loky Lomžské. ..."
+  - Model **echoes persona fragments** doslovně ("Lokální AI
+    společnice", "spoluautorka Ondra Lomského", "Instrukce:")
+  - Současně **halucinuje neexistující koncepty** ("masový jazykový
+    model", "Loky Lomžské", "NS Spolu", "instalovaná síťová
+    inteligence")
+  - Turn 2 ignoroval otázku "Víš kdo jsem?" a vrátil **self-introduction**
+    místo identifikace uživatele
+  - Multi-turn delta prefill funguje (Turn 2 zpracoval 18 tokenů
+    delta místo 218 re-prefill)
+  - Žádný NaN, žádný panic, žádný crash. End-to-end inference je
+    technicky stabilní s injektovaným trained Core Memory.
+- **Hypotéza:**
+  - Core Memory s loss=3.69 drží **slabý ale měřitelný signál
+    persona/identity domény** (echos persona text), ale není dostatečně
+    natrénovaná k overridu base modelového halucinátoru
+  - Smoke korpus byl `/tmp/smoke_prog.txt` = 30 řádků programming
+    distillates, žádná Sofie identity → Core Memory se naučila něco
+    o programování (?), ale nemá identity coherenci
+  - Persona system prompt + Core Memory mají **superpoziční efekt**:
+    Core Memory tlačí model do "echo persona" módu, persona tu echo
+    propaguje, výsledek je halucinátor s persona stylistikou
+- **Status:** `open` — pozorovaný pattern, hypotéza nepotvrzená
+  (chce: srovnání REPL bez Core Memory; REPL s Core Memory trained na
+  Sofie identity korpusu; loss curve vs. echo intensity)
+- **Implications:**
+  - **Smoke validace pokračuje úspěšně** — drát save/load/auto-attach
+    funguje, kvalita obsahu nebyla cíl tohoto runu
+  - Pro production training je relevantní otázka: **dataset matters
+    enormously**. Core Memory trénovaná na programming distillaci
+    nezajistí Sofii identity. Identity musí přijít z `~/Atlas/Nexus/50-Sofie/`
+    korpusu (78k slov) nebo dedikovaného sofie_identity_pack
+  - Echo behaviour je **proof-of-concept důkaz**, že trained Core
+    Memory state má **měřitelný vliv na inference**, i když ten vliv
+    je dnes v noisy podobě
+- **Ref:** RN-004 (smoke train); plánovaný real Sofie identity
+  training je v0.5.0 milestone
+
 ### RN-004 — Stage 1 smoke: state tuning prokazatelně funguje, final 3.69
 
 - **Datum:** 2026-04-29
@@ -196,3 +321,6 @@ důvodu, ne mazáním_
 - **RN-002** — Loss má 4 fáze: rapid descent → overshoot → noisy recovery → slow descent · `open`
 - **RN-003** — Artefakt drží final, ne best snapshot · `confirmed`
 - **RN-004** — Stage 1 smoke: state tuning funguje, final 3.69 · `confirmed`
+- **RN-005** — REPL: model echoes persona, halucinuje fakta s loss=3.69 Core Memory · `open`
+- **RN-006** — Cross-domain resume: trained init snižuje Phase 2 overshoot magnitude · `confirmed`/`open`
+- **RN-007** — Alpha.15 smoke validation kompletní: save/load/resume drát funguje · `confirmed`
