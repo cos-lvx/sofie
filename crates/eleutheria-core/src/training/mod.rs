@@ -22,6 +22,7 @@
 pub mod checkpoint;
 pub mod clip;
 pub mod core_memory;
+pub mod core_memory_io;
 pub mod dataset;
 pub mod loss;
 pub mod repro;
@@ -31,6 +32,7 @@ pub mod train;
 
 pub use clip::clip_grad_norm;
 pub use core_memory::{CoreMemory, CoreMemoryStack};
+pub use core_memory_io::{CoreMemoryArtifact, CoreMemoryMeta};
 pub use dataset::TokenDataset;
 pub use loss::cross_entropy_next_token;
 pub use smoke::SmokeTrainResult;

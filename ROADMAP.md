@@ -1,6 +1,6 @@
 # Roadmap — Eleutheria
 
-> Poslední aktualizace: 2026-04-17
+> Poslední aktualizace: 2026-04-29
 
 ## Filozofie
 
@@ -157,12 +157,18 @@ vzdálenostmi). Core Memory **musí být trénovaný** — potvrzeno empiricky.
   186k tokenů. Pack: `dataset/training/{law,programming}_pack.txt`.
 
 **Implementace (alpha.14+):**
-- [ ] **alpha.14** — Save/Load trained Core Memory přes `StateCheckpoint`
-  (filter `core_memory` už existuje), auto-load v `Sofie::load`,
-  resume training (init_states + AdamW optimizer state + step_idx)
-- [ ] **v0.5.0** — Production training run na 1.5B s law/programming
-  pack; **validace přes re-run retention benchmarku** (SsmOnly
-  pass-rate musí vyskočit z 0 %)
+- [x] **alpha.14** — Save/Load trained Core Memory. Dedikovaný
+  `CoreMemoryArtifact` (F32 native dtype, kind=`core_memory_trained`),
+  `Sofie::attach_core_memory` + auto-discovery
+  `~/.eleutheria/core_memory.safetensors`, `new_session` aplikuje
+  init_states z artefaktu. CLI: `--core-memory`, `--no-core-memory`,
+  `--inspect-core-memory`, `train-core-memory --output --notes`.
+  84 unit testů (+7).
+- [ ] **alpha.15** — Resume training (init_states z `into_stack` +
+  persistovaný AdamW state + step_idx + epoch). Production training
+  run na 1.5B s `law_pack` + `programming_pack`.
+- [ ] **v0.5.0** — Validace přes re-run retention benchmarku (SsmOnly
+  pass-rate musí vyskočit z 0 % na měřitelné číslo).
 - [ ] **Episodic Memory** — echo embeddings z Falcon-H1 (self-retrieval
   bez separátního modelu), PostgreSQL + pgvector na Mnémosyné,
   `MemoryInjection` stage v pipeline

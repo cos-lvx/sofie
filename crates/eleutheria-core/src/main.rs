@@ -6,7 +6,9 @@ use eleutheria_core::bench::{
 };
 use eleutheria_core::falcon_h1::layer::LayerStop;
 use eleutheria_core::training::trace;
-use eleutheria_core::{GenerateControl, Sofie, SofieSession, StateCheckpoint, StateFilter};
+use eleutheria_core::{
+    CoreMemoryArtifact, GenerateControl, Sofie, SofieSession, StateCheckpoint, StateFilter,
+};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -55,9 +57,23 @@ struct Args {
     #[arg(long)]
     inspect_state: Option<PathBuf>,
 
+    /// Inspekce trénovaného Core Memory artefaktu — vypiš metadata a skonči
+    #[arg(long)]
+    inspect_core_memory: Option<PathBuf>,
+
     /// Pokračuj v poslední session (~/.eleutheria/last_session.safetensors)
     #[arg(long)]
     resume: bool,
+
+    /// Cesta k trénovanému Core Memory artefaktu. Pokud neuvedeno,
+    /// auto-discovery z `~/.eleutheria/core_memory.safetensors`. Použij
+    /// `--no-core-memory` pro vypnutí.
+    #[arg(long)]
+    core_memory: Option<PathBuf>,
+
+    /// Zakaž auto-load Core Memory (i defaultní path se přeskočí).
+    #[arg(long)]
+    no_core_memory: bool,
 
     /// Specializované podkomandy (benchmarky, nástroje)
     #[command(subcommand)]
@@ -221,6 +237,17 @@ struct TrainCoreMemoryArgs {
     /// (KI-005). Pro malý seq_len na CPU obvykle není potřeba.
     #[arg(long, default_value_t = false)]
     checkpoint: bool,
+
+    /// Cesta pro uložení trénovaného Core Memory artefaktu (alpha.14).
+    /// Pokud neuvedeno, training proběhne bez persistence — použij pro
+    /// hyperparameter sweep, kde výsledek nepotřebuješ uchovat.
+    #[arg(long)]
+    output: Option<PathBuf>,
+
+    /// Volitelná textová poznámka k uloženému artefaktu (např.
+    /// "law_pack 8 epoch, 1.5B"). Zapíše se do metadata.
+    #[arg(long)]
+    notes: Option<String>,
 }
 
 /// Argumenty pro `train-core-memory-multi` subkomand — multi-layer smoke
@@ -266,6 +293,14 @@ fn default_session_path() -> PathBuf {
         .join("last_session.safetensors")
 }
 
+/// Default cesta k trénované Core Memory pro auto-discovery.
+fn default_core_memory_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    PathBuf::from(home)
+        .join(".eleutheria")
+        .join("core_memory.safetensors")
+}
+
 /// Zajisti existenci adresáře pro session.
 fn ensure_session_dir() -> Result<PathBuf> {
     let path = default_session_path();
@@ -275,13 +310,46 @@ fn ensure_session_dir() -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Zajisti existenci adresáře pro daný path (vytvoří parent dirs).
+fn ensure_parent_dir(path: &std::path::Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| anyhow!("nelze vytvořit {}: {}", parent.display(), e))?;
+    }
+    Ok(())
+}
+
+/// Vyřeš zdroj Core Memory podle CLI argumentů. Vrací `None` pokud
+/// uživatel auto-load explicitně vypnul nebo není kde brát.
+fn resolve_core_memory_path(args: &Args) -> Option<PathBuf> {
+    if args.no_core_memory {
+        return None;
+    }
+    if let Some(p) = &args.core_memory {
+        return Some(p.clone());
+    }
+    let default_p = default_core_memory_path();
+    if default_p.exists() {
+        Some(default_p)
+    } else {
+        None
+    }
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
 
-    // Režim inspekce
+    // Režim inspekce session checkpointu
     if let Some(path) = &args.inspect_state {
         let meta = StateCheckpoint::inspect(path)?;
+        print!("{meta}");
+        return Ok(());
+    }
+
+    // Režim inspekce trénovaného Core Memory artefaktu
+    if let Some(path) = &args.inspect_core_memory {
+        let meta = CoreMemoryArtifact::inspect(path)?;
         print!("{meta}");
         return Ok(());
     }
@@ -317,7 +385,35 @@ fn main() -> Result<()> {
         None
     };
 
-    let sofie = Sofie::load(&model_dir, args.cuda, persona_opt)?;
+    let mut sofie = Sofie::load(&model_dir, args.cuda, persona_opt)?;
+
+    // Auto-attach Core Memory pokud existuje a není opt-out. Training
+    // subkomandy (smoke/multi/train) Core Memory nepotřebují — trénují
+    // od nuly nebo z vlastního stacku — ale neškodí, když je připojená
+    // (training stack injektuje Var-y nezávisle na Sofie::core_memory).
+    if let Some(cm_path) = resolve_core_memory_path(&args) {
+        match CoreMemoryArtifact::load(&cm_path) {
+            Ok(art) => {
+                println!("Core Memory: {}", cm_path.display());
+                if let Some(meta) = Some(art.meta()).filter(|_| true) {
+                    println!(
+                        "  {} vrstev, training_steps={:?}, best_loss={:?}\n",
+                        meta.num_layers, meta.training_steps, meta.best_loss
+                    );
+                }
+                sofie.attach_core_memory(art)?;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Core Memory na {} nelze načíst: {} — pokračuji bez Core Memory",
+                    cm_path.display(),
+                    e
+                );
+            }
+        }
+    } else if args.no_core_memory {
+        tracing::info!("Core Memory auto-load vypnut (--no-core-memory)");
+    }
 
     if let Some(cmd) = &args.command {
         match cmd {
@@ -474,6 +570,7 @@ fn run_train_smoke_sweep(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result
 /// Core Memory training loop — produkční varianta.
 /// Načte textový korpus, tokenizuje, chunkuje, trénuje přes epochs.
 fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
+    use eleutheria_core::CoreMemoryArtifact;
     use eleutheria_core::training::{CoreMemoryStack, TokenDataset, TrainingConfig};
 
     println!("\nCore Memory training — dataset: {}", ta.dataset.display());
@@ -539,6 +636,43 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         "  expected random baseline: ln(vocab)≈{:.4}",
         (sofie.config().vocab_size as f64).ln()
     );
+    println!();
+
+    // Persistence — trained Core Memory na disk (alpha.14).
+    if let Some(out_path) = &ta.output {
+        ensure_parent_dir(out_path)?;
+        let final_loss = if result.final_loss.is_finite() {
+            Some(result.final_loss)
+        } else {
+            None
+        };
+        let best_loss = if result.best_loss.is_finite() {
+            Some(result.best_loss)
+        } else {
+            None
+        };
+        let artifact = CoreMemoryArtifact::from_stack(
+            &stack,
+            sofie.config(),
+            Some(result.total_steps),
+            best_loss,
+            final_loss,
+            ta.notes.clone(),
+        )
+        .map_err(|e| anyhow!("CoreMemoryArtifact build: {e}"))?;
+        artifact
+            .save(out_path)
+            .map_err(|e| anyhow!("CoreMemoryArtifact save: {e}"))?;
+        println!(
+            "Core Memory uložena: {} ({} vrstev, {} steps, best_loss={:.4})",
+            out_path.display(),
+            stack.num_layers(),
+            result.total_steps,
+            result.best_loss
+        );
+    } else {
+        println!("(Core Memory neuložena — bez --output flagu zůstává pouze v paměti.)");
+    }
     println!();
 
     if result.loss_decreased {

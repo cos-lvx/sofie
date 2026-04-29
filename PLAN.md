@@ -1,6 +1,6 @@
 # Plán — Eleutheria
 
-> Poslední aktualizace: 2026-04-28
+> Poslední aktualizace: 2026-04-29
 
 ## Dokončeno
 
@@ -116,13 +116,32 @@
 - [ ] Auto-load v `Sofie::load` — alpha.14
 - [ ] Resume training — alpha.14
 
-### v0.5.0-alpha.14 (next) — save/load + production training
-- [ ] Save trained Core Memory přes `StateCheckpoint` (filter `core_memory`)
-- [ ] Auto-load v `Sofie::load` pokud existuje trained checkpoint
-- [ ] Resume training (init_states + AdamW optimizer state + step_idx)
-- [ ] Production training run na 1.5B s law_pack + programming_pack
-- [ ] Validační run retention benchmarku (SsmOnly pass-rate musí
-      vyskočit z 0 % na měřitelné číslo)
+### v0.5.0-alpha.14 ✅ (2026-04-29) — save/load trained Core Memory
+- [x] **`CoreMemoryArtifact`** v novém `training/core_memory_io.rs` —
+      dedikovaný formát (kind=`core_memory_trained`, F32 native dtype Var,
+      bez conv state, bez pozice). Symetrie StateCheckpoint API:
+      `from_stack` / `save` / `load` / `inspect` / `validate_config`.
+- [x] **`apply_to_state`** — konverze na runtime dtype/device, dotýká se
+      pouze `ssm_state` (conv + KV nedotčené).
+- [x] **`into_stack`** — re-konstrukce `CoreMemoryStack` s čerstvými
+      `Var`-y pro budoucí resume tréninku (alpha.15+).
+- [x] **`Sofie::attach_core_memory`** + `detach` + `has_core_memory` +
+      `core_memory_meta()`. `new_session()` a single-shot
+      `generate_streaming` aplikují Core Memory na fresh state. Resume
+      session ji **ignoruje** (uložená session má vlastní evolved state).
+- [x] **CLI:** `--core-memory <path>`, `--no-core-memory`,
+      `--inspect-core-memory <path>`, `train-core-memory --output <path>
+      --notes <text>`. Auto-discovery `~/.eleutheria/core_memory.safetensors`.
+- [x] 84 unit testů (+7 oproti alpha.13), clippy clean.
+
+### v0.5.0-alpha.15 (next) — resume training + production run
+- [ ] Resume training: `--resume-core-memory <path>` v `train-core-memory`
+      → `CoreMemoryArtifact::load → into_stack` místo `randn_small_stack`.
+- [ ] Persistence AdamW optimizer state + step_idx + epoch (nový soubor
+      vedle artefaktu, např. `core_memory.optim.safetensors`).
+- [ ] Production training run na 1.5B s `law_pack` + `programming_pack`.
+- [ ] Validační run retention benchmarku — SsmOnly pass-rate musí
+      vyskočit z 0 % na měřitelné číslo (kritický důkazní bod Fáze 5).
 
 ### v0.5.0-alpha.13 — Sofie identity dataset composer
 - [ ] Dataset composer — váhová mix (identity core / Sessions / distillate / context)

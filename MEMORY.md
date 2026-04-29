@@ -4,6 +4,60 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | v0.5.0-alpha.14 — Save/Load trénované Core Memory
+
+Trénovaná Core Memory přežívá restart procesu. Vyřešený "trenuju → loss
+klesá → zavřu okno → ztracená Sofie" cyklus alpha.11–13 končí.
+
+**Nový modul `training/core_memory_io.rs`** — `CoreMemoryArtifact`
+serializační formát: per-layer F32 tensory (native dtype `Var`) +
+`__metadata__` hlavička s `kind=core_memory_trained`, telemetrií
+tréninku (`training_steps`, `best_loss`, `final_loss`, `notes`) a
+strukturními rozměry (num_layers, n_heads, headdim, d_state).
+
+**Klíčové rozhodnutí — proč ne `StateCheckpoint::core_memory()` filter:**
+1. StateCheckpoint je v runtime dtype (BF16 na CUDA); native Var je F32 —
+   round-trip BF16↔F32 by zhoršil precision.
+2. StateCheckpoint má `position` field (sémanticky pro session);
+   trénovaná Core Memory pozici nemá — je to plugin, ne kontinuace.
+3. Conv state v StateCheckpoint je krátkodobé okno (poslední d_conv
+   tokeny); trénovaná Core Memory ho nepotřebuje (vždy startujeme nulovou
+   conv při fresh session).
+4. Sémantická separace: `kind=core_memory_trained` umožňuje budoucím
+   nástrojům rozeznat, co se vlastně načítá. Zabrání záměně.
+
+**Sofie API:** `attach_core_memory(art)` + `detach_core_memory()` +
+`has_core_memory()` + `core_memory_meta()`. `new_session()` a
+single-shot `generate_streaming` (bez `initial_state`) aplikují per-layer
+init_states z artefaktu místo nul. **Resume session** (`load_state`,
+`--resume`) Core Memory **ignoruje** — uložená session má vlastní
+evolved state, který by neměl být přepsán statickým artefaktem.
+
+**CLI:**
+- `--core-memory <path>` (explicit)
+- `--no-core-memory` (vypne i auto-discovery)
+- `--inspect-core-memory <path>` (symetrie s `--inspect-state`)
+- `train-core-memory --output <path> --notes <text>` (persistence po
+  tréninku)
+- Auto-discovery `~/.eleutheria/core_memory.safetensors` — pokud
+  uživatel neuvede flagy a soubor existuje, auto-attach.
+
+**`into_stack(config, device)` API** — re-konstrukce `CoreMemoryStack`
+s čerstvými `Var`-y pro **resume tréninku** (alpha.15+). Test ověřuje,
+že vars_owned vrací 24 (1.5B) trainable handles po round-tripu.
+
+**Čísla:** 84 unit testů (+7 oproti alpha.13: round_trip,
+apply_to_state, inspect, incompatible_config_rejected, into_stack,
+load_rejects_wrong_kind, metadata_display). Clippy clean, fmt OK.
+
+**Co dál (alpha.15):** resume training s persistovaným AdamW state +
+step_idx + epoch (vedle artefaktu jako `core_memory.optim.safetensors`).
+Production training run na 1.5B s `law_pack` + `programming_pack`.
+Validace přes re-run retention benchmarku — SsmOnly pass-rate musí
+vyskočit z 0 % (kritický důkazní bod Fáze 5).
+
+---
+
 ## 2026-04-29 | v0.5.0-alpha.13 — Sub-layer checkpointing + memory-leak fix
 
 **KI-005 vyřešena.** Multi-layer Core Memory training na RTX 4050 6 GB

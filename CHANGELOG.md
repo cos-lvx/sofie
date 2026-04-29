@@ -7,6 +7,93 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.14] — 2026-04-29
+
+### Přidáno — Save/Load trénované Core Memory
+
+**Fáze 5 alpha.14 milestone:** trénovaná Core Memory přežívá restart
+procesu. Konec cyklu *trénuj → výstup do paměti → ztrať při exitu* —
+artefakt putuje na disk se vším potřebným pro pozdější resume i pro
+inference.
+
+#### Nový modul `training/core_memory_io.rs`
+
+- `CoreMemoryArtifact` — serializační formát pro trénovaný initial SSM
+  state. Per-layer F32 tensory + `__metadata__` hlavička s
+  `kind=core_memory_trained`, eleutheria_version, training telemetry
+  (`training_steps`, `best_loss`, `final_loss`, `notes`) a strukturními
+  rozměry (`num_layers`, `n_heads`, `headdim`, `d_state`).
+- `from_stack(...)` — kopíruje `CoreMemoryStack` Vars na CPU jako F32.
+- `save<P>` / `load<P>` / `inspect<P>` — symetrie s `StateCheckpoint`.
+- `validate_config(&config)` — odmítne nekompatibilní artefakt
+  (porovnává všechny SSM rozměry).
+- `apply_to_state(&mut state, device, dtype)` — aplikace na živý
+  `ModelState` s konverzí na runtime dtype/device. Conv state a KV
+  cache se nedotýkají (artefakt je nenese).
+- `into_stack(config, device)` — re-konstrukce `CoreMemoryStack` se
+  čerstvými `Var` instances pro **resume tréninku** (alpha.15+).
+
+#### `Sofie::attach_core_memory` / `detach_core_memory`
+
+- `Sofie::core_memory: Option<CoreMemoryArtifact>` — slot pro připojený
+  artefakt. Auto-validace kompatibility při `attach`.
+- `new_session()` — pokud je Core Memory připojena, inicializuje
+  per-layer SSM state z artefaktu místo nul. Conv state a KV cache
+  startují vždy nulové (Core Memory je čistě long-term substrát).
+- `generate_streaming` (single-shot) bez `initial_state` — totéž.
+- Resume session (`load_state` / `--resume`) Core Memory **ignoruje**:
+  uložená session má vlastní evolved state, který by neměl být přepsán.
+
+#### CLI
+
+- **Top-level flagy:**
+  - `--core-memory <path>` — explicit cesta k artefaktu.
+  - `--no-core-memory` — vypne i auto-discovery.
+  - `--inspect-core-memory <path>` — vypiš metadata, skonči (symetrie
+    s `--inspect-state`).
+- **`train-core-memory --output <path>`** — po skončení tréninku uloží
+  trained `CoreMemoryStack` jako `CoreMemoryArtifact` (do metadat se
+  zapíše `total_steps`, `best_loss`, `final_loss`, `--notes`).
+- **Auto-discovery** — pokud uživatel neuvede `--core-memory` ani
+  `--no-core-memory`, hledá se `~/.eleutheria/core_memory.safetensors`.
+  Existuje → auto-attach. Neexistuje → tichý fallback na nulový start.
+
+#### Testy (+7, total 84)
+
+- `round_trip_preserves_per_layer_tensors` — save → load → tensory
+  binárně shodné s originály.
+- `apply_to_state_replaces_ssm_states_only` — conv state zůstává
+  nedotčený.
+- `inspect_returns_metadata_only` — telemetrie i bez načítání tensorů.
+- `incompatible_config_rejected` — `validate_config` chytí mismatch
+  v `d_state`.
+- `into_stack_preserves_tensors_and_yields_trainable_vars` — resume
+  pro alpha.15+ funguje.
+- `load_rejects_wrong_kind` — odmítá session checkpoint místo Core
+  Memory artefaktu.
+- `metadata_display_renders_telemetry` — Display impl renderuje
+  training_steps + loss + notes.
+
+#### Workflow po alpha.14
+
+```text
+1. cargo run -- train-core-memory --dataset law_pack.txt \
+       --output ~/.eleutheria/core_memory.safetensors \
+       --notes "law_pack 1 epoch 1.5B"
+2. cargo run                       # REPL — auto-load Core Memory
+3. cargo run -- --inspect-core-memory ~/.eleutheria/core_memory.safetensors
+```
+
+#### Co zbývá pro alpha.15
+
+- **Resume training** — load `CoreMemoryArtifact` jako startovací
+  `CoreMemoryStack` přes `into_stack` + persistovaný AdamW optimizer
+  state + step_idx + epoch.
+- Production training run na 1.5B s `law_pack` + `programming_pack`
+  (alpha.13 dataset), validace přes re-run retention benchmarku.
+
+---
+
 ## [0.5.0-alpha.13] — 2026-04-29
 
 ### Přidáno — Sub-layer checkpointing + memory-leak fix

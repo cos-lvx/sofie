@@ -18,6 +18,7 @@ use falcon_h1::config::FalconH1Config;
 use falcon_h1::model::FalconH1Model;
 use falcon_h1::state::ModelState;
 pub use session::SofieSession;
+pub use training::{CoreMemoryArtifact, CoreMemoryMeta};
 
 use prompt::pipeline::PromptPipeline;
 use prompt::types::{PersonaConfig, PromptContext};
@@ -45,6 +46,11 @@ pub struct Sofie {
     dtype: DType,
     pipeline: PromptPipeline,
     persona: Option<PersonaConfig>,
+    /// Trénovaná Core Memory (alpha.14+) — pokud připojena, každá nová
+    /// session se inicializuje s tímto SSM stavem místo nul. Načítá se
+    /// přes `attach_core_memory`; resume session ji ignoruje (uložená
+    /// session má vlastní evolved state).
+    core_memory: Option<CoreMemoryArtifact>,
 }
 
 impl Sofie {
@@ -121,7 +127,49 @@ impl Sofie {
             dtype,
             pipeline,
             persona,
+            core_memory: None,
         })
+    }
+
+    /// Připojí trénovanou Core Memory — každá nová session jí pak bude
+    /// inicializovat SSM state místo nul. Volá se po `Sofie::load`,
+    /// typicky z auto-discovery (`~/.eleutheria/core_memory.safetensors`)
+    /// nebo z explicit `--core-memory <path>`.
+    ///
+    /// Validuje, že rozměry artefaktu odpovídají aktuální konfiguraci modelu.
+    /// Resume session (`load_state`) tuto Core Memory ignoruje — uložená
+    /// session už má vlastní evolved SSM state, který by neměl být přepsán.
+    pub fn attach_core_memory(&mut self, artifact: CoreMemoryArtifact) -> Result<()> {
+        artifact
+            .validate_config(&self.config)
+            .map_err(|e| anyhow!("Core Memory nekompatibilní s modelem: {e}"))?;
+        let meta = artifact.meta();
+        tracing::info!(
+            "Core Memory připojena: {} vrstev, training_steps={:?}, best_loss={:?}, timestamp={}",
+            meta.num_layers,
+            meta.training_steps,
+            meta.best_loss,
+            meta.timestamp
+        );
+        self.core_memory = Some(artifact);
+        Ok(())
+    }
+
+    /// Odpojí Core Memory — další `new_session` bude startovat z nul.
+    pub fn detach_core_memory(&mut self) {
+        if self.core_memory.take().is_some() {
+            tracing::info!("Core Memory odpojena");
+        }
+    }
+
+    /// True pokud je Core Memory připojena.
+    pub fn has_core_memory(&self) -> bool {
+        self.core_memory.is_some()
+    }
+
+    /// Reference na metadata připojené Core Memory (pro CLI status řádky).
+    pub fn core_memory_meta(&self) -> Option<&CoreMemoryMeta> {
+        self.core_memory.as_ref().map(|a| a.meta())
     }
 }
 
@@ -130,9 +178,18 @@ impl Sofie {
 // ---------------------------------------------------------------------------
 
 impl Sofie {
-    /// Vytvoří novou session (prázdný stav).
+    /// Vytvoří novou session.
+    ///
+    /// Pokud je připojena Core Memory (`attach_core_memory`), inicializuje
+    /// SSM state per-layer z trénovaného artefaktu. Jinak nulový start.
+    /// Conv state a KV cache jsou vždy nulové — Core Memory je čistě
+    /// long-term substrát, krátkodobé buffery se budují za běhu.
     pub fn new_session(&self) -> Result<SofieSession> {
-        let state = ModelState::new(&self.config, self.dtype, &self.device)?;
+        let mut state = ModelState::new(&self.config, self.dtype, &self.device)?;
+        if let Some(art) = &self.core_memory {
+            art.apply_to_state(&mut state, &self.device, self.dtype)?;
+            tracing::debug!("nová session inicializována z Core Memory");
+        }
         Ok(SofieSession::new(state, &self.config))
     }
 
@@ -484,7 +541,11 @@ impl Sofie {
                 (s, p)
             }
             None => {
-                let s = ModelState::new(&self.config, self.dtype, &self.device)?;
+                let mut s = ModelState::new(&self.config, self.dtype, &self.device)?;
+                if let Some(art) = &self.core_memory {
+                    art.apply_to_state(&mut s, &self.device, self.dtype)?;
+                    tracing::debug!("single-shot state inicializován z Core Memory");
+                }
                 (s, 0)
             }
         };
