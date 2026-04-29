@@ -164,11 +164,15 @@ vzdálenostmi). Core Memory **musí být trénovaný** — potvrzeno empiricky.
   init_states z artefaktu. CLI: `--core-memory`, `--no-core-memory`,
   `--inspect-core-memory`, `train-core-memory --output --notes`.
   84 unit testů (+7).
-- [ ] **alpha.15** — Resume training (init_states z `into_stack` +
-  persistovaný AdamW state + step_idx + epoch). Production training
-  run na 1.5B s `law_pack` + `programming_pack`.
-- [ ] **v0.5.0** — Validace přes re-run retention benchmarku (SsmOnly
-  pass-rate musí vyskočit z 0 % na měřitelné číslo).
+- [x] **alpha.15** — Resume tréninku init_states. CLI `--resume-from`,
+  `into_stack` místo `randn_small`, akumulace `training_steps` +
+  `best_loss = min` + composed `notes`. AdamW state nepersistuje
+  (alpha.16 limitace, dokumentováno). 88 testů (+4).
+- [ ] **alpha.16** — AdamW state persistence (`core_memory.optim.safetensors`
+  vedle artefaktu, per-Var m + v moments + step counter).
+- [ ] **v0.5.0** — Production training run na 1.5B s `law_pack` +
+  `programming_pack`; validace přes re-run retention benchmarku
+  (SsmOnly pass-rate musí vyskočit z 0 %).
 - [ ] **Episodic Memory** — echo embeddings z Falcon-H1 (self-retrieval
   bez separátního modelu), PostgreSQL + pgvector na Mnémosyné,
   `MemoryInjection` stage v pipeline

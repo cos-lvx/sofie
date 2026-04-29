@@ -8,6 +8,22 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
 
 ## Aktivní
 
+### KI-007 — AdamW optimizer state se nepersistuje při resume
+
+- **Fáze:** 5 (alpha.15)
+- **Dopad:** Střední — pro multi-stage tréninky má lehkou disrupci v
+  efektivním LR po resume (Adam bias correction kompenzuje warmup okno
+  ~prvních 100–500 kroků, ne dlouhodobou trajektorii momentum/velocity)
+- **Kontext:** `train-core-memory --resume-from <path>` načte init_states
+  přes `CoreMemoryArtifact::into_stack`, ale `AdamW::new` startuje
+  s prázdnými `m, v` moments. Pro krátký fine-tune nebo single-shot
+  resume (alpha.15 use case) je to akceptovatelné. Pro long training
+  s checkpoint/restart cyklem je to skutečná limitace.
+- **Workaround:** vyšší LR warmup po resume nebo nižší LR.
+- **Řešení:** alpha.16 — `core_memory.optim.safetensors` vedle
+  artefaktu, per-Var m + v moments + step counter, auto-load při
+  `--resume-from`.
+
 ### KI-001 — Hardcoded cesty k modelům v CLI
 
 - **Fáze:** 1

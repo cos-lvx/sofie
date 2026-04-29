@@ -4,6 +4,52 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-04-29 | v0.5.0-alpha.15 — Resume tréninku (init_states + accumulated counters)
+
+Trénování může pokračovat tam, kde předchozí běh skončil. Multi-stage
+curriculum (např. *stage 1 = sofie identity → resume → stage 2 =
+law_pack*) je teď reálná cesta.
+
+**CLI:** `train-core-memory --resume-from <path>` načte
+`CoreMemoryArtifact`, validuje config a přes `into_stack` zkonstruuje
+trainable `CoreMemoryStack` s `Var`-y inicializovanými ze saved
+init_states místo `randn_small`. Audit: vypíše `prior_meta.training_steps`,
+`best_loss`, `timestamp` před tréninkem.
+
+**Akumulace v output artefaktu:**
+- `training_steps` = `prior + this_run` (kumulativně přes všechny běhy)
+- `best_loss` = `min(prior, this_run)` (historický minimum)
+- `final_loss` = z tohoto běhu (nejaktuálnější)
+- `notes` = `compose_notes(prior, new)` — `"stage 1 | stage 2"` audit
+  trail tréninkové trajektorie
+
+**Limitace alpha.15 (dokumentovaná, plánovaná pro alpha.16):** AdamW
+optimizer state (m, v moments) **neperzistuje** — startuje od nuly. Adam
+bias correction kompenzuje warmup okno (~prvních 100–500 kroků), ale
+pro dlouhé multi-stage tréninky to znamená lehkou disrupci v efektivním
+LR po resume. Workaround: vyšší LR warmup, nebo nižší LR po resume.
+Plný state persistence bude v alpha.16 vedle artefaktu jako
+`core_memory.optim.safetensors`.
+
+**Proč rozdělit na dva patche:** Plný AdamW state persistence vyžaduje
+buď (a) extrakci `m, v` z Candle `AdamW` optimizéru, což může vyžadovat
+veřejné API rozšíření v Candle, nebo (b) vlastní mini-optimizer wrapper.
+Oba směry chci pokrýt research patchem před implementací — soft resume
+(alpha.15) odblokuje 80 % use-cases hned.
+
+**Helper `compose_notes`** v main.rs: 4 jednotkové testy (None/None →
+None, Some/None → Some, None/Some → Some, Some/Some → join "|").
+Helper je pure logic — žádné side effects, snadno testovatelné.
+
+**Čísla:** 88 testů (+4 oproti alpha.14), clippy clean, fmt OK.
+
+**Co dál (alpha.16):** AdamW state persistence. Po něm v0.5.0
+production training run na 1.5B s law_pack + programming_pack +
+validace přes re-run retention benchmarku (SsmOnly pass-rate musí
+vyskočit z 0 % — kritický důkazní bod Fáze 5).
+
+---
+
 ## 2026-04-29 | v0.5.0-alpha.14 — Save/Load trénované Core Memory
 
 Trénovaná Core Memory přežívá restart procesu. Vyřešený "trenuju → loss

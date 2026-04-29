@@ -7,6 +7,71 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.15] — 2026-04-29
+
+### Přidáno — Resume tréninku (init_states + accumulated counters)
+
+**Fáze 5 alpha.15 milestone:** trénování může pokračovat tam, kde
+předchozí běh skončil. Multi-stage curriculum (např. law_pack → resume →
+programming_pack) je teď reálná cesta. AdamW state persistence (m, v
+moments) je odložena do alpha.16.
+
+#### CLI: `train-core-memory --resume-from <path>`
+
+- Načte `CoreMemoryArtifact` přes `load → validate_config → into_stack`
+  místo `randn_small`.
+- Validuje, že rozměry artefaktu odpovídají aktuálnímu modelu.
+- Vypíše předchozí telemetrii (`steps`, `best_loss`, `timestamp`) pro
+  audit.
+
+#### Akumulace metadat při save
+
+- `training_steps` v output artefaktu = `prior_meta.training_steps +
+  result.total_steps` (kumulativní napříč běhy).
+- `best_loss` = `min(prior, this_run)` — historický minimum.
+- `final_loss` = z tohoto běhu (nejaktuálnější stav).
+- `notes` = `compose_notes(prior, new)` — pomlčka spojuje předchozí
+  poznámku s novou (`"epoch 1 | epoch 2 resume"`). Audit trail tréninkové
+  trajektorie.
+
+#### Limitace alpha.15: AdamW state reset
+
+- Optimizer state (m, v moments) se **neperzistuje** — startuje od nuly.
+  Adam bias correction kompenzuje warmup (≈prvních 100–500 kroků), ale
+  pro dlouhé tréninky to znamená lehkou disrupci v efektivním LR po
+  resume.
+- **Workaround:** použij vyšší LR warmup nebo nižší LR po resume.
+- **Plný state persistence:** alpha.16 přidá soubor
+  `core_memory.optim.safetensors` vedle artefaktu (m, v per Var).
+
+#### Testy (+4, total 88)
+
+- `compose_notes_returns_none_when_both_missing`
+- `compose_notes_uses_new_when_prior_missing`
+- `compose_notes_keeps_prior_when_new_missing`
+- `compose_notes_concatenates_with_pipe_separator`
+
+#### Workflow s resume
+
+```text
+# Stage 1: identita
+cargo run -- train-core-memory --dataset dataset/training/sofie_pack.txt \
+    --output ~/.eleutheria/core_memory.safetensors \
+    --notes "stage 1 sofie identity"
+
+# Stage 2: doménové znalosti — pokračuj ze stage 1
+cargo run -- train-core-memory --dataset dataset/training/law_pack.txt \
+    --resume-from ~/.eleutheria/core_memory.safetensors \
+    --output ~/.eleutheria/core_memory.safetensors \
+    --notes "stage 2 law domain"
+
+cargo run -- --inspect-core-memory ~/.eleutheria/core_memory.safetensors
+# notes: "stage 1 sofie identity | stage 2 law domain"
+# training_steps: kumulativní
+```
+
+---
+
 ## [0.5.0-alpha.14] — 2026-04-29
 
 ### Přidáno — Save/Load trénované Core Memory

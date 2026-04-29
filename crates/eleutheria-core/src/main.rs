@@ -248,6 +248,20 @@ struct TrainCoreMemoryArgs {
     /// "law_pack 8 epoch, 1.5B"). Zapíše se do metadata.
     #[arg(long)]
     notes: Option<String>,
+
+    /// Cesta k existujícímu `CoreMemoryArtifact` pro **resume tréninku**
+    /// (alpha.15). Místo `randn_small` startu se Core Memory načte z disku
+    /// a `into_stack` zkonstruuje čerstvé `Var`-y inicializované z saved
+    /// init_states. Counter `training_steps` v output metadatech je
+    /// kumulativní (saved + tento run).
+    ///
+    /// **Limitace (alpha.15):** AdamW optimizer state (m, v moments) se
+    /// **neperzistuje** — startuje od nuly. Adam bias correction
+    /// kompenzuje warmup okno (~první stovky kroků). Plný state
+    /// persistence je práce pro alpha.16. Pokud je tato limitace
+    /// problémem, použij větší LR warmup nebo nižší LR po resume.
+    #[arg(long)]
+    resume_from: Option<PathBuf>,
 }
 
 /// Argumenty pro `train-core-memory-multi` subkomand — multi-layer smoke
@@ -317,6 +331,24 @@ fn ensure_parent_dir(path: &std::path::Path) -> Result<()> {
             .map_err(|e| anyhow!("nelze vytvořit {}: {}", parent.display(), e))?;
     }
     Ok(())
+}
+
+/// Při resume tréninku skládá notes z prior metadat + nové CLI poznámky.
+/// `None + None = None`, jinak pomlčkou oddělené.
+fn compose_notes(
+    prior: Option<&eleutheria_core::CoreMemoryMeta>,
+    new_notes: Option<&str>,
+) -> Option<String> {
+    let prior_notes = prior
+        .and_then(|m| m.notes.as_deref())
+        .filter(|s| !s.is_empty());
+    let new_notes = new_notes.filter(|s| !s.is_empty());
+    match (prior_notes, new_notes) {
+        (None, None) => None,
+        (Some(a), None) => Some(a.to_string()),
+        (None, Some(b)) => Some(b.to_string()),
+        (Some(a), Some(b)) => Some(format!("{a} | {b}")),
+    }
 }
 
 /// Vyřeš zdroj Core Memory podle CLI argumentů. Vrací `None` pokud
@@ -594,10 +626,33 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         dataset.seq_len()
     );
 
-    // 3) Vytvoř trainable Core Memory stack
-    let stack = CoreMemoryStack::randn_small(sofie.config(), sofie.device_ref())
-        .map_err(|e| anyhow!("CoreMemoryStack: {e}"))?;
-    println!("  CoreMemory: {} vrstev, randn init\n", stack.num_layers());
+    // 3) Vytvoř trainable Core Memory stack — buď randn_small nebo resume.
+    //    Při resume akumulujeme původní training_steps a notes do meta
+    //    output artefaktu, ať historie tréninku nezmizí.
+    let (stack, prior_meta) = if let Some(resume_path) = &ta.resume_from {
+        println!("  resume z: {}", resume_path.display());
+        let art = CoreMemoryArtifact::load(resume_path)
+            .map_err(|e| anyhow!("CoreMemoryArtifact::load: {e}"))?;
+        art.validate_config(sofie.config())
+            .map_err(|e| anyhow!("artefakt nekompatibilní s modelem: {e}"))?;
+        let prior = art.meta().clone();
+        let stack = art
+            .into_stack(sofie.config(), sofie.device_ref())
+            .map_err(|e| anyhow!("into_stack: {e}"))?;
+        println!(
+            "  předchozí: {} steps, best_loss={:?}, timestamp={}",
+            prior.training_steps.unwrap_or(0),
+            prior.best_loss,
+            prior.timestamp
+        );
+        println!("  AdamW state: NEPERZISTOVÁN (alpha.15 limitace) — m, v startují od nuly\n");
+        (stack, Some(prior))
+    } else {
+        let stack = CoreMemoryStack::randn_small(sofie.config(), sofie.device_ref())
+            .map_err(|e| anyhow!("CoreMemoryStack: {e}"))?;
+        println!("  CoreMemory: {} vrstev, randn init\n", stack.num_layers());
+        (stack, None)
+    };
 
     // 4) Trénuj
     let grad_clip = if ta.grad_clip > 0.0 {
@@ -639,6 +694,8 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
     println!();
 
     // Persistence — trained Core Memory na disk (alpha.14).
+    // Při resume akumulujeme prior_meta.training_steps + this run; best_loss
+    // bereme min z obou, final_loss z tohoto runu (nejaktuálnější stav).
     if let Some(out_path) = &ta.output {
         ensure_parent_dir(out_path)?;
         let final_loss = if result.final_loss.is_finite() {
@@ -646,29 +703,43 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         } else {
             None
         };
-        let best_loss = if result.best_loss.is_finite() {
+        let best_loss_run = if result.best_loss.is_finite() {
             Some(result.best_loss)
         } else {
             None
         };
+
+        let prior_steps = prior_meta
+            .as_ref()
+            .and_then(|m| m.training_steps)
+            .unwrap_or(0);
+        let cumulative_steps = prior_steps + result.total_steps;
+        let best_loss_combined =
+            match (prior_meta.as_ref().and_then(|m| m.best_loss), best_loss_run) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
+        let combined_notes = compose_notes(prior_meta.as_ref(), ta.notes.as_deref());
+
         let artifact = CoreMemoryArtifact::from_stack(
             &stack,
             sofie.config(),
-            Some(result.total_steps),
-            best_loss,
+            Some(cumulative_steps),
+            best_loss_combined,
             final_loss,
-            ta.notes.clone(),
+            combined_notes,
         )
         .map_err(|e| anyhow!("CoreMemoryArtifact build: {e}"))?;
         artifact
             .save(out_path)
             .map_err(|e| anyhow!("CoreMemoryArtifact save: {e}"))?;
         println!(
-            "Core Memory uložena: {} ({} vrstev, {} steps, best_loss={:.4})",
+            "Core Memory uložena: {} ({} vrstev, {} steps total, +{} this run, best_loss={:.4})",
             out_path.display(),
             stack.num_layers(),
+            cumulative_steps,
             result.total_steps,
-            result.best_loss
+            best_loss_combined.unwrap_or(f64::NAN)
         );
     } else {
         println!("(Core Memory neuložena — bez --output flagu zůstává pouze v paměti.)");
@@ -1030,5 +1101,66 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         let boundary = s.floor_char_boundary(max);
         format!("{}...", &s[..boundary])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eleutheria_core::CoreMemoryMeta;
+
+    fn meta_with_notes(notes: Option<&str>) -> CoreMemoryMeta {
+        CoreMemoryMeta {
+            eleutheria_version: "test".into(),
+            format_version: 1,
+            kind: "core_memory_trained".into(),
+            num_layers: 24,
+            n_heads: 24,
+            headdim: 64,
+            d_state: 256,
+            dtype: "F32".into(),
+            timestamp: "now".into(),
+            training_steps: Some(100),
+            best_loss: Some(2.0),
+            final_loss: Some(2.5),
+            notes: notes.map(String::from),
+        }
+    }
+
+    #[test]
+    fn compose_notes_returns_none_when_both_missing() {
+        assert_eq!(compose_notes(None, None), None);
+        let prior = meta_with_notes(None);
+        assert_eq!(compose_notes(Some(&prior), None), None);
+        assert_eq!(compose_notes(Some(&prior), Some("")), None);
+    }
+
+    #[test]
+    fn compose_notes_uses_new_when_prior_missing() {
+        assert_eq!(compose_notes(None, Some("epoch 2")), Some("epoch 2".into()));
+        let prior = meta_with_notes(None);
+        assert_eq!(
+            compose_notes(Some(&prior), Some("epoch 2")),
+            Some("epoch 2".into())
+        );
+    }
+
+    #[test]
+    fn compose_notes_keeps_prior_when_new_missing() {
+        let prior = meta_with_notes(Some("epoch 1"));
+        assert_eq!(compose_notes(Some(&prior), None), Some("epoch 1".into()));
+        assert_eq!(
+            compose_notes(Some(&prior), Some("")),
+            Some("epoch 1".into())
+        );
+    }
+
+    #[test]
+    fn compose_notes_concatenates_with_pipe_separator() {
+        let prior = meta_with_notes(Some("epoch 1"));
+        assert_eq!(
+            compose_notes(Some(&prior), Some("epoch 2 resume")),
+            Some("epoch 1 | epoch 2 resume".into())
+        );
     }
 }

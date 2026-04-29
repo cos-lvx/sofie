@@ -134,14 +134,30 @@
       --notes <text>`. Auto-discovery `~/.eleutheria/core_memory.safetensors`.
 - [x] 84 unit testů (+7 oproti alpha.13), clippy clean.
 
-### v0.5.0-alpha.15 (next) — resume training + production run
-- [ ] Resume training: `--resume-core-memory <path>` v `train-core-memory`
-      → `CoreMemoryArtifact::load → into_stack` místo `randn_small_stack`.
-- [ ] Persistence AdamW optimizer state + step_idx + epoch (nový soubor
-      vedle artefaktu, např. `core_memory.optim.safetensors`).
-- [ ] Production training run na 1.5B s `law_pack` + `programming_pack`.
-- [ ] Validační run retention benchmarku — SsmOnly pass-rate musí
-      vyskočit z 0 % na měřitelné číslo (kritický důkazní bod Fáze 5).
+### v0.5.0-alpha.15 ✅ (2026-04-29) — resume tréninku (init_states)
+- [x] **`train-core-memory --resume-from <path>`** — načte
+      `CoreMemoryArtifact`, validuje config, `into_stack` místo
+      `randn_small`. Předchozí telemetrie se vypíše pro audit.
+- [x] **Akumulace metadat při save** — `training_steps` kumulativně,
+      `best_loss = min(prior, this_run)`, `notes` skládané přes
+      `compose_notes` (helper s 4 unit testy).
+- [x] **Dokumentovaná limitace:** AdamW optimizer state (m, v moments)
+      **neperzistuje** — startuje od nuly. Adam bias correction kompenzuje
+      warmup, ale pro dlouhé multi-stage tréninky lehce disruptivní.
+- [x] 88 testů (+4 oproti alpha.14), clippy clean.
+
+### v0.5.0-alpha.16 (next) — AdamW state persistence
+- [ ] `core_memory.optim.safetensors` vedle artefaktu — per-Var m, v
+      moments, step counter. Auto-load při `--resume-from` pokud existuje.
+- [ ] Round-trip integration test: 5 steps → save → load → 5 steps,
+      ověřit že `m, v` continuity zachovaná (porovnat trajektorie loss).
+
+### v0.5.0 — Production training run + validace
+- [ ] Production training na 1.5B s law_pack + programming_pack
+- [ ] **Validace: re-run retention benchmark — SsmOnly pass-rate musí
+      vyskočit z 0 % na měřitelné číslo** (kritický bod důkazu Fáze 5)
+- [ ] Save trained state jako `sofie_core_memory.safetensors`
+- [ ] Research writeup do `~/Atlas/Nexus/70-Eleutheria/Research/`
 
 ### v0.5.0-alpha.13 — Sofie identity dataset composer
 - [ ] Dataset composer — váhová mix (identity core / Sessions / distillate / context)
