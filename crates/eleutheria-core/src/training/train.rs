@@ -63,6 +63,14 @@ pub struct TrainingConfig {
     /// (místo `from_stack` = final state). Pro noisy training (RN-002,
     /// RN-009) je rozdíl dramatický.
     pub track_best: bool,
+    /// AdamW β1 override (alpha.19, β1 sweep ablace). `None` = default 0.9.
+    /// Hodnota 0.0 efektivně dělá z AdamW RMSProp (žádný velocity buffer
+    /// pro first moment). Pro identifikaci skutečného root cause Phase 2
+    /// overshoot (RN-008/009 refutace, RN-011 prep) — pokud overshoot
+    /// zůstane i s β1=0.0, root cause není v momentum strukturně.
+    pub adam_beta1: Option<f64>,
+    /// AdamW β2 override (alpha.19). `None` = default 0.999.
+    pub adam_beta2: Option<f64>,
 }
 
 impl Default for TrainingConfig {
@@ -78,6 +86,8 @@ impl Default for TrainingConfig {
             checkpoint: false,
             lr_schedule: None,
             track_best: false,
+            adam_beta1: None,
+            adam_beta2: None,
         }
     }
 }
@@ -143,13 +153,18 @@ impl Sofie {
         }
 
         // AdamW optimizer — vezme všech 24 Vars najednou. Vlastní wrapper
-        // s veřejným state pro persistence (alpha.16, KI-007).
+        // s veřejným state pro persistence (alpha.16, KI-007). Optional
+        // β1/β2 override pro alpha.19 ablace (RN-011 prep).
         let vars = stack.vars_owned();
+        let defaults = ParamsAdamW::default();
         let mut opt = EleutheriaAdamW::new(
             vars.clone(),
             ParamsAdamW {
                 lr: config.learning_rate,
-                ..ParamsAdamW::default()
+                beta1: config.adam_beta1.unwrap_or(defaults.beta1),
+                beta2: config.adam_beta2.unwrap_or(defaults.beta2),
+                eps: defaults.eps,
+                weight_decay: defaults.weight_decay,
             },
         )?;
         if let Some(art) = resume_optim {

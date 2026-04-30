@@ -289,6 +289,18 @@ struct TrainCoreMemoryArgs {
     /// Default off (alpha.16/17 chování — save final).
     #[arg(long, default_value_t = false)]
     save_best: bool,
+
+    /// **AdamW β1 override (alpha.19, ablace).** Default 0.9. Hodnota
+    /// 0.0 efektivně dělá z AdamW RMSProp (žádný velocity buffer pro
+    /// first moment). Pro identifikaci skutečného root cause overshoot —
+    /// pokud overshoot zůstane i s β1=0.0, root cause není v momentum
+    /// strukturně.
+    #[arg(long)]
+    adam_beta1: Option<f64>,
+
+    /// **AdamW β2 override (alpha.19, ablace).** Default 0.999.
+    #[arg(long)]
+    adam_beta2: Option<f64>,
 }
 
 /// Argumenty pro `train-core-memory-multi` subkomand — multi-layer smoke
@@ -767,12 +779,20 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         checkpoint: ta.checkpoint,
         lr_schedule,
         track_best: ta.save_best,
+        adam_beta1: ta.adam_beta1,
+        adam_beta2: ta.adam_beta2,
     };
     if ta.checkpoint {
         println!("  gradient checkpointing: ON (per-layer chunked backward)");
     }
     if ta.save_best {
         println!("  best snapshot tracker: ON (uloží stav s nejnižší loss, ne final)");
+    }
+    if ta.adam_beta1.is_some() || ta.adam_beta2.is_some() {
+        println!(
+            "  AdamW HP override: β1={:?}, β2={:?}",
+            ta.adam_beta1, ta.adam_beta2
+        );
     }
 
     let (result, optimizer, best_tracker) =

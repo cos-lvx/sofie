@@ -7,6 +7,51 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.19] — 2026-04-30
+
+### Přidáno — AdamW β1/β2 CLI override (ablace infrastruktura)
+
+**Důvod:** Ablace A1 (LR=1e-4) a A2 (LR=5e-5) ukázaly, že **trajektorie
+je téměř LR-invariantní v struktuře** — Phase 2 overshoot magnitude
+prakticky identická napříč 20× rozdílem v LR (alpha.16: 10.58, A1:
+10.88, A2: 10.91), best_step **byte-identický = 113** ve všech třech
+runech. Hypotéza: Adam normalizuje update přes `m_hat / sqrt(v_hat)`
+(O(1) bez ohledu na gradient magnitudu), LR škáluje rychlost ale ne
+směr trajektorie.
+
+Pokud platí, **β1 (momentum coefficient) by měl měnit strukturu m, v**
+— ne jen magnitudu. RMSProp (β1=0.0) by měl produkovat radikálně jinou
+trajektorii.
+
+#### Změny
+
+- **`TrainingConfig.adam_beta1: Option<f64>`** + `adam_beta2: Option<f64>`
+  — `None` = default Candle (β1=0.9, β2=0.999), backwards-compatible.
+- **`train_core_memory`** — staví `ParamsAdamW` s override hodnotami
+  pro `EleutheriaAdamW::new`.
+- **CLI:** `--adam-beta1 FLOAT`, `--adam-beta2 FLOAT`. Default off
+  (žádný override). Při zapnutí log line `AdamW HP override: β1=Some(0.5),
+  β2=None` v setup výpisu.
+
+#### Použití pro β1 sweep ablaci
+
+- A4: `--adam-beta1 0.5` (kratší momentum window)
+- A5: `--adam-beta1 0.0` (čistý RMSProp — žádný velocity buffer pro m)
+
+Pokud overshoot zůstane i s β1=0.0, root cause **není v momentum
+strukturně** — je dále k landscape geometry / batch noise / vocab
+cross-entropy.
+
+#### Testy
+
+Beze změny — 120 (alpha.18). β1/β2 override jen předává hodnoty do
+`EleutheriaAdamW`, který má vlastní step_matches_candle_for_* unit
+testy pokrývající identický algoritmus pro β1=0.9/β2=0.999. Nové
+hodnoty (0.0, 0.5) jsou validované numericky stejnými testy
+(`m, v` jako EMA s lower coefficient = rychlejší přepis).
+
+---
+
 ## [0.5.0-alpha.18] — 2026-04-29
 
 ### Přidáno — Best snapshot tracker (KI-009 deterministický fix)
