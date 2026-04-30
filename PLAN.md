@@ -244,54 +244,72 @@ empirické ablace identifikují skutečný root cause.
       step 156 (loss 3.69). Meta + tensors konečně ladí.
 - [x] KI-009 → vyřešená; RN-003 → superseded RN-010.
 
-### v0.5.0-alpha.19 (next) — Empirické LR ablace pro root cause overshoot
+### v0.5.0-alpha.19 ✅ (2026-04-30) — β1/β2 CLI infra + LR/β1 ablace
 
-**Cíl:** Po RN-008/009 (refutace KI-007/008 hypotéz) a RN-010 (KI-009
-vyřešena) máme **správnou infrastrukturu** ale **neznámý root cause**
-Phase 2 overshoot. Tři ablace bez kódových změn — jen runy s různým HP
-+ `--save-best` pro fair comparison napříč setupy.
+#### Implementace (alpha.19 commit `bb11682`)
+- [x] `TrainingConfig.adam_beta1, adam_beta2: Option<f64>`
+- [x] CLI `--adam-beta1`, `--adam-beta2` flagy
+- [x] 120 testů (změny dropované do existujícího EleutheriaAdamW),
+      clippy clean
 
-#### Ablace A: LR sweep (priorita 1)
+#### Ablace LR ✅ (RN-011) — refutováno
+- [x] LR=1e-4 (10× nižší) — best_step=113, peak=10.88
+- [x] LR=5e-5 (20× nižší) — best_step=113, peak=10.91
+- [x] LR=1e-5 (100× nižší) — best_step=113, peak=10.86
+- [x] **Trajektorie LR-invariantní v struktuře** (4 runy, byte-identický
+      best_step=113). Adam normalizace; LR jen škáluje rychlost.
 
-Tři runy s `--save-best`, `/tmp/smoke_prog.txt`, jinak identické
-s alpha.16 setupem (seq_len=4, batch=1, grad_accum=1, clip=1):
-- [ ] LR=1e-4 (10× nižší) → `/tmp/abla_lr1e-4.safetensors`
-- [ ] LR=5e-5 (20× nižší) → `/tmp/abla_lr5e-5.safetensors`
-- [ ] LR=1e-5 (100× nižší) → `/tmp/abla_lr1e-5.safetensors`
+#### Ablace β1 ✅ (RN-012) — refutováno + production HP nalezeno
+- [x] β1=0.5 — best_loss=0.8860 (-11 % oproti default)
+- [x] β1=0.0 (RMSProp) — best_loss=0.8597 (-14 % oproti default)
+- [x] **best_step=113 byte-identický napříč β1=0.0/0.5/0.9.**
+- [x] Meta-nález: gradient direction je deterministicky landscape-
+      driven, ne Adam state-driven. β1 mění **přesnost dna**, ne
+      strukturu trajektorie.
+- [x] **Production HP volba: LR=1e-3 + β1=0.0 + --save-best**
+      (best_loss=0.8597, final=3.7379, ~26 min/156 stepů na 1.5B+CUDA)
 
-Pozorování:
-- Phase 2 overshoot magnitude per setup
-- best_loss per setup (fair: tracker zachytí nejlepší bod každého)
-- best_step (kdy v trajektorii nejlepší bod)
-- Wall time × kolik epoch budeme potřebovat pro stejnou kvalitu
+### v0.5.0-alpha.20 (next) — Production training na sofie identity packu
 
-Predikce: pokud LR=1e-4 produkuje monotónní descent bez overshoot,
-KI-008 root cause je LR hodnota (nekorelovaná s warmup hypothesis).
-Pokud i 1e-5 stále má overshoot, root cause je jinde (β1, batch noise,
-landscape).
+**Cíl:** S identifikovaným HP setupem (alpha.19 RN-012) a kompletní
+infrastrukturou (alpha.16-18) pustit první **skutečný production
+training** Sofie identity Core Memory. Místo smoke programming
+distillates konečně sofie identity korpus.
 
-#### Ablace B: β1 sweep (priorita 2, podmíněně)
+#### Příprava datasetu (paralelní track, ne kódová změna)
+- [ ] Sofie identity pack — kompozice z `~/Atlas/Nexus/50-Sofie/`
+      (Bootstrap, Identity, Memory, Sessions, Context — ~78k slov)
+      + váhový mix s programming/law packy (PLAN dataset strategie)
+- [ ] Manifest + struktura (analogicky `programming_pack.txt`,
+      `law_pack.txt`)
 
-Pokud LR ablace neuspokojivá, Adam β1 sweep:
-- [ ] β1=0.5 (kratší momentum window)
-- [ ] β1=0.0 (efektivně RMSProp — žádné velocity buffer)
+#### Production training run
+- [ ] `train-core-memory --dataset dataset/training/sofie_identity_pack.txt
+      --learning-rate 1e-3 --adam-beta1 0.0 --save-best --checkpoint
+      --epochs N --output ~/.eleutheria/core_memory.safetensors`
+- [ ] Předem spočítané `total_steps` z dataset velikosti × epochs;
+      odhad wall time z 10 s/step (CUDA 1.5B)
+- [ ] Monitor logs — best_step se může posunout pro větší dataset
+      (víc chunks → víc příležitostí pro Phase 1 minimum dno)
 
-Vyžaduje malou kódovou změnu — `--adam-beta1` CLI flag, nebo přímo
-test v `EleutheriaAdamW::set_params`.
+#### Validace přes retention benchmark
+- [ ] Re-run `bench-retention --variant ssm_only` s production
+      Core Memory artefaktem
+- [ ] **Kritický důkaz Fáze 5:** SsmOnly pass-rate musí vyskočit
+      z 0 % (alpha.4.5 baseline RN-007) na měřitelné číslo
+- [ ] Pokud > 0 %, prokázáno že trained Core Memory drží sémantiku
+      i bez KV cache → Fáze 5 cíl splněn
+- [ ] Pokud = 0 %, hypotéza o "Core Memory jako persona plugin"
+      empiricky refutována → Fáze 5 design revision
 
-#### Ablace C: Batch size sweep (priorita 3, vyžaduje Gaia)
+#### Research writeup do Nexusu
+- [ ] `~/Atlas/Nexus/70-Eleutheria/Research/SSM_state_tuning_findings_2026-04.md`
+- [ ] Sekce: alpha.10-19 milestone summary, RN-008..012 deep-dive,
+      production HP volba a její empirický důvod, retention benchmark
+      validace, otevřené otázky pro v0.6+ (architectural intervence
+      pro overshoot eliminaci, batch size na Gaia)
 
-Pokud A i B neuspokojivé, root cause je gradient noise z tiny batch:
-- [ ] batch_size=4 (na Gaia)
-- [ ] batch_size=16 (na Gaia)
-
-Vyžaduje větší VRAM, RTX 4050 6 GB nezvládne.
-
-### Po ablacích — production training s identifikovaným setupem
-- [ ] Identifikovaný HP setup (LR / β1 / batch) + `--save-best` →
-      production run na sofie identity packu na Gaia
-- [ ] Validace přes re-run retention benchmarku (SsmOnly pass-rate
-      musí vyskočit z 0 % — kritický důkaz Fáze 5)
+### Quality patches (po alpha.20 validation, libovolné pořadí)
 
 ### Empirické ablace (alpha.18+)
 

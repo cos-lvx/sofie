@@ -10,12 +10,13 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
 
 ### KI-008 — Adam bez warmup overshoots, loss osciluje místo monotonního descentu
 
-- **Fáze:** 5 (alpha.15+; eskalováno alpha.16 po RN-008; **hypotéza
-  refutovaná alpha.17 po RN-009**)
-- **Dopad:** **Vysoký** — overshoot pořád existuje, ale **nelze ho
-  vyřešit ani Adam state persistence ani LR warmup**. Phase 2 overshoot
-  je hluboce strukturní (loss landscape geometry, tiny batch gradient
-  noise, high-vocab cross-entropy, případně LR=1e-3 příliš vysoké).
+- **Fáze:** 5 (alpha.15+; eskalováno alpha.16; **HP hypotézy všechny
+  refutované alpha.19 po RN-011/012**)
+- **Dopad:** **Vysoký technicky, Nízký prakticky** — overshoot je
+  strukturální realita Mamba-2 + SSM state tuning loss landscape, ne
+  HP problém. Praktickí dopad eliminován alpha.18 best snapshot trackerem
+  (KI-009) — uložíme nejlepší bod trajektorie (step 113, loss ~0.86),
+  ne final (loss ~3.7). Pro production stačí.
 - **Stav infrastruktury:**
   - **Schedule kód v alpha.17** funguje per spec (`LrSchedule` modul,
     HF konvence, 12 unit testů). Logging ukazuje správný ramp + decay.
@@ -36,27 +37,32 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
   Best loss je ephemerálně dosažený někde v Phase 1 nebo začátku Phase 2,
   pak ztracen. Final loss reflektuje noisy stav, ne best.
 - **Workaround (production-ready alpha.18):** `--save-best` flag
-  zachytí nejlepší bod trajektorie navzdory noisy training. Pro alpha.16
-  baseline best=0.9965 vs final=3.69 — best snapshot dramaticky zlepší
-  kvalitu artefaktu bez nutnosti řešit overshoot strukturně.
-- **Řešení root cause — empirický postup:**
-  - **LR sweep ✅ (alpha.19, RN-011) — refutován.** 4 runy s LR
-    1e-3/1e-4/5e-5/1e-5 produkují **byte-identický best_step=113**
-    a Phase 2 peak ~10.6–10.9. Trajektorie je LR-invariantní v
-    struktuře. Adam normalizuje update přes m_hat/sqrt(v_hat) (O(1)),
-    LR jen škáluje rychlost, ne směr.
-  - **β1 sweep (alpha.19, RN-012 prep) — testovaný.** A4: β1=0.5,
-    A5: β1=0.0 (RMSProp). Pokud β1=0.0 zlomí pattern best_step=113,
-    momentum buffer je primary. Pokud zůstane, root cause je gradient
-    samotný (loss landscape × batch noise).
-  - **Batch size sweep (vyžaduje Gaia, podmíněně) — odložené.** Pokud
-    β1 sweep neuspokojivý, root cause je gradient noise z tiny batch
-    (1). 6 GB VRAM RTX 4050 toto nezvládne — Gaia má víc.
-  - **Loss landscape architectural fix (poslední možnost) — odložené.**
-    Pokud HP ablace všechny refutované, root cause je strukturní
-    (Mamba-2 + SSM landscape geometry). Architectural intervence
-    (jiný optimizer, gradient surgery, second-order method) je mimo
-    scope alpha.X.
+  zachytí nejlepší bod trajektorie navzdory noisy training. **Toto je
+  finální praktický fix** — overshoot je strukturální, ale uložený
+  artefakt drží step 113 stav (loss ~0.86 s β1=0.0 setupem).
+- **Empirický postup — výsledky:**
+  - **LR sweep ✅ refutován** (alpha.19, RN-011). 4 runy s LR
+    1e-3/1e-4/5e-5/1e-5 → byte-identický best_step=113, Phase 2 peak
+    ~10.6–10.9. Trajektorie LR-invariantní v struktuře.
+  - **β1 sweep ✅ refutován** (alpha.19, RN-012). 3 runy s β1=0.9/0.5/0.0
+    → byte-identický best_step=113, Phase 2 peak prakticky identický
+    (Δ < 0.1). Adam state nemění strukturu trajektorie.
+  - **Meta-nález:** Gradient direction je deterministicky landscape-
+    driven, ne HP-driven. EMA gradientu (β1=0.9) ≈ instantní gradient
+    (β1=0.0) v směru, magnituda varia ale směr je stabilní.
+  - **Batch size sweep — predikovaná refutace.** Větší batch averages
+    magnitudy, ale směr zůstává (landscape-driven). Vyžaduje empirickou
+    validaci na Gaia, ale není priorita.
+  - **Architectural intervence — odložené, mimo scope alpha.X.**
+- **Production HP volba (z alpha.19 ablací):**
+  - **LR=1e-3 + β1=0.0 (RMSProp) + --save-best**. best_loss=0.8597
+    (vs alpha.16 default 0.9965 → -14 %), final loss srovnatelný,
+    wall time stejný. Best snapshot tracker eliminuje noisy final
+    problém.
+  - **Důležité:** Tuto volbu je třeba validovat na sofie identity
+    packu (alpha.20 production training) přes retention benchmark.
+    Smoke test na programming distillates byl proof-of-concept, ne
+    final validation.
 
 ### KI-009 — Artefakt drží final state, ne best snapshot (vyřešeno alpha.18)
 
