@@ -276,12 +276,20 @@ infrastrukturou (alpha.16-18) pustit první **skutečný production
 training** Sofie identity Core Memory. Místo smoke programming
 distillates konečně sofie identity korpus.
 
-#### Příprava datasetu (paralelní track, ne kódová změna)
-- [ ] Sofie identity pack — kompozice z `~/Atlas/Nexus/50-Sofie/`
-      (Bootstrap, Identity, Memory, Sessions, Context — ~78k slov)
-      + váhový mix s programming/law packy (PLAN dataset strategie)
-- [ ] Manifest + struktura (analogicky `programming_pack.txt`,
-      `law_pack.txt`)
+#### Příprava datasetu ✅ (2026-04-30)
+- [x] **Sofie identity pack** — `dataset/training/sofie_identity_pack.txt`
+      (10 040 slov, 71 KB, ~25-28k tokenů). Dvouvrstvá architektura:
+      - **Část A (raw):** Bootstrap.md + Memory/Identity.md +
+        About-This-Place.md + Ondra.md + Journal.md (~2750 slov)
+      - **Část B (distillate chains):** 8 IDENTITY-001..008 chains
+        ze Sessions (~7300 slov, 6-sekční šablona, 800-1000 slov each)
+- [x] **MANIFEST.md** v `dataset/reasoning_chains/sofie_identity/`
+      s kompletní dokumentací (zdroje, vyřazené, šablona, HP doporučení)
+- [x] Vyřazené záměrně: Pulse.md, Current-Context.md, System-Knowledge.md,
+      themis-error-log, Lesson-*, Neovim config, Context/ celý —
+      projektová fakta zastarají, do Core Memory nepatří
+- [ ] **Ondrova revize packu** před production training (tone match,
+      hloubka, faktická přesnost citátů, chybějící momenty)
 
 #### Production training run
 - [ ] `train-core-memory --dataset dataset/training/sofie_identity_pack.txt
