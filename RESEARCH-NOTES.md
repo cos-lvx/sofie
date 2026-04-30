@@ -387,6 +387,79 @@ Každá entry má strukturu:
   je teď definitivně dataset-driven, ne Adam-driven); KI-007 vyřešená
   per spec ale nezmírnila overshoot; KI-008 eskaluje priority
 
+### RN-011 — LR sweep refutován jako root cause overshoot (trajektorie LR-invariantní)
+
+- **Datum:** 2026-04-30
+- **Verze:** alpha.18 (`a86b4b1`) + alpha.19 (`bb11682`)
+- **Setup:** Čtyři ablation runy s `--save-best`, jinak identický
+  alpha.16 setup (smoke_prog 30 řádků, seq_len=4, batch=1, grad_accum=1,
+  clip=1). Měněn pouze `learning_rate`:
+  - Baseline: LR=1e-3 (alpha.16 RN-008)
+  - A1: LR=1e-4 (10× nižší)
+  - A2: LR=5e-5 (20× nižší)
+  - A3: LR=1e-5 (100× nižší)
+- **Pozorování — kompletní matrix:**
+  ```
+  step    | LR=1e-3 | LR=1e-4 | LR=5e-5 | LR=1e-5
+  20      |  1.6956 |  1.7537 |  1.7692 |  1.7718
+  30      |  7.9470 |  9.1963 |  9.3354 |  9.4243
+  40 peak | 10.5793 | 10.8816 | 10.9138 | 10.8629
+  60      |  8.9421 |  9.2130 |  9.2910 |  9.2704
+  100     |  4.7305 |  5.5309 |  5.5840 |  5.6817
+  final   |  3.6877 |  4.9909 |  5.2377 |  5.4129
+  best    |  0.9965 |  1.0482 |  1.0758 |  1.0606
+  step    |    113  |    113  |    113  |    113
+  ```
+  **Čtyři runy, čtyři byte-identické best_step = 113.** Phase 2
+  overshoot peak prakticky identický napříč 100× rozdílem v LR (10.58,
+  10.88, 10.91, 10.86 — Δ < 0.4 magnitude). Initial loss byte-identická
+  ve všech (9.8480 — randn_small startuje shodně, šum jen v dalším
+  vývoji). Final loss roste s nižším LR (3.69 → 4.99 → 5.24 → 5.41 —
+  pomalejší konvergence), ale best_loss prakticky stejný (~1.0–1.07).
+- **Hypotéza (potvrzená):** Adam normalizuje update přes
+  `lr * m_hat / (sqrt(v_hat) + eps)`. Klíčový poměr `m_hat / sqrt(v_hat)`
+  je **O(1)** bez ohledu na gradient magnitudu (oba EMA grad / EMA
+  grad² rostou úměrně). LR škáluje **rychlost** trajektorie, ale nemění
+  **strukturu** — ta je řízena Adam state coefficienty (β1, β2)
+  a loss landscape gradientem.
+  - Důsledek: tady byte-identický best_step ve čtyřech runech navzdory
+    100× rozdílu v LR. Gradient v každém kroku směřuje do **stejného
+    optima** (relativně k aktuálnímu state); rozdíl je jen v step size,
+    což se projeví v final, ne v best.
+- **Důsledky pro KI-008:**
+  - LR sweep **definitivně refutován** jako řešení overshoot. Ani
+    LR=1e-5 (100× nižší než alpha.16 baseline) Phase 2 overshoot
+    neeliminoval.
+  - Skutečný root cause leží v **strukturní rovině**:
+    - **Adam state coefficients (β1, β2)** — momentum bufferu m, v
+      mohou produkovat overshoot pattern strukturně. β1=0.0 (RMSProp)
+      odstraní first moment buffer → testovat A4/A5.
+    - **Tiny batch (1) gradient noise** — stochastic gradient → m, v
+      pamatují špatný směr; požaduje batch sweep na Gaia.
+    - **Loss landscape geometry** — Mamba-2 + SSM saddle/flat regions;
+      requires architectural intervention, ne HP.
+- **Co dál:**
+  - **Priorita 1:** β1 sweep (A4: β1=0.5, A5: β1=0.0/RMSProp). Pokud
+    β1=0.0 zlomí pattern best_step=113, momentum buffer je primary.
+    Pokud zůstane, root cause je gradient samotný (loss landscape ×
+    batch noise).
+  - **Priorita 2 (podmíněně):** batch size sweep na Gaia (jediná
+    cesta po refutaci β1).
+  - **Pro production:** alpha.16 LR=1e-3 + `--save-best` zůstává
+    nejlepší volba (final je vyšší, ale best je nižší a tracker ho
+    zachytí). Snižování LR jen prodlužuje trénink bez kvalitativního
+    benefitu.
+- **Vedlejší pozorování:** Best loss je drobně non-monotónní v LR
+  (0.9965 / 1.0482 / 1.0758 / 1.0606 — A3 lepší než A2). Rozdíly
+  ~0.05 jsou v range single-run noise (Phase 1 minimum je ephemerální,
+  zachycuje konkrétní step kdy oscilace dosáhne dna). Pro robustní
+  čísla by chtělo opakovat každý setup 3-5×.
+- **Status:** `confirmed` — robustní empirický nález (4 runy,
+  byte-identický best_step), refutuje LR-as-root-cause hypotézu.
+- **Ref:** RN-008/009 (KI-007/008 hypotézy refutované); navazuje na
+  alpha.19 (β1/β2 CLI infra); β1 sweep ablace pro RN-012; po β1
+  refutaci batch sweep na Gaia
+
 ### RN-010 — Best snapshot tracker funguje (KI-009 deterministicky vyřešena)
 
 - **Datum:** 2026-04-29
@@ -536,3 +609,4 @@ důvodu, ne mazáním_
 - **RN-008** — AdamW persistence drát funguje, ale Phase 2 overshoot zůstává (refutuje RN-006) · `confirmed`
 - **RN-009** — LR warmup neeliminoval overshoot (refutace KI-008 hypotézy) · `confirmed`
 - **RN-010** — Best snapshot tracker funguje (KI-009 deterministicky vyřešena) · `confirmed`
+- **RN-011** — LR sweep refutován (4 runy, best_step byte-identický, trajektorie LR-invariantní) · `confirmed`

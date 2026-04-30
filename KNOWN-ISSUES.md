@@ -35,22 +35,28 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
   4. Phase 4 (step 100+): slow descent s spike'y
   Best loss je ephemerálně dosažený někde v Phase 1 nebo začátku Phase 2,
   pak ztracen. Final loss reflektuje noisy stav, ne best.
-- **Workaround:** akceptovat noisy training, použít best snapshot
-  tracker (KI-009) — ulozí state na nejlepším bodu navzdory noisy
-  trajektorii. Smoke validace beztak proběhne, jen final loss není
-  reprezentativní.
-- **Řešení (revize 2026-04-29 po RN-009):**
-  - **Pivot:** KI-009 (best snapshot tracker) je teď top alpha.18
-    prioritou — deterministický fix, nezávisí na hypotéze o root cause.
-  - **Empirické ablace** pro identifikaci root cause:
-    1. **LR sweep** — 1e-3 / 5e-4 / 1e-4 / 5e-5 / 1e-5; najít minimální
-       LR pro monotónní descent
-    2. **β1 sweep** — 0.9 / 0.5 / 0.0 (RMSProp) — ověřit, jestli velocity
-       buffer je opravdu primární
-    3. **Batch size sweep** (vyžaduje Gaia) — 1 / 4 / 16; testuje
-       gradient noise jako root cause
-  - **Schedule infrastruktura zůstává cenná** pro production training
-    s nižším LR + větším batch (Gaia), kde její efekt může být skutečný.
+- **Workaround (production-ready alpha.18):** `--save-best` flag
+  zachytí nejlepší bod trajektorie navzdory noisy training. Pro alpha.16
+  baseline best=0.9965 vs final=3.69 — best snapshot dramaticky zlepší
+  kvalitu artefaktu bez nutnosti řešit overshoot strukturně.
+- **Řešení root cause — empirický postup:**
+  - **LR sweep ✅ (alpha.19, RN-011) — refutován.** 4 runy s LR
+    1e-3/1e-4/5e-5/1e-5 produkují **byte-identický best_step=113**
+    a Phase 2 peak ~10.6–10.9. Trajektorie je LR-invariantní v
+    struktuře. Adam normalizuje update přes m_hat/sqrt(v_hat) (O(1)),
+    LR jen škáluje rychlost, ne směr.
+  - **β1 sweep (alpha.19, RN-012 prep) — testovaný.** A4: β1=0.5,
+    A5: β1=0.0 (RMSProp). Pokud β1=0.0 zlomí pattern best_step=113,
+    momentum buffer je primary. Pokud zůstane, root cause je gradient
+    samotný (loss landscape × batch noise).
+  - **Batch size sweep (vyžaduje Gaia, podmíněně) — odložené.** Pokud
+    β1 sweep neuspokojivý, root cause je gradient noise z tiny batch
+    (1). 6 GB VRAM RTX 4050 toto nezvládne — Gaia má víc.
+  - **Loss landscape architectural fix (poslední možnost) — odložené.**
+    Pokud HP ablace všechny refutované, root cause je strukturní
+    (Mamba-2 + SSM landscape geometry). Architectural intervence
+    (jiný optimizer, gradient surgery, second-order method) je mimo
+    scope alpha.X.
 
 ### KI-009 — Artefakt drží final state, ne best snapshot (vyřešeno alpha.18)
 
