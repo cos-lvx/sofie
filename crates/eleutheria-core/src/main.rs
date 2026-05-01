@@ -290,6 +290,19 @@ struct TrainCoreMemoryArgs {
     #[arg(long, default_value_t = false)]
     save_best: bool,
 
+    /// **Periodic flush best snapshot na disk (alpha.20, KI-012).**
+    /// Pokud > 0 a `--save-best` je zapnutý a `--output` je nastavený,
+    /// každých N optimizer stepů se aktuální best snapshot atomicky
+    /// uloží na `--output`. Insurance proti pádu / preempci cloud GPU
+    /// instance — bez ní žije best jen v RAM a crash zahodí celý běh.
+    /// Atomic přes `<dir>/.<name>.tmp` + rename, takže cílová cesta
+    /// drží buď předchozí verzi, nebo nově zapsanou.
+    /// Default 10 — pro production setup s 44 s/step ~7 min insurance
+    /// granularita. Nastav 0 pro vypnutí (alpha.18-19 chování =
+    /// jediný save na konci).
+    #[arg(long, default_value_t = 10)]
+    save_best_every: usize,
+
     /// **AdamW β1 override (alpha.19, ablace).** Default 0.9. Hodnota
     /// 0.0 efektivně dělá z AdamW RMSProp (žádný velocity buffer pro
     /// first moment). Pro identifikaci skutečného root cause overshoot —
@@ -643,6 +656,7 @@ fn run_train_smoke_sweep(sofie: &Sofie, ta: &TrainCoreMemorySmokeArgs) -> Result
 fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
     use eleutheria_core::CoreMemoryArtifact;
     use eleutheria_core::training::optim_io::{OptimizerArtifact, sibling_path};
+    use eleutheria_core::training::train::BestFlushConfig;
     use eleutheria_core::training::{CoreMemoryStack, LrSchedule, TokenDataset, TrainingConfig};
 
     println!("\nCore Memory training — dataset: {}", ta.dataset.display());
@@ -768,6 +782,32 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         None
     };
 
+    // Periodic flush insurance (alpha.20, KI-012). Aktivní jen pokud:
+    // (a) --save-best, (b) --save-best-every > 0, (c) --output je nastavený.
+    // Bez (c) by flush neměl kam zapisovat — fallback na end-of-run save.
+    let flush_best = if let (true, true, Some(out_path)) =
+        (ta.save_best, ta.save_best_every > 0, ta.output.as_ref())
+    {
+        // Periodic flush musí znát prior steps + best loss, abychom v meta
+        // udrželi kumulativní hodnoty (resume use case).
+        let prior_steps = prior_meta
+            .as_ref()
+            .and_then(|m| m.training_steps)
+            .unwrap_or(0);
+        let prior_best = prior_meta.as_ref().and_then(|m| m.best_loss);
+        let combined_notes = compose_notes(prior_meta.as_ref(), ta.notes.as_deref());
+        ensure_parent_dir(out_path)?;
+        Some(BestFlushConfig {
+            path: out_path.clone(),
+            every_n_steps: ta.save_best_every,
+            prior_steps,
+            prior_best_loss: prior_best,
+            notes: combined_notes,
+        })
+    } else {
+        None
+    };
+
     let config = TrainingConfig {
         epochs: ta.epochs,
         batch_size: ta.batch_size,
@@ -781,12 +821,22 @@ fn run_train(sofie: &Sofie, ta: &TrainCoreMemoryArgs) -> Result<()> {
         track_best: ta.save_best,
         adam_beta1: ta.adam_beta1,
         adam_beta2: ta.adam_beta2,
+        flush_best,
     };
     if ta.checkpoint {
         println!("  gradient checkpointing: ON (per-layer chunked backward)");
     }
     if ta.save_best {
         println!("  best snapshot tracker: ON (uloží stav s nejnižší loss, ne final)");
+    }
+    if let Some(f) = &config.flush_best {
+        println!(
+            "  periodic flush: ON (každých {} stepů → {})",
+            f.every_n_steps,
+            f.path.display()
+        );
+    } else if ta.save_best && ta.save_best_every > 0 && ta.output.is_none() {
+        println!("  periodic flush: VYPNUT (--output není nastavený)");
     }
     if ta.adam_beta1.is_some() || ta.adam_beta2.is_some() {
         println!(

@@ -4,7 +4,9 @@
 #
 # Default parametry pro alpha.20 production training Sofie identity packu
 # s identifikovaným HP setupem (RN-012):
-#   LR=1e-3, β1=0.0 (RMSProp), --save-best, --checkpoint
+#   LR=1e-3, β1=0.0 (RMSProp), --save-best, --checkpoint,
+#   --save-best-every 5 (alpha.20 KI-012 insurance — periodic best snapshot
+#   flush na disk každých 5 stepů, atomic přes .tmp + rename).
 #
 # Pro 16+ GB VRAM (RTX A4000, RTX 4000, A6000, atd.) využíváme větší
 # batch / seq_len než lokální RTX 4050 6 GB (KI-005).
@@ -16,6 +18,7 @@
 #   SEQ_LEN=...           seq_len (default 8)
 #   GRAD_ACCUM=...        grad_accum_steps (default 2)
 #   EPOCHS=...            počet epoch (default 1)
+#   SAVE_BEST_EVERY=...   periodic flush every N steps (default 5; 0 = off)
 #   EXTRA_ARGS=...        další CLI argumenty (např. --warmup-steps 50)
 
 set -euo pipefail
@@ -33,6 +36,7 @@ GRAD_ACCUM="${GRAD_ACCUM:-2}"
 EPOCHS="${EPOCHS:-1}"
 LEARNING_RATE="${LEARNING_RATE:-1e-3}"
 ADAM_BETA1="${ADAM_BETA1:-0.0}"
+SAVE_BEST_EVERY="${SAVE_BEST_EVERY:-5}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
 
 echo "=========================================="
@@ -46,6 +50,7 @@ echo "Seq len:       $SEQ_LEN"
 echo "Grad accum:    $GRAD_ACCUM"
 echo "Learning rate: $LEARNING_RATE"
 echo "AdamW β1:      $ADAM_BETA1"
+echo "Flush every:   $SAVE_BEST_EVERY steps (0 = off; insurance proti crashe)"
 echo "Notes:         $NOTES"
 echo "Extra:         $EXTRA_ARGS"
 echo ""
@@ -93,6 +98,7 @@ echo ""
     --learning-rate "$LEARNING_RATE" \
     --adam-beta1 "$ADAM_BETA1" \
     --save-best \
+    --save-best-every "$SAVE_BEST_EVERY" \
     --checkpoint \
     --output "$OUTPUT" \
     --notes "$NOTES" \

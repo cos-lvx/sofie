@@ -8,6 +8,39 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
 
 ## Aktivní
 
+### KI-012 — Best snapshot žije jen v RAM, crash zahodí celý training (vyřešeno alpha.20)
+
+- **Fáze:** 5 (alpha.20)
+- **Stav:** **VYŘEŠENO v alpha.20** — `BestSnapshotTracker::flush_to_disk`
+  + `BestFlushConfig` v `TrainingConfig` + CLI `--save-best-every N`
+  (default 10). V training loop po každých N stepech atomic write
+  shadow bufferu na `--output` cestu (přes `<dir>/.<name>.tmp` + rename).
+  vast_train.sh default `SAVE_BEST_EVERY=5` (~3.7 min insurance @ 44 s/step).
+- **Kontext:** Alpha.18 implementace `BestSnapshotTracker` (KI-009)
+  drží shadow F32 CPU buffer per Var, aktualizuje při každém best loss
+  improvement. **Buffer je čistě in-memory** — flush na disk proběhne
+  jen jednou na úplném konci `train_core_memory` přes
+  `CoreMemoryArtifact::from_snapshot`. Pokud cloud GPU instance crashne
+  / preempce / network outage / OOM před koncem, **best se ztratí
+  s procesem**. Pro alpha.20 production training (Vast AI, ~3.5h compute,
+  reálné peníze) je risk reálný.
+- **Detekce:** První alpha.20 production training 2026-05-01 (sofie
+  identity pack, batch=16, seq_len=16, 5 epoch, ~4h celkem) běžel
+  s touto děrou v insurance. Crash by zahodil ~$3-5 GPU rental + 4h
+  wall time.
+- **Fix:** `flush_to_disk(path, config, ...)` clone shadow vec → vytvoří
+  `CoreMemoryArtifact::from_snapshot` → atomic save (write `.tmp`, rename).
+  Atomic rename na stejném FS je POSIX guarantee — cílová cesta drží
+  buď prior verzi, nebo nově zapsanou. Cena: ~75 MB safetensors write
+  per flush (1.5B Falcon-H1 → ~200-500 ms na SSD), pro 44 s/step setup
+  s flush every 5 stepů overhead < 1 %.
+- **Limit:** AdamW `OptimizerArtifact` sourozenec **stále neperzistuje
+  periodicky** — flush šetří jen Core Memory artefakt. Pokud bude crash
+  a restart, best snapshot na disku ano, ale optim state z prior runu
+  ne (training pokračuje s `--resume-from <path>` ale prázdným Adamem,
+  tj. soft resume jako alpha.15). Pro alpha.21+ zvážit periodic flush
+  i pro optim sourozence.
+
 ### KI-008 — Adam bez warmup overshoots, loss osciluje místo monotonního descentu
 
 - **Fáze:** 5 (alpha.15+; eskalováno alpha.16; **HP hypotézy všechny

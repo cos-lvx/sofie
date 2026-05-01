@@ -4,6 +4,68 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-05-01 | v0.5.0-alpha.20 — Periodic best snapshot flush (KI-012 insurance)
+
+První alpha.20 production training na Vast AI běžel ~3.5h (sofie identity
+pack, batch=16, seq_len=16, 5 epoch, β1=0.0, LR=1e-3, ~44 s/step) když
+Ondra ukázal log a já si všimla **díry v insurance**: `BestSnapshotTracker`
+drží shadow buffer pouze v RAM. Crash / preempce / OOM by zahodily celé
+hodiny compute a reálné peníze za GPU rental.
+
+**Insight:** Alpha.18 KI-009 fix vyřešil "save the right state, not the
+final state" — ale neřešil "what if we don't reach the save call". To
+je defekt jiné vrstvy. Pro lokální RTX 4050 nebyl reálný (žádné spot
+preempce, lokální disk OK, killable interaktivně), ale pro cloud GPU
+production je to cost-meaningful risk.
+
+**Implementace:**
+- `BestSnapshotTracker::flush_to_disk(path, config, cumulative_steps,
+  best_loss, final_loss, notes) -> Result<bool>` — clone shadow Vec
+  (Arc-based, levné), vytvoří `CoreMemoryArtifact::from_snapshot`,
+  atomic save přes `.tmp` + rename
+- `atomic_save_artifact` privátní helper — POSIX rename guarantee,
+  cleanup tmp při rename selhání
+- `TrainingConfig.flush_best: Option<BestFlushConfig>` (path,
+  every_n_steps, prior_steps, prior_best_loss, notes)
+- V training loop po každém successful `update_if_better` →
+  `total_steps % every_n_steps == 0 && tracker.has_snapshot()` →
+  `flush_best_to_disk` helper
+- `flush_best_to_disk` **non-fatal** — chyba se loguje (`tracing::warn!`),
+  training pokračuje. Příští periodic flush to zkusí znovu
+- CLI `--save-best-every N`, default 10 (production-tuned: ~7.3 min
+  insurance @ 44 s/step). Aktivní pouze pokud `--save-best` AND `--output`
+- `vast_train.sh` env var `SAVE_BEST_EVERY=5` default (~3.7 min insurance)
+
+**Testy:** +3 (123 total), všechny v `best_snapshot::tests`:
+- `flush_to_disk_round_trip` — synthetic snapshot, flush, load, verify
+  metadata + tensors. Druhý update + flush ověřuje overwrite atomic
+  rename
+- `flush_to_disk_noop_when_no_snapshot` — bez update_if_better flush
+  vrátí Ok(false), žádný soubor
+- `flush_uses_dotted_tmp_sibling` — po flush musí `.tmp` být pryč
+  (rename ho odstranil)
+
+**Cargo fmt + clippy + test workspace:** všechny čisté.
+
+**KI status:** KI-012 nově otevřená a vyřešená v jednom cyklu.
+
+**Co dál:**
+- Push do GitHub mirroru (`cos-lvx/sofie`) — Ondra na Vast může
+  v paralelní ssh `git pull && cargo build --release --features cuda`
+  být ready pro restart pokud current run crashe
+- Pokud current run doběhne čistě: alpha.21+ priorita = LR cosine
+  decay (Phase 4 plateau dál?), retention benchmark, RN-014 batch
+  refutace RN-012 hypotézy, periodic flush i pro AdamW optim sourozence
+- Empirický nález pro RN-014: batch=16 seq_len=16 **eliminoval**
+  Phase 2 overshoot (smoke peak step 40 = 10.58, alpha.20 step 40 = 4.49).
+  RN-012 predikce *"batch sweep pravděpodobně nezmění overshoot, gradient
+  direction landscape-driven"* je **refutována**. Větší batch nepřekonává
+  Adam EMA — eliminuje příčinu (gradient noise při tiny batch generoval
+  *falešný směr*, Adam moments naskočily na artifakt). Batch=16 byl
+  **chybějící proměnná** v alpha.18-19 ablacích.
+
+---
+
 ## 2026-04-29 | alpha.18 smoke validation na 1.5B + CUDA — RN-010 PASSED
 
 Stage 1 fresh train s `--save-best` na `/tmp/smoke_prog.txt`. KI-009

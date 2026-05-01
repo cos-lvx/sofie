@@ -13,6 +13,8 @@
 //! CUDA OOM z alpha.10 (6 GB nezvládne ani seq_len=2 micro-batch).
 //! Řešení OOM = gradient checkpointing (alpha.12) nebo CPU fallback.
 
+use std::path::PathBuf;
+
 use anyhow::{Result, anyhow};
 use candle_core::Tensor;
 use candle_core::backprop::GradStore;
@@ -71,6 +73,35 @@ pub struct TrainingConfig {
     pub adam_beta1: Option<f64>,
     /// AdamW β2 override (alpha.19). `None` = default 0.999.
     pub adam_beta2: Option<f64>,
+    /// Periodic flush best snapshot na disk (alpha.20, KI-012). Vyžaduje
+    /// `track_best=true`. Pokud `Some`, každých `every_n_steps` optimizer
+    /// stepů se aktuální shadow buffer atomicky uloží na `path`. Insurance
+    /// proti pádu / preempci cloud GPU instance — bez ní best žije jen
+    /// v RAM a crash zahodí celý training run. Cena: ~75 MB safetensors
+    /// write per flush (1.5B Falcon-H1 → ~200-500 ms na SSD); pro
+    /// production setup s 44 s/step a flush every 5 stepů je overhead
+    /// pod 1 %.
+    pub flush_best: Option<BestFlushConfig>,
+}
+
+/// Konfigurace periodic flush best snapshot (alpha.20, KI-012).
+#[derive(Debug, Clone)]
+pub struct BestFlushConfig {
+    /// Cesta cílového safetensors souboru. Atomic write přes
+    /// `<dir>/.<name>.tmp` + rename, takže `path` drží buď předchozí
+    /// verzi, nebo nově zapsanou — nikdy half-written.
+    pub path: PathBuf,
+    /// Po kolika optimizer stepech flush. 1 = každý step, 0 (nepoužívaná
+    /// hodnota — caller místo toho pošle `flush_best=None`).
+    pub every_n_steps: usize,
+    /// Akumulované `training_steps` z prior runu (resume). Při flushe
+    /// se přičte `total_steps` z aktuálního runu a uloží do metadat,
+    /// aby čtenář viděl skutečný kumulativní počet kroků.
+    pub prior_steps: usize,
+    /// Best loss z prior runu (resume). Při flush se vezme min(prior, current).
+    pub prior_best_loss: Option<f64>,
+    /// Notes pro metadata (typicky kombinace prior + current run notes).
+    pub notes: Option<String>,
 }
 
 impl Default for TrainingConfig {
@@ -88,6 +119,7 @@ impl Default for TrainingConfig {
             track_best: false,
             adam_beta1: None,
             adam_beta2: None,
+            flush_best: None,
         }
     }
 }
@@ -274,6 +306,17 @@ impl Sofie {
                         t.update_if_better(step_loss, total_steps - 1, stack)?;
                     }
 
+                    // Periodic flush best snapshot na disk (alpha.20, KI-012).
+                    // Insurance proti crash/preempci — bez něj žije best jen
+                    // v RAM. Flush chyba se loguje, training pokračuje.
+                    if let (Some(t), Some(flush)) =
+                        (best_tracker.as_ref(), config.flush_best.as_ref())
+                        && t.has_snapshot()
+                        && total_steps.is_multiple_of(flush.every_n_steps)
+                    {
+                        flush_best_to_disk(t, flush, self.config(), total_steps, best_loss);
+                    }
+
                     if total_steps.is_multiple_of(config.log_every_n_steps) {
                         tracing::info!(
                             "step {} (epoch {}, micro-batch {}): loss={:.4}, best={:.4}, lr={:.4e}",
@@ -314,6 +357,13 @@ impl Sofie {
                 }
                 if let Some(t) = best_tracker.as_mut() {
                     t.update_if_better(step_loss, total_steps - 1, stack)?;
+                }
+                // Tail step periodic flush — stejná logika jako v main loop.
+                if let (Some(t), Some(flush)) = (best_tracker.as_ref(), config.flush_best.as_ref())
+                    && t.has_snapshot()
+                    && total_steps.is_multiple_of(flush.every_n_steps)
+                {
+                    flush_best_to_disk(t, flush, self.config(), total_steps, best_loss);
                 }
             }
 
@@ -396,6 +446,60 @@ fn scale_grads(grads: &mut GradStore, vars: &[candle_core::Var], scale: f64) -> 
         }
     }
     Ok(())
+}
+
+/// Periodic flush best snapshot na disk (alpha.20, KI-012).
+///
+/// Kombinuje prior `BestFlushConfig` metadata s aktuálním stavem trackeru
+/// a totalem stepů, vytvoří `CoreMemoryArtifact` a atomicky ho uloží
+/// (`BestSnapshotTracker::flush_to_disk`).
+///
+/// **Žádný early-return na chybu** — flush je insurance, ne kritická
+/// cesta. Pokud disk write selže (full disk, permissions), logujeme
+/// warning a training pokračuje. Příští periodic flush to zkusí znovu.
+fn flush_best_to_disk(
+    tracker: &BestSnapshotTracker,
+    flush: &BestFlushConfig,
+    config: &crate::falcon_h1::config::FalconH1Config,
+    total_steps: usize,
+    current_best_loss: f64,
+) {
+    let cumulative_steps = flush.prior_steps + total_steps;
+    let best_combined = match (
+        flush.prior_best_loss,
+        current_best_loss.is_finite().then_some(current_best_loss),
+    ) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    };
+    match tracker.flush_to_disk(
+        &flush.path,
+        config,
+        Some(cumulative_steps),
+        best_combined,
+        None, // final_loss není známé — flush je mid-run
+        flush.notes.clone(),
+    ) {
+        Ok(true) => {
+            tracing::info!(
+                "best snapshot flushnut: {} (step {} kumul., best={:.4})",
+                flush.path.display(),
+                cumulative_steps,
+                best_combined.unwrap_or(f64::NAN),
+            );
+        }
+        Ok(false) => {
+            // No snapshot yet — caller (training loop) by neměl volat
+            // flush v tomto případě, ale graceful no-op.
+        }
+        Err(e) => {
+            tracing::warn!(
+                "best snapshot flush selhal ({}): {} — training pokračuje",
+                flush.path.display(),
+                e
+            );
+        }
+    }
 }
 
 #[cfg(test)]

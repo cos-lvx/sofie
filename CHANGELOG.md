@@ -7,6 +7,78 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.20] — 2026-05-01
+
+### Přidáno — Periodic best snapshot flush (KI-012 insurance)
+
+**Důvod:** První alpha.20 production training na Vast AI (sofie identity
+pack, batch=16, seq_len=16, 5 epoch, β1=0.0, LR=1e-3) odhalil reálný
+provozní problém — `BestSnapshotTracker` (alpha.18, KI-009) drží shadow
+buffer pouze v RAM. Pokud cloud GPU instance crashne / dostane preempci
+/ network outage, **best snapshot se ztratí s celým procesem**. Pro
+production setup s 44 s/step a 5 epoch je v sázce ~3-5 hodin compute
++ skutečné peníze za GPU rental.
+
+#### `BestSnapshotTracker::flush_to_disk`
+
+- Nová metoda `flush_to_disk(path, config, cumulative_steps, best_loss,
+  final_loss, notes)`. Pokud tracker nemá snapshot, vrací `Ok(false)`
+  bez I/O. Jinak naklonuje shadow Vec<Tensor> (Arc-based, levné),
+  vyrobí `CoreMemoryArtifact::from_snapshot` a atomic-saveuje přes
+  privátní `atomic_save_artifact` helper.
+- **Atomic write** — zapíše na sourozenecké `<dir>/.<name>.tmp`,
+  pak `std::fs::rename(tmp, path)`. Rename na stejném FS je atomic
+  na POSIX → cílová cesta drží buď předchozí verzi, nebo nově zapsanou,
+  nikdy half-written. Při chybě rename smaže tmp, neostaneme s orphan
+  soubory.
+
+#### Wiring v `train_core_memory`
+
+- **`TrainingConfig.flush_best: Option<BestFlushConfig>`** — opt-in,
+  default `None` (alpha.18-19 chování = save jen na konci).
+- **`BestFlushConfig`** drží: `path` (cíl), `every_n_steps`, `prior_steps`
+  (resume akumulace), `prior_best_loss`, `notes`.
+- V training loop po každém successful `update_if_better` → pokud
+  `total_steps % every_n_steps == 0` a tracker má snapshot, volá privátní
+  `flush_best_to_disk` helper. Stejná logika v tail step na konci epoch.
+- **Žádný early-return na chybu disku** — flush je insurance, ne kritická
+  cesta. `tracing::warn!` při selhání, training pokračuje. Příští periodic
+  flush to zkusí znovu.
+
+#### CLI: `--save-best-every N`
+
+- Default 10 (rozumný kompromis: ~10× transfer overhead vs strenuous
+  insurance). Pro production setup s 44 s/step ~7 min insurance granularita.
+- Aktivní pouze pokud `--save-best` AND `--output` AND `N > 0`. Bez
+  `--output` flush nemá kam zapisovat → fallback na end-of-run save
+  + warning v log line.
+- Banner při startu reportuje `periodic flush: ON (každých N stepů → path)`
+  nebo `VYPNUT (--output není nastavený)`.
+
+#### `vast_train.sh` default
+
+- `SAVE_BEST_EVERY` env var, default **5** (production-tuned: ~3.7 min
+  insurance @ 44 s/step). Override: `SAVE_BEST_EVERY=0 bash vast_train.sh`
+  pro vypnutí.
+
+#### Testy (+3, total 123)
+
+- `flush_to_disk_round_trip` — synthetic snapshot s value=7.0, flush,
+  load, verify metadata + tensors. Druhý update + flush ověří overwrite
+  semantics atomic rename.
+- `flush_to_disk_noop_when_no_snapshot` — bez `update_if_better` flush
+  vrátí `Ok(false)`, soubor se nevytvoří.
+- `flush_uses_dotted_tmp_sibling` — po úspěšném flush musí path existovat,
+  tmp `<dir>/.<name>.tmp` musí být pryč (rename ho odstranil).
+
+#### KI status update
+
+- **KI-012 vyřešena** v alpha.20 (nově otevřená + zavřená v jednom cyklu).
+- KI-008/009 se nemění, pro periodic flush jsou orthogonal (KI-009
+  zachycuje best v RAM, KI-012 ho přivádí na disk).
+
+---
+
 ## [0.5.0-alpha.19] — 2026-04-30
 
 ### Přidáno — AdamW β1/β2 CLI override (ablace infrastruktura)
