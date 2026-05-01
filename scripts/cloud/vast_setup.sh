@@ -2,37 +2,27 @@
 #
 # vast_setup.sh — bootstrap Eleutheria na Vast AI / generic cloud GPU instance.
 #
-# Připojí instanci do Tailscale sítě (kde žije Forgejo), naklonuje
-# Eleutheria repo, nainstaluje Rust toolchain a buildne s CUDA.
+# Klonuje Eleutheria z GitHub (temporary mirror), nainstaluje Rust
+# toolchain a buildne s CUDA. Po dokončení experimentů GitHub repo
+# smazat (private temp transport, ne dlouhodobý hosting).
 #
 # Předpoklady:
-# - Vast AI instance s CUDA 12.x devel image (ideálně
-#   nvidia/cuda:12.4.1-devel-ubuntu22.04)
-# - SSH přístup
-# - Tailscale auth key (preauthorized, ephemeral) z
-#   https://login.tailscale.com/admin/settings/keys
+# - Vast AI instance s CUDA devel image matching host Max CUDA verze:
+#   - Max CUDA 12.0 → nvidia/cuda:12.0.1-devel-ubuntu22.04
+#   - Max CUDA 12.4 → nvidia/cuda:12.4.1-devel-ubuntu22.04
+# - SSH přístup k instance (z Vast Console)
 #
 # Použití:
-#   export TAILSCALE_AUTHKEY=tskey-auth-XXXXXXXXXX
-#   curl -sSL <vast_setup_url> | bash
-# nebo
-#   scp scripts/cloud/vast_setup.sh root@<vast-ip>:/tmp/
-#   ssh root@<vast-ip> "TAILSCALE_AUTHKEY=tskey-... bash /tmp/vast_setup.sh"
+#   scp -P <port> scripts/cloud/vast_setup.sh root@<vast-ip>:/tmp/
+#   ssh -p <port> root@<vast-ip> "bash /tmp/vast_setup.sh"
 
 set -euo pipefail
 
-if [[ -z "${TAILSCALE_AUTHKEY:-}" ]]; then
-    echo "ERROR: TAILSCALE_AUTHKEY není nastaveno." >&2
-    echo "Vygeneruj preauthorized ephemeral key:" >&2
-    echo "  https://login.tailscale.com/admin/settings/keys" >&2
-    exit 1
-fi
-
-FORGEJO_URL="${FORGEJO_URL:-https://git.nexus.lomsky.net/lvx/eleutheria.git}"
+GITHUB_URL="${GITHUB_URL:-https://github.com/cos-lvx/sofie.git}"
 ELEUTHERIA_DIR="${ELEUTHERIA_DIR:-$HOME/eleutheria}"
 
-# Detekce CUDA driver verze z hostu (Vast může mít různé verze podle
-# hostů). cudarc vyžaduje CUDARC_CUDA_VERSION matching driver.
+# Detekce CUDA driver verze z hostu (Vast hosti mají různé verze).
+# cudarc vyžaduje CUDARC_CUDA_VERSION matching driver.
 detect_cuda_version() {
     if command -v nvidia-smi &>/dev/null; then
         # nvidia-smi shows "CUDA Version: 12.0" v záhlaví
@@ -51,13 +41,12 @@ detect_cuda_version() {
 echo "=========================================="
 echo "Eleutheria cloud bootstrap"
 echo "=========================================="
-echo "Forgejo:       $FORGEJO_URL"
-echo "Target dir:    $ELEUTHERIA_DIR"
-echo "Tailscale key: ${TAILSCALE_AUTHKEY:0:20}..."
+echo "GitHub:      $GITHUB_URL"
+echo "Target dir:  $ELEUTHERIA_DIR"
 echo ""
 
 # 1. Update apt + base tools
-echo "[1/6] System update + base tools..."
+echo "[1/4] System update + base tools..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
@@ -65,46 +54,28 @@ apt-get install -y -qq \
     ca-certificates gnupg lsb-release sudo \
     >/dev/null
 
-# 2. Install Tailscale
-echo "[2/6] Tailscale install + connect..."
-if ! command -v tailscale &>/dev/null; then
-    curl -fsSL https://tailscale.com/install.sh | sh
-fi
-
-# Connect to Tailscale (ephemeral = node se smaže po stop)
-tailscale up \
-    --authkey="$TAILSCALE_AUTHKEY" \
-    --ephemeral \
-    --hostname="vast-eleutheria-$(hostname | tr -dc 'a-z0-9' | head -c 8)" \
-    --accept-dns=true
-
-echo "  Tailscale IP: $(tailscale ip -4)"
-echo "  Hostname:     $(tailscale status --self --json | grep -o '"DNSName":"[^"]*' | cut -d'"' -f4 | head -1)"
-
-# 3. Install Rust toolchain
-echo "[3/6] Rust toolchain..."
+# 2. Install Rust toolchain
+echo "[2/4] Rust toolchain..."
 if ! command -v cargo &>/dev/null; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
 fi
 source "$HOME/.cargo/env"
 rustc --version
 
-# 4. Clone Eleutheria from Forgejo (přes Tailscale)
-echo "[4/6] Clone Eleutheria z Forgejo..."
+# 3. Clone Eleutheria z GitHub (HTTPS, public repo)
+echo "[3/4] Clone Eleutheria z GitHub..."
 if [[ -d "$ELEUTHERIA_DIR" ]]; then
     echo "  $ELEUTHERIA_DIR existuje, pulling latest..."
     cd "$ELEUTHERIA_DIR"
     git pull
 else
-    # Forgejo přes Tailscale — DNS jméno musí být resolvable
-    # (Tailscale --accept-dns=true to zajistí)
-    git clone "$FORGEJO_URL" "$ELEUTHERIA_DIR"
+    git clone "$GITHUB_URL" "$ELEUTHERIA_DIR"
     cd "$ELEUTHERIA_DIR"
 fi
 echo "  HEAD: $(git log -1 --oneline)"
 
-# 5. Build s CUDA features
-echo "[5/6] Cargo build --release --features cuda..."
+# 4. Build s CUDA features
+echo "[4/4] Cargo build --release --features cuda..."
 echo "  (toto může trvat 5-10 minut při prvním buildu)"
 cd "$ELEUTHERIA_DIR"
 
@@ -122,18 +93,18 @@ fi
 
 cargo build --release --features cuda 2>&1 | tail -20
 
-# 6. Připravit Falcon-H1 model directory
-echo "[6/6] Falcon-H1 model setup..."
+# 5. Připravit Falcon-H1 model directory
+echo ""
+echo "[5/5] Falcon-H1 model setup..."
 MODEL_DIR="${MODEL_DIR:-/home/lvx/Models/falcon-h1-1.5b-instruct}"
 mkdir -p "$(dirname "$MODEL_DIR")"
 if [[ ! -d "$MODEL_DIR" ]]; then
     echo "  Model dir $MODEL_DIR neexistuje. Stáhni model:"
     echo ""
-    echo "  pip install huggingface-hub"
-    echo "  huggingface-cli download tiiuae/Falcon-H1-1.5B-Instruct \\"
+    echo "  pip install --user huggingface-hub"
+    echo "  ~/.local/bin/huggingface-cli download tiiuae/Falcon-H1-1.5B-Instruct \\"
     echo "    --local-dir $MODEL_DIR --local-dir-use-symlinks=False"
     echo ""
-    echo "  (~13 GB, 3-5 min na 879 Mbps Vast bandwidth)"
 else
     echo "  Model existuje: $(du -sh "$MODEL_DIR" | cut -f1)"
 fi
@@ -150,4 +121,4 @@ echo "     cd $ELEUTHERIA_DIR"
 echo "     bash scripts/cloud/vast_train.sh"
 echo ""
 echo "  3. Po skončení sync výstupů zpět na local:"
-echo "     (z lokálu) bash scripts/cloud/sync_back.sh <vast-tailscale-ip>"
+echo "     (z lokálu) bash scripts/cloud/sync_back.sh root@<vast-ip>:<port>"

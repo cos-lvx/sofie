@@ -5,13 +5,10 @@
 
 ## Předpoklady
 
-1. **Tailscale auth key** (preauthorized, ephemeral, 24h TTL)
-   - Vygenerování: <https://login.tailscale.com/admin/settings/keys>
-   - Klikni **Generate auth key**
-   - Zaškrtni **Reusable** a **Ephemeral**
-   - Tag: `tag:cloud-gpu` (volitelné)
-   - Expiry: 24-48 hodin
-   - Ulož `tskey-auth-XXXXXXXXXX`
+1. **GitHub mirror** Eleutheria repa (temporary transport)
+   - Default: `https://github.com/cos-lvx/sofie.git`
+   - Po dokončení experimentů smazat (private temp, ne dlouhodobý hosting)
+   - Push: `git -C /home/lvx/Dev/eleutheria push github main`
 
 2. **Vast AI account + credit** ($5-20 stačí na první runs)
    - Registrace: <https://cloud.vast.ai/>

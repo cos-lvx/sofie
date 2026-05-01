@@ -15,29 +15,29 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-    echo "Usage: $0 <vast-tailscale-hostname-or-ip>" >&2
+    echo "Usage: $0 <vast-ip> <ssh-port>" >&2
     echo "" >&2
-    echo "Vast instance hostname najdeš na Tailscale admin:" >&2
-    echo "  https://login.tailscale.com/admin/machines" >&2
+    echo "Vast IP + SSH port najdeš v Vast Console pod 'SSH command'" >&2
+    echo "(typicky např. 'ssh -p 12345 root@1.2.3.4')." >&2
     exit 1
 fi
 
 VAST_HOST="$1"
+VAST_PORT="${2:-22}"
 VAST_USER="${VAST_USER:-root}"
 LOCAL_DIR="${LOCAL_DIR:-$HOME/.eleutheria/cloud_runs}"
 
 mkdir -p "$LOCAL_DIR"
 
-echo "Sync z $VAST_USER@$VAST_HOST → $LOCAL_DIR"
+echo "Sync z $VAST_USER@$VAST_HOST:$VAST_PORT → $LOCAL_DIR"
 echo ""
 
 # Co stahujeme:
 # - Core Memory artefakty (*.safetensors)
 # - Tracing logy (pokud uživatel zapnul logging)
-# - Případně dataset (jen pokud byl modifikován na cloudu)
 
 rsync -avhP --stats \
-    -e "ssh -o StrictHostKeyChecking=accept-new" \
+    -e "ssh -p $VAST_PORT -o StrictHostKeyChecking=accept-new" \
     "$VAST_USER@$VAST_HOST:~/sofie_identity*.safetensors" \
     "$VAST_USER@$VAST_HOST:~/*.optim.safetensors" \
     "$VAST_USER@$VAST_HOST:~/*.log" \
