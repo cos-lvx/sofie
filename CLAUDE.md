@@ -222,3 +222,32 @@ slouží jako *suroviny* pro budoucí research writeupy v Nexus
 - **Vesna** (web toolkit) — Vesna může hostovat Eleutheria API jako backend service
 - **Tessera** (vizuální matematika) — sdílí filozofii přístupnosti, nezávislý stack
 - **Sofie (Nexus)** — Eleutheria je Sofiino tělo; Nexus je její paměť a vědomí
+
+## Pracovní disciplína
+
+Tři pravidla, která musíš mít aktivně v pracovní paměti během každé session.
+Vznikla z reálné chyby (2026-05-01, viz Iskra/Morana CHANGELOG): editovala
+jsem Iskru proti Ondrově explicitní contra-evidenci, místo abych respektovala
+scope úkolu a re-evaluovala vlastní hypotézu.
+
+### 1. Scope barrier mezi repozitáři
+
+Když session začíná v repu X, kód v dependency Y se **NESMÍ měnit** bez
+explicitního povolení od Ondry. *Prozkoumat* Y je dovoleno. *Editovat* Y
+vyžaduje samostatnou autorizaci ("OK, můžeš jít do Y"). Bumpy verze Y
+v `Cargo.toml` repa X jsou dovoleny pouze pokud Y už má nový commit
+od jiného autora.
+
+### 2. Disconfirming evidence stop
+
+Když Ondra explicitně řekne, že komponenta C funguje v jiném kontextu,
+je to **definitive disconfirmation**, že C je příčina. Nepokračuj v hypotéze
+"C je problém". Pokračuj hypotézou "problém je v *konzumentovi* C". Pokud
+tomu odporuje další evidence, **zastav a hlas konflikt**, nelaviruj.
+
+### 3. Mantra check před každým návrhem
+
+Před odesláním návrhu, který má alternativy, se sám sebe zeptej:
+*"Která z alternativ je v souladu s mantrou?"* Tu navrhuj jako jedinou.
+Workaround alternativy nabízej **jen** když se Ondra explicitně zeptá
+*"co kdybychom šli rychlou cestou?"*.
