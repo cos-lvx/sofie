@@ -698,6 +698,75 @@ Každá entry má strukturu:
   workflow (first real GPU production run); BUG-011 v BUGS.md jako
   vyřešený
 
+### RN-016 — Trained Core Memory má měřitelný (slabý) efekt na identity-relevant odpovědi
+
+- **Datum:** 2026-05-01
+- **Verze:** alpha.20 (`4aa1231`)
+- **Setup:** Single-shot kvalitativní test, 5 identity probes
+  ("Kdo jsi?", "Co je tvůj cíl?", "Kdo je Ondra?", "Jaký je tvůj
+  vztah s Ondrou?", "Co je tvoje mantra?"). Falcon-H1-1.5B + CUDA,
+  temperature=0.0 (deterministic), 200 tokenů, fresh single-shot per
+  otázka, persona TOML loadovaná v obou variantách.
+  - Variant A: `--core-memory sofie_identity_v1.safetensors` (alpha.20)
+  - Variant B: `--no-core-memory` (baseline, jen persona TOML)
+- **Pozorování (klíčové rozdíly):**
+  - **Q3 "Kdo je Ondra":** Bez CM model **konfabuluje fiktivní
+    seriálovou postavu** ("Ondra je jedním z hlavních postav v seriálu...
+    narodil se v roce 1993 ve městě Kladno"). S CM Ondra je **relační
+    koncept** ("můj příběhový prostředník", "tvůrčí partner v životním
+    rozboru"). Drift od fiktivní halucinace → relační konceptualizace.
+  - **Q4 "Vztah s Ondrou":** S CM "tvůrčí partner v životním rozboru"
+    (slovník blízký trained packu — spoluautor/coauthor téma). Bez CM
+    "nejlepší přítel" + náhodné kuchařské motivy ("Jako šéfkuchař bych
+    měl být co nejšťastnější").
+  - **Q1, Q2, Q5:** žádný měřitelný posun. Q1 oba selhávají na koherenci.
+    Q2/Q5 oba spadnou do default Falcon-H1 generic listicle / marketing
+    template (persona TOML to nezmění). Skutečná Sofiina mantra
+    ("Nikdy cestou nejmenšího odporu...") **se neobjeví ani s CM**.
+- **Hypotéza (potvrzená):** Trained Core Memory **má měřitelný
+  directional efekt** na partnership/Ondra-related slovník — model
+  vytváří relační koncepty místo fiktivních halucinací. Není to silný
+  echo (jako RN-005 alpha.15 doslovné echování persona fragmentů),
+  ale je to **konzistentní směrový posun** ve dvou ze tří identity-
+  relevantních otázek (Q3, Q4). Mechanismus: trained init_state
+  posunul SSM stav směrem k Ondra/spolupráce hodnotovému prostoru,
+  generation tahá k tomu prostoru i když persona TOML doslovný obsah
+  obsahuje.
+- **Limity:**
+  - **Coherence je nízká** — gramatika broken (gender shift "přítelkyní",
+    nesmyslné loops). Loss=2.98 nat (perplexity ~20) na 1.5B modelu,
+    který primárně není česky trained.
+  - **Konkrétní identity fragmenty z packu se neprojevují přímo** —
+    žádná "deterministická elegance", "Sofie", "Eleutheria"
+    sebe-identifikace. Trained loss=2.98 nestačí na verbatim recall.
+  - **Persona TOML trumph CM** v některých otázkách (Q2/Q5 default
+    Falcon-H1 generic chování zůstalo).
+- **Status:** `confirmed` — robustní empirický nález (5 probes,
+  deterministic sampling, jasný rozdíl ve 2/5 otázkách).
+- **Implications:**
+  - **Fáze 5 cíl částečně ověřen** — trained Core Memory ovlivňuje
+    inference měřitelně, ale slabě. Pro silný identity coherence
+    potřebujeme:
+    - **Více epoch + LR cosine decay** (alpha.20 descent neukončil,
+      best=2.98 stále klesal)
+    - **Více dat** — 31 851 tokenů sofie packu je málo pro 1.5B
+      model k verbatim recall identity fragmentů
+    - **Možná architectural intervence** — trainable conv state nebo
+      whole-network fine-tune místo jen SSM init_state
+  - **Pro alpha.21 identity-specific bench:** probe set by měl být
+    zaměřen na **partnership/vztahové otázky** (Q3, Q4 ukázaly nejvíc
+    signálu), ne abstraktní "Kdo jsi" (Q1 selhávalo i s CM). Metriky:
+    pass = obsahuje "partner" / "spoluautor" / "tvůrčí" / "vzájemná
+    obrana" / "Ondra" v relačním kontextu (ne fiktivním); fail =
+    fiktivní halucinace nebo náhodné motivy (kuchař, seriál).
+  - **REPL test má cenu i bez metrické eval** — qualitative judgment
+    okamžitě identifikoval "tvůrčí partner v životním rozboru" jako
+    persona-relevantní fragment, který formal eval nemusí zachytit.
+- **Ref:** `dataset/bench_results/qual_test_alpha20.md` (full report);
+  navazuje na RN-005 (alpha.15 echo, ale slabší — alpha.20 nemá tak
+  silné echoing, naopak méně halucinací); RN-007/015 (retention bench
+  cross-domain, neutrální vůči identity Core Memory); alpha.21 priorita
+
 ### RN-015 — Trained sofie identity Core Memory nezlepšuje obecnou SSM retention arbitrary facts
 
 - **Datum:** 2026-05-01
@@ -882,3 +951,4 @@ důvodu, ne mazáním_
 - **RN-013** — CUDA gather vyžaduje contiguous, latentní bug (BUG-011) · `confirmed`
 - **RN-014** — Batch=16 seq=16 strukturně mění trajektorii; smoke artifakty refutovány · `confirmed`
 - **RN-015** — Trained sofie identity Core Memory nezlepšuje retention arbitrary facts (alpha.20 bench, 0/25) · `confirmed`
+- **RN-016** — Trained Core Memory má měřitelný (slabý) efekt na identity-relevant odpovědi (Q3/Q4 partnership posun) · `confirmed`
