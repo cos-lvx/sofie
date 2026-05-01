@@ -1,6 +1,6 @@
 # Roadmap — Eleutheria
 
-> Poslední aktualizace: 2026-04-29
+> Poslední aktualizace: 2026-05-01 (alpha.21)
 
 ## Filozofie
 
@@ -168,11 +168,51 @@ vzdálenostmi). Core Memory **musí být trénovaný** — potvrzeno empiricky.
   `into_stack` místo `randn_small`, akumulace `training_steps` +
   `best_loss = min` + composed `notes`. AdamW state nepersistuje
   (alpha.16 limitace, dokumentováno). 88 testů (+4).
-- [ ] **alpha.16** — AdamW state persistence (`core_memory.optim.safetensors`
-  vedle artefaktu, per-Var m + v moments + step counter).
-- [ ] **v0.5.0** — Production training run na 1.5B s `law_pack` +
-  `programming_pack`; validace přes re-run retention benchmarku
-  (SsmOnly pass-rate musí vyskočit z 0 %).
+- [x] **alpha.16** — AdamW state persistence. `EleutheriaAdamW` wrapper
+  s veřejným state, `OptimizerArtifact` v `optim_io.rs`, sourozenec
+  `<core>.optim.safetensors`. Auto-load při `--resume-from`. KI-007
+  vyřešena. RN-008 ukázalo, že drát funguje, ale **Phase 2 overshoot
+  zůstává** v cross-domain resume — RN-006 refutováno. 99 testů (+11).
+- [x] **alpha.17** — LR warmup + cosine decay. `LrSchedule` modul,
+  `--warmup-steps`, `--lr-min` flagy. RN-009: warmup **nezeliminoval**
+  Phase 2 overshoot (Adam moments jsou EMA gradientu, ne updatu —
+  warmup snižuje step size, nemění strukturu). KI-008 hypotéza
+  refutována. 111 testů (+12).
+- [x] **alpha.18** — Best snapshot tracker (KI-009). Shadow CPU buffer
+  per Var, `update_if_better` lazy copy GPU→CPU jen při skutečném
+  best loss improvement. CLI `--save-best`. RN-010: tracker funguje
+  per spec, ze step ~113 zachycuje state s loss=0.99 (vs final=3.69).
+  KI-009 deterministicky vyřešena, RN-003 superseded. 120 testů (+9).
+- [x] **alpha.19** — β1/β2 CLI override + LR + β1 ablace. RN-011 (LR
+  sweep, 4 runy, byte-identický best_step=113) + RN-012 (β1 sweep,
+  3 runy, byte-identický best_step=113). Production HP nalezeno:
+  LR=1e-3 + β1=0.0 + --save-best. 120 testů (beze změny — drop-in).
+- [x] **alpha.20** — Production training na sofie identity packu.
+  Vast AI A100-SXM4-80GB, batch=16, seq_len=16, 5 epoch, 3h 54m.
+  **best=2.9815 @ step 314** (descent neukončil). Cloud deployment
+  workflow (`scripts/cloud/`), BUG-011 fix (CUDA gather contiguous,
+  RN-013), KI-012 periodic best snapshot flush (insurance proti
+  cloud crash). RN-014: batch=16 strukturně mění trajektorii
+  (Phase 2 overshoot úplně chybí), refutuje RN-012 batch hypotézu.
+  RN-015: retention bench 0/25 ssm_only (cross-domain probes
+  neutrální vůči identity Core Memory). RN-016: kvalitativní test
+  ukázal měřitelný (slabý) efekt v partnership/Ondra slovníku.
+  123 testů (+3).
+- [x] **alpha.21** — CUDA auto-detect (Starfield migration prerekvizita).
+  3-vrstvá strategie: workspace `.cargo/config.toml` default 13010
+  s `force = false`, `scripts/detect-cuda.sh` Bash helper (nvcc /
+  nvidia-smi mapování), `build.rs` validation warning. KI-004
+  vyřešena. 123+4 testů (build.rs unit tests).
+- [ ] **alpha.22+** — identity-specific eval design (probe set z
+  Bootstrap.md / IDENTITY-*.md, partnership/vztah focus dle RN-016),
+  LR cosine decay refinement (descent neukončil v alpha.20 → víc
+  epoch / decay 1e-3 → 1e-5 by dotlačil níž), periodic flush optim
+  sourozenec (alpha.20 KI-012 limit pokrýval jen Core Memory).
+- [ ] **Starfield migrace** — runtime přesun z kqs-arch laptopu na
+  Ubuntu 24.04 VM v Gaie (RTX PRO 4000 24 GB, CUDA 13.0). Tailscale
+  permanent peer, Forgejo clone, model rsync z laptopu, alpha.20
+  state migrace s archive layout.
+- [ ] **v0.5.0** — Po identity bench validaci a alpha.22+ refinementu.
 - [ ] **Episodic Memory** — echo embeddings z Falcon-H1 (self-retrieval
   bez separátního modelu), PostgreSQL + pgvector na Mnémosyné,
   `MemoryInjection` stage v pipeline
