@@ -1,5 +1,17 @@
-# Arch Linux CUDA 13.2 workaround — cudarc 0.18.2 podporuje max 13.1.
-# CUDA 13.2 je zpětně kompatibilní, jen build script nezná verzi.
-# Viz SOL-008.
+# Workspace default pro `CUDARC_CUDA_VERSION`. cudarc 0.18.x podporuje
+# max CUDA 13.1 (= 13010); zpětně kompatibilní k vyšším verzím (Arch
+# CUDA 13.2 funguje). Pro nižší host CUDA (např. Starfield s 13.0,
+# Vast s 12.x) je potřeba override — workspace default neforcuje:
+#
+#   force = false
+#
+# znamená "tuto hodnotu použij, pokud env var není nastavený jinak".
+# Pro auto-detect: `source scripts/detect-cuda.sh` před `cargo build`,
+# nebo CI/setup scripty (vast_setup.sh) detekují a exportují.
+#
+# build.rs v eleutheria-core navíc validuje konzistenci s host CUDA
+# a emituje warning při divergenci.
+#
+# Viz SOL-008, KI-004.
 [env]
-CUDARC_CUDA_VERSION = "13010"
+CUDARC_CUDA_VERSION = { value = "13010", force = false }

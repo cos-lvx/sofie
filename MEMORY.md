@@ -4,6 +4,71 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-05-01 | v0.5.0-alpha.21 — CUDA auto-detect (Starfield migration prerekvizita)
+
+**Důvod:** Ondra plánuje migraci runtime z laptopu kqs-arch na nový
+dedikovaný server **Starfield** (Ubuntu 24.04 VM v Gaie s GPU passthrough,
+RTX PRO 4000 Blackwell 24 GB, CUDA 13.0). Existující workspace
+`.cargo/config.toml` měl hardcoded `CUDARC_CUDA_VERSION = "13010"` jako
+Arch CUDA 13.2 workaround (KI-004) — pro Starfield CUDA 13.0 by to
+možná fungovalo (cudarc je zpětně kompat), ale "správná cesta" je
+auto-detect.
+
+**Cargo limitace:** `cargo:rustc-env` z build.rs ovlivní **jen aktuální
+crate**, ne dependency build scripts (cudarc-sys). Tedy build.rs nemůže
+přímo nastavit env var pro cudarc. Workaround: 3-vrstvá strategie.
+
+**Implementace:**
+
+1. **`.cargo/config.toml`** — `CUDARC_CUDA_VERSION = { value = "13010",
+   force = false }`. `force = false` = "použij default pokud env var
+   není nastavený jinak". Workspace default pokrývá Arch CUDA 13.2
+   (13010, clamp na cudarc max).
+
+2. **`scripts/detect-cuda.sh`** — Bash helper:
+   - `nvcc --version` (autoritativní, preferred)
+   - fallback `nvidia-smi` (driver-reported, méně přesný pro toolkit)
+   - mapuje host CUDA na cudarc-supported `CUDARC_CUDA_VERSION`
+   - 3 módy: `--source` (export), `--report` (audit), `--export-command`
+     (eval-friendly)
+
+3. **`crates/eleutheria-core/build.rs`** — Cargo build script:
+   - validuje konzistenci nastaveného `CUDARC_CUDA_VERSION` s host CUDA
+   - při divergenci `cargo:warning` s konkrétním doporučením
+   - **ne panic** — cudarc je zpětně kompat, warning stačí
+   - testy parsing logic (parse_nvcc_release, parse_nvidia_smi_cuda,
+     recommended_cudarc_version) jsou v `#[cfg(test)] mod tests` v
+     build.rs
+
+**Mapování:**
+
+| Host CUDA | CUDARC_CUDA_VERSION |
+|-----------|---------------------|
+| Arch 13.2 | 13010 (clamp, default) |
+| Starfield 13.0 | 13000 (override přes detect-cuda.sh) |
+| 12.8+ | 12080 |
+| 12.0-12.7 | 12000-12060 |
+
+**Test na lokálu:**
+```
+$ scripts/detect-cuda.sh --report
+Host CUDA: 13.2 (přes nvcc)
+CUDARC_CUDA_VERSION: 13010
+```
+✓ Detekce funguje.
+
+**Cargo fmt + clippy + test:** všechny čisté (123+4 tests).
+
+**KI-004 vyřešena.** Migrace Starfield může pokračovat —
+`source scripts/detect-cuda.sh` před `cargo build` na čerstvém Ubuntu
+nastaví správný `CUDARC_CUDA_VERSION=13000`.
+
+**Co dál:** alpha.21 cyklus pokračuje migrací Starfield (Tailscale
+permanent peer, Forgejo clone, model rsync z laptopu, alpha.20 state
+migrace s archive layout). Refinovaný migration prompt = další task.
+
+---
+
 ## 2026-05-01 | alpha.20 production training **doběhlo** — best 2.98 @ step 314
 
 **Vast AI A100-SXM4-80GB**, sofie identity pack (31 851 tokenů, 1990

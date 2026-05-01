@@ -7,6 +7,80 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.21] — 2026-05-01
+
+### Přidáno — CUDA auto-detect infrastruktura (Starfield migration prerekvizita)
+
+**Důvod:** Starfield (Ubuntu 24.04 + RTX PRO 4000 + CUDA 13.0) je nový
+production target. Existující workspace `.cargo/config.toml` měl
+hardcoded `CUDARC_CUDA_VERSION = "13010"` jako Arch CUDA 13.2 workaround
+(KI-004). Pro Starfield CUDA 13.0 potřebujeme `13000`; pro Vast s
+různými CUDA verzemi je potřeba runtime detekce. Pojďme ji udělat
+správně přes 3-vrstvou strategii v rámci Cargo limitů (build script
+nemůže ovlivnit dependency build scripts).
+
+#### Tři vrstvy
+
+1. **Workspace default v `.cargo/config.toml`** — `CUDARC_CUDA_VERSION =
+   { value = "13010", force = false }`. `force = false` znamená "použij
+   tuto hodnotu, pokud env var není nastavený jinak" — workspace pro
+   nezdokumentované hosty defaultuje na cudarc max (13010, zpětně
+   kompatibilní).
+2. **`scripts/detect-cuda.sh`** — Bash helper, detekuje host CUDA přes
+   `nvcc --version` (autoritativní toolkit verze) → fallback `nvidia-smi`
+   (driver-reported). Mapuje na cudarc-supported `CUDARC_CUDA_VERSION`.
+   Použití:
+   - `source scripts/detect-cuda.sh` — exportuje env var
+   - `scripts/detect-cuda.sh --report` — audit print
+   - `eval "$(scripts/detect-cuda.sh --export-command)"` — pro CI
+3. **`crates/eleutheria-core/build.rs`** — Cargo build script, validuje
+   konzistenci nastaveného `CUDARC_CUDA_VERSION` s host CUDA. Při
+   divergenci emituje `cargo:warning` s konkrétním doporučením
+   (např. "Host CUDA 13.0 detekováno, ale CUDARC_CUDA_VERSION=13010.
+   Pro tuto verzi doporučeno 13000."). **Ne panic** — cudarc je zpětně
+   kompatibilní, divergence často OK, ale uživatel ví o možném zdroji
+   build chyb.
+
+#### Co tahle architektura **neřeší**
+
+- `cargo:rustc-env=KEY=VALUE` z build.rs ovlivní **jen aktuální crate**,
+  ne dependency build scripts (cudarc-sys). Tedy build.rs nemůže
+  automaticky nastavit env var pro cudarc — uživatel musí mít korektní
+  hodnotu **před** `cargo build`. Workspace default `13010` pokrývá
+  většinu případů; pro Starfield/Vast `source scripts/detect-cuda.sh`.
+
+#### Mapování host CUDA → CUDARC_CUDA_VERSION
+
+| Host CUDA | CUDARC_CUDA_VERSION | Poznámka |
+|-----------|---------------------|----------|
+| 13.2 (Arch) | 13010 | Clamp na cudarc max, zpětně kompat |
+| 13.1 | 13010 | Přesná shoda |
+| **13.0 (Starfield)** | **13000** | Přesná shoda |
+| 12.8+ | 12080 | |
+| 12.6-12.7 | 12060 | |
+| 12.4-12.5 | 12040 | |
+| 12.2-12.3 | 12020 | |
+| 12.1 | 12010 | |
+| 12.0 | 12000 | |
+| 11.x | (unsupported) | cudarc 0.18.x nepodporuje |
+
+#### Update v `vast_setup.sh`
+
+Existující auto-detect logic v `scripts/cloud/vast_setup.sh` (commit
+`6de1999`) **zůstává** beze změny — má vlastní inline detekci pro
+provisioning čerstvé Vast instance. `scripts/detect-cuda.sh` je
+samostatný helper pro lokální dev workflow.
+
+#### KI-004 status
+
+KI-004 (CUDA 13.2 workaround v `.cargo/config.toml`) **uzavřena** —
+hardcoded workaround nahrazen 3-vrstvou auto-detect architekturou.
+Arch CUDA 13.2 stále funguje (workspace default 13010 pokrývá),
+přidávájí se Starfield (13.0) a Vast (variabilní 12.x-13.x) bez
+ručního editování config.
+
+---
+
 ## [0.5.0-alpha.20] — 2026-05-01
 
 ### Přidáno — Periodic best snapshot flush (KI-012 insurance)

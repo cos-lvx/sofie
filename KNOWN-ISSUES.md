@@ -212,13 +212,26 @@ Formát: `KI-NNN` s fází, dopadem, kontextem a plánovaným řešením.
 - **Kontext:** Plná klasifikace vyžaduje buď heuristiky nebo druhý model pass
 - **Řešení:** Heuristická klasifikace v0.4.0, případně ML-based později
 
-### KI-004 — CUDA 13.2 workaround v .cargo/config.toml
+### KI-004 — CUDA 13.2 workaround v .cargo/config.toml (vyřešeno alpha.21)
 
 - **Fáze:** 1
-- **Dopad:** Nízký — pouze build na Arch Linux
-- **Kontext:** `cudarc` 0.18.2 nepodporuje CUDA 13.2. Workaround přes
-  `CUDARC_CUDA_VERSION=13010`. Odebrat až cudarc přidá 13.2 podporu.
-- **Řešení:** Sledovat cudarc releases, případně aktualizovat Candle (viz SOL-008)
+- **Stav:** **VYŘEŠENO v alpha.21** — 3-vrstvá auto-detect architektura
+  místo hardcoded `13010`. Workspace default v `.cargo/config.toml`
+  s `force = false` (lze override), `scripts/detect-cuda.sh` Bash
+  helper (auto-detect přes `nvcc` / `nvidia-smi`), `build.rs` validation
+  warning při divergenci host CUDA vs nastavené `CUDARC_CUDA_VERSION`.
+  Multi-environment ready: Arch CUDA 13.2 (default 13010, clamp na
+  cudarc max), Starfield CUDA 13.0 (override na 13000 přes detect-cuda.sh),
+  Vast variabilní (vlastní inline detect ve `vast_setup.sh`).
+- **Historický kontext:** `cudarc` 0.18.2 nepodporuje CUDA 13.2 oficiálně
+  (max 13.1). Workaround přes `CUDARC_CUDA_VERSION=13010` byl hardcoded
+  v `.cargo/config.toml`. Pro Starfield migraci (CUDA 13.0) byl
+  hardcoded přístup blokující — alpha.21 ho nahradil.
+- **Cargo limitace (důležité pro budoucí refactoring):** `cargo:rustc-env`
+  z build.rs ovlivní jen aktuální crate, ne dependency build scripts.
+  Tedy nelze plně automatický env-var setup z build.rs — uživatel
+  musí mít správnou hodnotu **před** `cargo build` (`source
+  scripts/detect-cuda.sh` nebo workspace default postačí).
 
 ### KI-005 — CUDA OOM pro multi-layer backward na 6 GB VRAM (vyřešeno alpha.13)
 
