@@ -39,11 +39,16 @@ pub fn cross_entropy_next_token(logits: &Tensor, input_ids: &Tensor) -> Result<T
 
     // log_softmax v F32 (BF16 nestabilní pro extreme logits)
     let logits_f32 = shifted_logits.to_dtype(DType::F32)?;
-    let log_probs = log_softmax(&logits_f32, 2)?; // [b, s-1, v]
+    let log_probs = log_softmax(&logits_f32, 2)?.contiguous()?; // [b, s-1, v]
 
     // Gather — vytáhni log_prob pro target token na každé pozici.
     // Targets musí být [b, s-1, 1] pro gather na dim=2.
-    let targets_idx = shifted_targets.unsqueeze(2)?; // [b, s-1, 1]
+    //
+    // **Pozor — CUDA contiguous requirement:** `narrow` + `unsqueeze` produkují
+    // non-contiguous view. CPU gather je tolerantní, ale CUDA gather (alpha.20
+    // RN-013) vyžaduje contiguous. Bez `.contiguous()` selže s
+    // "gather only supports contiguous tensors" jakmile batch > 1 na CUDA.
+    let targets_idx = shifted_targets.unsqueeze(2)?.contiguous()?; // [b, s-1, 1]
     let gathered = log_probs.gather(&targets_idx, 2)?; // [b, s-1, 1]
     let gathered = gathered.squeeze(2)?; // [b, s-1]
 
