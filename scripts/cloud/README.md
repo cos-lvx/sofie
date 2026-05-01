@@ -20,11 +20,23 @@
 
 ## Doporučené Vast AI templates
 
-V Vast AI Console při create instance hledat **template**:
+**KRITICKÉ:** Vast AI nabídka má pole **"Max CUDA"** = host driver
+verze. Template (Docker image) MUSÍ mít CUDA toolkit ≤ Max CUDA, jinak
+build selže s "CUDA driver too old".
 
-- **`nvidia/cuda:12.4.1-devel-ubuntu22.04`** ✓ doporučeno (minimální, stable)
-- `pytorch/pytorch:2.4.0-cuda12.4-cudnn9-devel` (víc batteries, ale OK)
-- Cokoliv s "CUDA 12.4 Devel Ubuntu 22.04"
+V Vast Console při výběru instance zkontroluj **Max CUDA: X.Y**, pak
+vyber template odpovídající:
+
+| Host Max CUDA | Template image |
+|---------------|----------------|
+| 12.0 | `nvidia/cuda:12.0.1-devel-ubuntu22.04` |
+| 12.1-12.3 | `nvidia/cuda:12.1.1-devel-ubuntu22.04` |
+| 12.4+ | `nvidia/cuda:12.4.1-devel-ubuntu22.04` |
+| 13.x | `nvidia/cuda:13.0.0-devel-ubuntu22.04` |
+
+`vast_setup.sh` automaticky detekuje host CUDA verzi z `nvidia-smi` a
+nastaví `CUDARC_CUDA_VERSION` env var pro cudarc. **Pokud build selže,
+zkontroluj že template CUDA toolkit ≤ host driver Max CUDA.**
 
 NEvybírat:
 - `runtime` varianty (chybí nvcc, candle build selže)

@@ -31,6 +31,23 @@ fi
 FORGEJO_URL="${FORGEJO_URL:-https://git.nexus.lomsky.net/lvx/eleutheria.git}"
 ELEUTHERIA_DIR="${ELEUTHERIA_DIR:-$HOME/eleutheria}"
 
+# Detekce CUDA driver verze z hostu (Vast může mít různé verze podle
+# hostů). cudarc vyžaduje CUDARC_CUDA_VERSION matching driver.
+detect_cuda_version() {
+    if command -v nvidia-smi &>/dev/null; then
+        # nvidia-smi shows "CUDA Version: 12.0" v záhlaví
+        local cuda_ver
+        cuda_ver=$(nvidia-smi 2>/dev/null | grep -oP 'CUDA Version: \K[0-9]+\.[0-9]+' | head -1)
+        if [[ -n "$cuda_ver" ]]; then
+            # 12.0 → 12000, 12.4 → 12040, 11.8 → 11080
+            local major minor
+            major=$(echo "$cuda_ver" | cut -d. -f1)
+            minor=$(echo "$cuda_ver" | cut -d. -f2)
+            printf '%d%03d\n' "$major" "$((minor * 10))"
+        fi
+    fi
+}
+
 echo "=========================================="
 echo "Eleutheria cloud bootstrap"
 echo "=========================================="
@@ -90,6 +107,19 @@ echo "  HEAD: $(git log -1 --oneline)"
 echo "[5/6] Cargo build --release --features cuda..."
 echo "  (toto může trvat 5-10 minut při prvním buildu)"
 cd "$ELEUTHERIA_DIR"
+
+# Detect host CUDA driver version a override cudarc CUDARC_CUDA_VERSION
+# (lokálně je v .cargo/config.toml CUDARC_CUDA_VERSION=13010 pro CUDA 13.2;
+# Vast hosti mají typicky CUDA 12.0/12.4 — musíme matchnout host driver).
+CUDA_VER_NUM=$(detect_cuda_version)
+if [[ -n "$CUDA_VER_NUM" ]]; then
+    echo "  Detekována CUDA driver: $CUDA_VER_NUM (z nvidia-smi)"
+    export CUDARC_CUDA_VERSION="$CUDA_VER_NUM"
+    echo "  CUDARC_CUDA_VERSION=$CUDARC_CUDA_VERSION"
+else
+    echo "  WARN: nemohu detekovat CUDA verzi, default ze .cargo/config.toml"
+fi
+
 cargo build --release --features cuda 2>&1 | tail -20
 
 # 6. Připravit Falcon-H1 model directory
