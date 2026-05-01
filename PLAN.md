@@ -293,6 +293,19 @@ distillates konečně sofie identity korpus.
       a opravila IDENTITY-001 (default LLM místo Claude, VZLU bez háčku,
       "kdo jsem A jak se cítím" rozšíření, organičtější jazyk).
 
+#### Cloud deployment infrastructure ✅ (2026-05-01)
+- [x] **`scripts/cloud/`** — bootstrap pro Vast AI / generic GPU cloud
+      - `vast_setup.sh` — Tailscale connect + Rust + git clone z Forgejo +
+        cargo build (cca 10-15 min od provision do ready-to-train)
+      - `vast_train.sh` — wrapper pro production training s defaultními
+        alpha.20 HP (LR=1e-3, β1=0.0, --save-best, --checkpoint)
+      - `sync_back.sh` — rsync výstupů z cloud zpět na local přes Tailscale
+      - `README.md` — kompletní workflow dokumentace (provision → bootstrap
+        → model download → train → sync → validation → destroy)
+- [x] **Tailscale-based přístup k Forgejo** — Vast instance se připojí
+      do Tailscale sítě jako ephemeral node (auto-cleanup po stop),
+      git clone z `git.nexus.lomsky.net` funguje seamlessly
+
 #### Production training run
 - [ ] `train-core-memory --dataset dataset/training/sofie_identity_pack.txt
       --learning-rate 1e-3 --adam-beta1 0.0 --save-best --checkpoint
