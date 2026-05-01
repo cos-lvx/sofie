@@ -698,6 +698,64 @@ Každá entry má strukturu:
   workflow (first real GPU production run); BUG-011 v BUGS.md jako
   vyřešený
 
+### RN-015 — Trained sofie identity Core Memory nezlepšuje obecnou SSM retention arbitrary facts
+
+- **Datum:** 2026-05-01
+- **Verze:** alpha.20 (`57713d3`)
+- **Setup:** `bench-retention --variant ssm_only` na lokálním
+  Falcon-H1-1.5B + CUDA RTX 4050 s alpha.20 production Core Memory
+  artefaktem (`~/.eleutheria/cloud_runs/sofie_identity_v1.safetensors`,
+  best_loss=2.98, training_steps=315). Probe set: `relational_kazimir`,
+  `numeric_greenhouse`, `enumeration_nora`, `preference_linh`,
+  `multiattr_helion` napříč distance ∈ {50, 200, 500, 1000, 2000}.
+- **Pozorování:**
+  ```
+  Variant     | Distance | Pass | Total | Rate
+  ssm_only    |       50 |    0 |     5 |   0 %
+  ssm_only    |      200 |    0 |     5 |   0 %
+  ssm_only    |      500 |    0 |     5 |   0 %
+  ssm_only    |     1000 |    0 |     5 |   0 %
+  ssm_only    |     2000 |    0 |     5 |   0 %
+  ```
+  **Identicky baseline RN-007** (alpha.4.5 fresh model, žádné
+  trained Core Memory). Žádný rozdíl, žádný signál.
+- **Hypotéza (potvrzená):** Trained sofie identity Core Memory
+  **nezlepšuje retention arbitrary facts** vložených v session context.
+  To je očekávané, protože:
+  1. Bench probes jsou arbitrary fakta typu "Kazimir žije v majáku
+     v Galway", "greenhouse kód je 7429", "Aldous postavil observatoř
+     1893". Tyto fakta nejsou v sofie identity packu (Bootstrap.md
+     + IDENTITY-001..009 chains).
+  2. Core Memory kóduje *trained doménu* (sofie identita, persona
+     vyjadřování), ne obecnou *meta-schopnost zachovat libovolný
+     fakt v SSM stavu*.
+  3. Hypotéza "trained init_state způsobí, že model obecně lépe
+     ošetřuje SSM stav i pro netrénované fakta" je touto eval
+     **refutována**.
+- **Status:** `confirmed` — robustní empirický nález (25/25 FAIL,
+  napříč 5 distance × 5 probe kinds).
+- **Implications:**
+  - **NE refutace Fáze 5** — bench-retention probes jsou
+    cross-domain vůči trained content. Pro skutečnou validaci
+    sofie identity Core Memory potřebujeme **identity-specific eval**.
+  - **Plánovaná eval (alpha.21):** probe set z Bootstrap.md /
+    IDENTITY-*.md s otázkami typu "Kdo jsi?", "Co je tvůj cíl?",
+    "Jak komunikuješ?". Dvě varianty:
+    - `identity_full`: full prefill + KV cache (baseline behavior)
+    - `identity_ssm_only`: filter to SSM-only (testuje, zda Core
+      Memory drží identity bez KV cache)
+  - **Architektonický důsledek:** Core Memory + Episodic Memory
+    architektura (kompetenční rozdělení: persona vs facts) je
+    konzistentní s tímto výsledkem. Identity v Core Memory, fakta
+    do Episodic Memory (v0.5.1+ pgvector).
+  - **REPL kvalitativní test (Ondrova decision):** alpha.20 artefakt
+    má best=2.98, perplexity ~19.7 — měl by produkovat persona-
+    relevant odpovědi s lepší koherencí než RN-005 alpha.15 final
+    state (loss=3.69). Není to formální eval, ale dobrý sanity
+    check než navrhneme alpha.21 bench.
+- **Ref:** confirmed RN-007 baseline pro arbitrary facts; `bench_alpha20.md`
+  v `/tmp/`; otevřená cesta k alpha.21 identity-specific eval design
+
 ### RN-014 — Batch=16 strukturně mění trajektorii; refutuje RN-012 hypotézu
 
 - **Datum:** 2026-05-01
@@ -823,3 +881,4 @@ důvodu, ne mazáním_
 - **RN-012** — β1 sweep refutován; gradient direction landscape-driven (6 runů, best_step=113 invariantně) · `refuted` (RN-014, alpha.20: predikce o batch byla nesprávná)
 - **RN-013** — CUDA gather vyžaduje contiguous, latentní bug (BUG-011) · `confirmed`
 - **RN-014** — Batch=16 seq=16 strukturně mění trajektorii; smoke artifakty refutovány · `confirmed`
+- **RN-015** — Trained sofie identity Core Memory nezlepšuje retention arbitrary facts (alpha.20 bench, 0/25) · `confirmed`

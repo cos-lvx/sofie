@@ -58,20 +58,28 @@ smoke nedostačí, **cloud GPU validace musí být součástí dev cycle**.
 (75 MB, 24 vrstev F32) + `.optim.safetensors` (151 MB, step_t=315).
 Stahnutý přes Tailscale rsync — Vast IP 185.65.93.212:42051.
 
-**Validace přes retention benchmark — interpretační problém:**
-Bench-retention probes (`relational_kazimir`, `numeric_greenhouse`,
-`enumeration_nora`) jsou **arbitrary facts vložené do session**, ne
-identity content. Sofie identity Core Memory nebyla trénovaná na
-Kazimir story. SsmOnly FAIL na tyto probes je **neutrální vůči Core
-Memory kvalitě** — identity Core Memory nezlepší retention arbitrary
-facts (jiná doména).
+**Validace přes retention benchmark — proběhla, RN-015:**
+`bench-retention --variant ssm_only` na lokálním 1.5B + CUDA s
+alpha.20 artefaktem dal **0/25 PASS** (5 probe kinds × 5 distance ∈
+{50, 200, 500, 1000, 2000}). **Identicky baseline RN-007** (alpha.4.5
+fresh model, žádné trained Core Memory).
+
+**Interpretace:** Bench probes (`relational_kazimir`, `numeric_greenhouse`,
+`enumeration_nora`, `preference_linh`, `multiattr_helion`) jsou
+**arbitrary facts vložené do session**, ne identity content. Sofie
+identity Core Memory netrénovala na Kazimir/greenhouse/Nora/Linh/
+Helion story. **NE refutace Fáze 5** — pouze refutace hypotézy
+"trained init_state zlepší obecnou SSM retention i pro netrénované
+fakta". Core Memory + Episodic Memory architektura (kompetenční
+rozdělení: persona vs facts) je s tímto výsledkem konzistentní.
 
 **Skutečný důkaz Fáze 5** (alpha.21 priorita) vyžaduje **identity-
 specific eval**: probe set s otázkami ze sofie identity packu
 ("Kdo jsi?", "Co je tvůj cíl?", "Jak myslíš?"), srovnání full vs
-ssm_only varianty. RN-007 baseline byl 0 % pro arbitrary facts;
-pro identity content bychom měli mít signifikantní rozdíl pokud
-Core Memory funguje.
+ssm_only varianty.
+
+**Bench artefakty uloženy v repo:** `dataset/bench_results/bench_alpha20.md`
++ `.json` (pro audit + porovnání s budoucími runy).
 
 **Alpha.20 milestone uzavřen na úrovni:**
 - ✅ Cloud deployment workflow (Vast AI, Tailscale, scripts/cloud/)

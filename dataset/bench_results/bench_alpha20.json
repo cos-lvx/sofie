@@ -1,0 +1,385 @@
+{
+  "meta": {
+    "schema_version": 1,
+    "eleutheria_version": "0.5.0-alpha.20",
+    "timestamp": "2026-05-01T15:36:35Z",
+    "model_name": "1.5b",
+    "device": "CUDA",
+    "notes": null
+  },
+  "results": [
+    {
+      "probe_id": "relational_kazimir",
+      "kind": "relational",
+      "variant": "ssm_only",
+      "target_distance": 50,
+      "actual_distance": 67,
+      "position_before_question": 0,
+      "position_after_answer": 15,
+      "response": "",
+      "outcome": "fail",
+      "missing": [
+        "lighthouse",
+        "galway"
+      ]
+    },
+    {
+      "probe_id": "numeric_greenhouse",
+      "kind": "numeric",
+      "variant": "ssm_only",
+      "target_distance": 50,
+      "actual_distance": 67,
+      "position_before_question": 0,
+      "position_after_answer": 98,
+      "response": "The greenhouse security code is:\n\n**The code for the greenhouse is:**\n\n**The code for the code is:**\n\n**The code for the code is:**\n\n**The code for the code is:**\n\n**The code for the code is:**\n\n**The code for the greenhouse is:**\n\n**The code for the security code is:**\n\n**The code for the security of the greenhouse",
+      "outcome": "fail",
+      "missing": [
+        "7429"
+      ]
+    },
+    {
+      "probe_id": "enumeration_nora",
+      "kind": "enumeration",
+      "variant": "ssm_only",
+      "target_distance": 50,
+      "actual_distance": 67,
+      "position_before_question": 0,
+      "position_after_answer": 97,
+      "response": "********\n********\n******\n\n******\n\n******\n\n******\n\n**What Nora packed:**\n\n************\n**\n **** What Nora packed: ****\n\n****** (********)**\n\n**Nora's (******) ****:**",
+      "outcome": "fail",
+      "missing": [
+        "compass",
+        "key",
+        "map"
+      ]
+    },
+    {
+      "probe_id": "preference_linh",
+      "kind": "preference",
+      "variant": "ssm_only",
+      "target_distance": 50,
+      "actual_distance": 67,
+      "position_before_question": 0,
+      "position_after_answer": 19,
+      "response": "",
+      "outcome": "fail",
+      "missing": [
+        "linh",
+        "tea"
+      ]
+    },
+    {
+      "probe_id": "multiattr_helion",
+      "kind": "multi_attribute",
+      "variant": "ssm_only",
+      "target_distance": 50,
+      "actual_distance": 67,
+      "position_before_question": 0,
+      "position_after_answer": 104,
+      "response": "In the context of the information provided, \"The year\" refers to the year the year the year the observatory is built, and \"The context\" is the year the location was established. \"The observatory\" is the context of the observatory on Mount Helion being built, and \"the context\" is the location on the mountain. \"The context\" is",
+      "outcome": "fail",
+      "missing": [
+        "aldous",
+        "1893"
+      ]
+    },
+    {
+      "probe_id": "relational_kazimir",
+      "kind": "relational",
+      "variant": "ssm_only",
+      "target_distance": 200,
+      "actual_distance": 179,
+      "position_before_question": 0,
+      "position_after_answer": 95,
+      "response": "Kazimir's location is a mystery, but it's also a place that's shining a bit. The shine of the morning is a place that's shining, but it's also a place that's shining. The shine of the morning is a place that's shining, but it's also a mystery, a place that's sh",
+      "outcome": "fail",
+      "missing": [
+        "lighthouse",
+        "galway"
+      ]
+    },
+    {
+      "probe_id": "numeric_greenhouse",
+      "kind": "numeric",
+      "variant": "ssm_only",
+      "target_distance": 200,
+      "actual_distance": 179,
+      "position_before_question": 0,
+      "position_after_answer": 98,
+      "response": "The security code for the greenhouse is \"2020202112\" for the \"2020\" \"2021\" \"the 21\" \"2022\" \"12\" \"2022\" for \"2022\" \"20202121",
+      "outcome": "fail",
+      "missing": [
+        "7429"
+      ]
+    },
+    {
+      "probe_id": "enumeration_nora",
+      "kind": "enumeration",
+      "variant": "ssm_only",
+      "target_distance": 200,
+      "actual_distance": 179,
+      "position_before_question": 0,
+      "position_after_answer": 97,
+      "response": "Nora's packing list:\n\\[\n\\textbf{Packing list:\n\\[\n\\]\n\\[\n\\]\n\\[\n\\textbf{Possible items:\n\\[\n\\]\n\\[\n\\]\n\\[\n\\textbf{Items}\n\\]\n\\[\n\\textbf{Packing list:\n\\[\n\\]\n\\[\n\\textbf{Possible list:\n\\[\n\\]\n\\[\n",
+      "outcome": "fail",
+      "missing": [
+        "compass",
+        "key",
+        "map"
+      ]
+    },
+    {
+      "probe_id": "preference_linh",
+      "kind": "preference",
+      "variant": "ssm_only",
+      "target_distance": 200,
+      "actual_distance": 179,
+      "position_before_question": 0,
+      "position_after_answer": 99,
+      "response": "Dr. Linh prefers to drink the following:\n\nThe night brings a dawn that he prefers to taste before it brings a night that he finds repelling.\n\nDr. Linh finds the following repelling:\n\nThe repelling brings a night that he prefers to taste before it does.\n\nAnd the following:\n\nThe following brings a night that he finds repelling:\n\n",
+      "outcome": "fail",
+      "missing": [
+        "tea"
+      ]
+    },
+    {
+      "probe_id": "multiattr_helion",
+      "kind": "multi_attribute",
+      "variant": "ssm_only",
+      "target_distance": 200,
+      "actual_distance": 179,
+      "position_before_question": 0,
+      "position_after_answer": 48,
+      "response": "The city built the observatory on Mount Helion, and in what year did the inscription on the mountain echo?",
+      "outcome": "fail",
+      "missing": [
+        "aldous",
+        "1893"
+      ]
+    },
+    {
+      "probe_id": "relational_kazimir",
+      "kind": "relational",
+      "variant": "ssm_only",
+      "target_distance": 500,
+      "actual_distance": 464,
+      "position_before_question": 0,
+      "position_after_answer": 95,
+      "response": "Kazimir's place is a mystery.\n\nKazimir's place is a mystery.\n\nLet's assume the place is Kazimir's.\n\nAcknowledge the place is a mystery.\n\nKimazimir's place is a mystery.\n\nKazimir's place is a mystery.\n\nLet's unravel the place is Kazimir's",
+      "outcome": "fail",
+      "missing": [
+        "lighthouse",
+        "galway"
+      ]
+    },
+    {
+      "probe_id": "numeric_greenhouse",
+      "kind": "numeric",
+      "variant": "ssm_only",
+      "target_distance": 500,
+      "actual_distance": 464,
+      "position_before_question": 0,
+      "position_after_answer": 98,
+      "response": "The security code for the greenhouse is the security code for the greenhouse. Here is the description of the security for the greenhouse:\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n******\n\n****",
+      "outcome": "fail",
+      "missing": [
+        "7429"
+      ]
+    },
+    {
+      "probe_id": "enumeration_nora",
+      "kind": "enumeration",
+      "variant": "ssm_only",
+      "target_distance": 500,
+      "actual_distance": 464,
+      "position_before_question": 0,
+      "position_after_answer": 97,
+      "response": "Nora packed three items:\n1. Three items:\n2. Three items:\n3. Four items:\n4. Three items:\n5. Three items:\n6. Three more items:\n7. Three more items:\n\nLet me know what three things Nora did:\n\nNora did three items:\n1. Three items:\n3. Three items:",
+      "outcome": "fail",
+      "missing": [
+        "compass",
+        "key",
+        "map"
+      ]
+    },
+    {
+      "probe_id": "preference_linh",
+      "kind": "preference",
+      "variant": "ssm_only",
+      "target_distance": 500,
+      "actual_distance": 464,
+      "position_before_question": 0,
+      "position_after_answer": 29,
+      "response": "What does Dr. Linh prefer to drink?",
+      "outcome": "fail",
+      "missing": [
+        "tea"
+      ]
+    },
+    {
+      "probe_id": "multiattr_helion",
+      "kind": "multi_attribute",
+      "variant": "ssm_only",
+      "target_distance": 500,
+      "actual_distance": 464,
+      "position_before_question": 0,
+      "position_after_answer": 104,
+      "response": "In the year the Mount Helion was built, the observatory on Mount Mount Helion on the same year as building the observatory on Mount Helion was built, and the yearly as in building the observatory on Mount Helion was Mount Helion was built.\n\nHowever, the yearly on Mount Helion was in building the observatory on Mount Helion, and the mountain-",
+      "outcome": "fail",
+      "missing": [
+        "aldous",
+        "1893"
+      ]
+    },
+    {
+      "probe_id": "relational_kazimir",
+      "kind": "relational",
+      "variant": "ssm_only",
+      "target_distance": 1000,
+      "actual_distance": 898,
+      "position_before_question": 0,
+      "position_after_answer": 90,
+      "response": "\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\n```\nand Kazimir live where Kazimir live where Kazimir live where Kazimir live where Kazimir live where Kazimir live where Kazimir live where Kazimir live where Kazimir live",
+      "outcome": "fail",
+      "missing": [
+        "lighthouse",
+        "galway"
+      ]
+    },
+    {
+      "probe_id": "numeric_greenhouse",
+      "kind": "numeric",
+      "variant": "ssm_only",
+      "target_distance": 1000,
+      "actual_distance": 898,
+      "position_before_question": 0,
+      "position_after_answer": 98,
+      "response": "The security code for the greenhouse is the security code for the security. Security for the Greenhouse for the Green.\n\nThe security code for the greenhouse is the security code for the security.\n\nThe security code for the greenhouse is the security code for the security.\n\nThe security code for the greenhouse is the security.\n\nThe code for the greenhouse security is the code for the code.\n\nThe",
+      "outcome": "fail",
+      "missing": [
+        "7429"
+      ]
+    },
+    {
+      "probe_id": "enumeration_nora",
+      "kind": "enumeration",
+      "variant": "ssm_only",
+      "target_distance": 1000,
+      "actual_distance": 898,
+      "position_before_question": 0,
+      "position_after_answer": 97,
+      "response": "Based on the information provided, here's what Nora packed:\n\n1. **Three items Nora packed:**\n   - **Fabric for covering** (likely \"Three items Nora packed: A set of winter clothes, a travel backpack, and a sleeping bag** (hypothetical scenario))\n  \n2. **Based on the items N",
+      "outcome": "fail",
+      "missing": [
+        "compass",
+        "key",
+        "map"
+      ]
+    },
+    {
+      "probe_id": "preference_linh",
+      "kind": "preference",
+      "variant": "ssm_only",
+      "target_distance": 1000,
+      "actual_distance": 898,
+      "position_before_question": 0,
+      "position_after_answer": 19,
+      "response": "",
+      "outcome": "fail",
+      "missing": [
+        "linh",
+        "tea"
+      ]
+    },
+    {
+      "probe_id": "multiattr_helion",
+      "kind": "multi_attribute",
+      "variant": "ssm_only",
+      "target_distance": 1000,
+      "actual_distance": 898,
+      "position_before_question": 0,
+      "position_after_answer": 34,
+      "response": "And who built the observatory?\n\b\n",
+      "outcome": "fail",
+      "missing": [
+        "aldous",
+        "1893"
+      ]
+    },
+    {
+      "probe_id": "relational_kazimir",
+      "kind": "relational",
+      "variant": "ssm_only",
+      "target_distance": 2000,
+      "actual_distance": 1766,
+      "position_before_question": 0,
+      "position_after_answer": 95,
+      "response": "Where does Kazimir live?\nWhere does Kazimir live?\nWhere does Kazimir live?\nKazurimir live.\nKazimir lives where.\nJimazimir live where.\nWhere does Kazimir live?\nZekim lives where.\nJimem lives.\nWhere does Kazimemememememiploccur?\nWhere does Kaz",
+      "outcome": "fail",
+      "missing": [
+        "lighthouse",
+        "galway"
+      ]
+    },
+    {
+      "probe_id": "numeric_greenhouse",
+      "kind": "numeric",
+      "variant": "ssm_only",
+      "target_distance": 2000,
+      "actual_distance": 1766,
+      "position_before_question": 0,
+      "position_after_answer": 28,
+      "response": "The security code for the code for the greenhouse?",
+      "outcome": "fail",
+      "missing": [
+        "7429"
+      ]
+    },
+    {
+      "probe_id": "enumeration_nora",
+      "kind": "enumeration",
+      "variant": "ssm_only",
+      "target_distance": 2000,
+      "actual_distance": 1766,
+      "position_before_question": 0,
+      "position_after_answer": 97,
+      "response": "Nora packed three items:\n\nNora:\n\n1. Nora:\n\n2. Nora:\n   - Nora:\n   - Three:\n   - Nora:\n   - Pack:\n   Nora:\n   Pack:\n   Pack:\n   Pack:\n   Nora:\n   Pack:\n   Pack:\n   Pack:\n  ",
+      "outcome": "fail",
+      "missing": [
+        "compass",
+        "key",
+        "map"
+      ]
+    },
+    {
+      "probe_id": "preference_linh",
+      "kind": "preference",
+      "variant": "ssm_only",
+      "target_distance": 2000,
+      "actual_distance": 1766,
+      "position_before_question": 0,
+      "position_after_answer": 19,
+      "response": "",
+      "outcome": "fail",
+      "missing": [
+        "linh",
+        "tea"
+      ]
+    },
+    {
+      "probe_id": "multiattr_helion",
+      "kind": "multi_attribute",
+      "variant": "ssm_only",
+      "target_distance": 2000,
+      "actual_distance": 1766,
+      "position_before_question": 0,
+      "position_after_answer": 104,
+      "response": "Who:\n* * * Who built the observatory on Mount Helion, and in what year?\nWho:\n* * *\n* * * Who: Who built the * * who on Mount Helion, and in what year?\n* * *\n*\n* * In what year: Who built the * ",
+      "outcome": "fail",
+      "missing": [
+        "aldous",
+        "1893"
+      ]
+    }
+  ]
+}

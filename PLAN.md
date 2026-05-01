@@ -339,16 +339,16 @@ distillates konečně sofie identity korpus.
 - [x] +3 testy (123 total), clippy clean, fmt clean, commit `31939bd`
 - [x] Push do GitHub mirroru `cos-lvx/sofie` pro Vast pull-ready stav
 
-#### Validace přes retention benchmark
-- [ ] **POZOR — interpretace závisí na probe designu.** Bench-retention
-      probes (`relational_kazimir`, `numeric_greenhouse`, `enumeration_nora`)
-      jsou **arbitrary facts vložené do session**, ne identity content.
-      Sofie identity Core Memory není trénovaná na Kazimir story →
-      ssm_only FAIL je očekávaný i s alpha.20 artefaktem
-- [ ] Pokud SsmOnly = 0 %: **NE refutace Fáze 5** — bench design pro
-      arbitrary facts není správný probe pro identity Core Memory
-- [ ] Skutečný důkaz Fáze 5 vyžaduje **identity-specific eval** (REPL
-      s probes typu "Kdo jsi?", "Co je tvůj cíl?", qualitative judgment)
+#### Validace přes retention benchmark ✅ (2026-05-01) — RN-015
+- [x] `bench-retention --variant ssm_only` lokálně na 1.5B + CUDA
+- [x] **Výsledek: 0/25 SsmOnly** (5 probes × 5 distance), identicky
+      baseline RN-007. Refutuje hypotézu "trained init_state zlepší
+      obecnou SSM retention arbitrary facts" (RN-015).
+- [x] **NE refutace Fáze 5** — bench probes jsou cross-domain vůči
+      sofie identity korpusu. Identity Core Memory nemá důvod zlepšovat
+      retention arbitrary fakt typu "Kazimir žije v majáku".
+- [x] Bench artefakty: `dataset/bench_results/bench_alpha20.md` + `.json`
+- [ ] Skutečný důkaz Fáze 5 vyžaduje **identity-specific eval** (alpha.21)
 
 ### v0.5.0-alpha.21 (next) — Identity-specific eval + LR decay refinement
 
