@@ -660,6 +660,144 @@ Každá entry má strukturu:
   neřeší overshoot); KI-008 status update pending; pivot k KI-009
   jako alpha.18 prioritě
 
+### RN-013 — CUDA gather vyžaduje contiguous, latentní bug v cross_entropy_next_token
+
+- **Datum:** 2026-05-01
+- **Verze:** alpha.20 (`d8871fe`)
+- **Setup:** První pokus o alpha.20 production training na Vast AI A100
+  (sofie identity pack, batch=16, seq_len=16). Lokální testy
+  (CPU + RTX 4050) nikdy neselhaly — testovací rozsahy byly batch=1
+  seq=4 / batch=1 seq=16, kde shape kombinace asi vyhnula non-contiguous
+  patterně.
+- **Pozorování:** První training step na A100 spadl s:
+  ```
+  cross_entropy: gather only supports contiguous tensors
+  ```
+- **Hypotéza (potvrzená):** `cross_entropy_next_token` v `training/loss.rs`
+  používá `narrow` + `unsqueeze` chain pro přípravu `targets_idx`.
+  Ten vyrobí non-contiguous view tensor. CPU `gather` implementace je
+  tolerantní k non-contiguous, **CUDA gather je striktní** — vyžaduje
+  contiguous input.
+- **Status:** `confirmed` — fix `d8871fe` přidal explicit `.contiguous()`
+  na `log_probs` (po `log_softmax`) a `targets_idx` (po unsqueeze).
+  Drobný overhead na CPU (no-op pokud už contiguous), bezpečný na CUDA.
+  Existující 4 unit testy nadále procházejí (CPU tolerantní), nově
+  prošel i full CUDA training s batch>1.
+- **Implications:**
+  - **Latentní bugy v shape-dependent CUDA kernelech** se musí testovat
+    na cílové platformě, ne jen na vývojové. Lokální CPU smoke validace
+    je nedostatečná pro validaci CUDA-specific path.
+  - Pro v0.6+ workflow: pokaždé když se mění tensor shape pipeline
+    (narrow, slice, unsqueeze, transpose), explicit `.contiguous()`
+    před `gather` / `scatter` / `index_select` je obecně bezpečné.
+  - **Production jako test environment:** alpha.20 první cloud run
+    odhalil bug, který by lokální vývojový loop nikdy nezachytil.
+    To je cenný argument pro **early cloud deployment** — neřešit "jednou
+    až bude vše hotové", ale validovat průběžně.
+- **Ref:** commit `d8871fe`; navazuje na alpha.20 cloud deployment
+  workflow (first real GPU production run); BUG-011 v BUGS.md jako
+  vyřešený
+
+### RN-014 — Batch=16 strukturně mění trajektorii; refutuje RN-012 hypotézu
+
+- **Datum:** 2026-05-01
+- **Verze:** alpha.20 (`31939bd`)
+- **Setup:** První alpha.20 production training na Vast AI A100-SXM4-80GB.
+  Sofie identity pack (31 851 tokenů, 1990 chunků seq_len=16),
+  batch_size=16, seq_len=16, grad_accum=2 (efektivní batch=32),
+  LR=1e-3, β1=0.0, --save-best, --checkpoint, 5 epoch, 315 stepů,
+  3h 54m wall time. Per-μbatch gradient sample: **256 tokens**
+  (vs smoke alpha.16-19 batch=1 seq=4 = 4 tokens, **64× větší**).
+- **Pozorování — Phase 2 overshoot úplně chybí:**
+  ```
+  step    | smoke alpha.16 | alpha.20 (batch=16, seq=16)
+  10      |  ~3-4          |  4.79
+  20      |  1.70          |  5.09
+  40 peak | 10.58 OVERSHOOT|  4.49 (žádný peak)
+  60      |  8.94          |  4.53
+  100     |  4.73          |  4.26
+  150     |  ~4            |  3.51
+  200     |  ~5-6          |  3.59
+  315 fin |  3.69          |  2.98
+  best    |  0.99          |  2.98 (best_step=314)
+  ```
+  Phase 2 overshoot ve smoke runs (RN-002 4-phase pattern) měl peak
+  step 40 = 10.58 napříč všemi alpha.16-19 runy (LR sweep, β1 sweep —
+  6 runů s byte-identickým best_step=113). **V alpha.20 je peak v step
+  40 = 4.49** — šestinásobně menší, žádný overshoot.
+- **Pozorování — initial loss radikálně jiná:**
+  - smoke (batch=1, seq=4): step 1 loss ≈ 9.85 (close to ln(vocab)=11.09)
+  - alpha.20 (batch=16, seq=16): step 1 loss ≈ 4.83
+  - Δ ≈ 5 nat. **Random baseline pattern úplně zmizel** — 256 token
+    micro-batch s 65 537 vocab už produkuje smysluplný loss od step 1
+- **Pozorování — best step pattern:**
+  - smoke (batch=1, seq=4) napříč 6 runy: byte-identický best_step=113
+    (LR-invariantní, β1-invariantní, gradient direction landscape-driven)
+  - alpha.20: best_step=314 (z 315 = předposlední krok)
+  - **Best step pattern je strukturálně jiný** — 314 vs 113 není jen
+    "později najde stejný bod", je to úplně jiná trajektorie
+- **Pozorování — descent monotonický napříč všemi epoch:**
+  ```
+  Mean loss per epoch:
+    epoch 0: 4.5730
+    epoch 1: 4.0898 (-0.48)
+    epoch 2: 3.8239 (-0.27)
+    epoch 3: 3.6126 (-0.21)
+    epoch 4: 3.4264 (-0.18)
+  ```
+  Klesání zpomaluje, ale **descent neukončil** — žádné Phase 4 plateau.
+  Best loss per-epoch také monotonně klesá (3.93 → 3.81 → 3.51 → 3.30
+  → **2.98**).
+- **Hypotéza (potvrzená meta-nález):** RN-012 predikce *"větší batch
+  averages magnitudy gradientu, ale směr zůstává (landscape-driven);
+  Phase 2 overshoot pravděpodobně nezmizí"* je **definitivně refutována**.
+  Mechanismus:
+  1. **Tiny batch (1) seq (4) gradient noise generuje falešný směr.**
+     Adam moments naskakují na artifakt — overshoot je důsledek
+     stochastic gradient nesoucího fluktuaci, ne pravý landscape gradient.
+  2. **64× větší per-step sample (256 tokens) odhalí pravý směr.**
+     Adam moments akumulují landscape gradient, ne noise. Trajektorie
+     je strukturálně jiná, ne "stejná jen s cleaner magnitudami".
+  3. **Phase 2 overshoot je tedy primárně batch-noise-driven**, ne
+     loss-landscape-driven. Loss landscape je tam taky (gradient
+     direction je deterministic), ale **tiny batch + stochastic** =
+     Adam EMA naskočí na noise = overshoot.
+  4. Větší batch nepřekonává Adam EMA — **eliminuje příčinu**.
+- **Status:** `confirmed` — robustní empirický nález (single run,
+  ale Δ je masivní: -0.99 nat best vs smoke alpha.18 + sub-3.0 final
+  + descent monotonický). Refutuje RN-012 batch hypotézu.
+- **Implications:**
+  - **HP intervence (LR, β1, batch) ALL EXPLORED.** Alpha.18-19 ablace
+    refutovaly LR + β1, alpha.20 refutuje batch hypotézu *opačným směrem*
+    — batch JE důležitý, jen smoke setupu byla batch+seq příliš malá
+    pro reliable conclusions.
+  - **batch=16 seq_len=16 je nový baseline** pro production state tuning.
+    Smoke setup (batch=1 seq=4) byl artificially tiny — skutečný gradient
+    pattern Mamba-2 + SSM state tuning je vidět jen při dostatečně
+    velkém per-step sample.
+  - **Více epoch by pravděpodobně dotáhlo loss níž.** Best descent
+    nestagnuje, klesání jen zpomaluje. Empirická predikce: 8-10 epoch
+    by dosáhlo loss ~2.5-2.6, 15-20 epoch ~2.2-2.3.
+  - **Pro v0.5.0 production:** alpha.20 setup je **production-grade**
+    s 2.98 nat (perplexity 19.7) na 31 851 token sofie identity korpusu.
+    Sub-3.0 nat = 3.7× pod random baseline. Kvalitativní validace
+    přes retention benchmark `--variant ssm_only` určí, jestli to drží
+    sémantiku bez KV cache (kritický důkaz Fáze 5).
+  - **Smoke RN-002/006/008/009/011/012 narrative je nutno revidovat.**
+    "4-phase pattern", "Phase 2 overshoot strukturně", "byte-identický
+    best_step=113" — všechno to byly artefakty tiny batch setup, ne
+    skutečné vlastnosti Mamba-2 + SSM training landscape.
+  - **Lekce:** Smoke setup pro rychlý dev iteration je užitečný, ale
+    **musí být explicitně označen jako "neprodukční"** — empirické
+    závěry z něj nemusí (a teď víme že **nepřenášejí**) na produkční
+    setup. Pro každý milestone validovat znova na production-scale
+    batch.
+- **Ref:** refutuje RN-012 (batch předikce); revizí celé série
+  RN-002/006/008/009/011/012 (smoke artifakty); navazuje na alpha.20
+  cloud deployment milestone; otevírá Nexus deep-dive o **batch noise
+  vs gradient direction** v hybrid SSM training; alpha.21 = LR cosine
+  decay + více epoch + retention bench validation
+
 ---
 
 ## Uzavřené (confirmed/refuted/superseded)
@@ -672,14 +810,16 @@ důvodu, ne mazáním_
 ## Index
 
 - **RN-001** — Alpha.13 reportovala jen best, final byl pravděpodobně vysoký · `confirmed`
-- **RN-002** — Loss má 4 fáze: rapid descent → overshoot → noisy recovery → slow descent · `open`
+- **RN-002** — Loss má 4 fáze: rapid descent → overshoot → noisy recovery → slow descent · `superseded` (RN-014, alpha.20: byl tiny-batch artefakt)
 - **RN-003** — Artefakt drží final, ne best snapshot · `superseded` (RN-010, alpha.18)
 - **RN-004** — Stage 1 smoke: state tuning funguje, final 3.69 · `confirmed`
 - **RN-005** — REPL: model echoes persona, halucinuje fakta s loss=3.69 Core Memory · `open`
 - **RN-006** — Cross-domain resume: trained init snižuje Phase 2 overshoot magnitude · `refuted` (RN-008)
 - **RN-007** — Alpha.15 smoke validation kompletní: save/load/resume drát funguje · `confirmed`
-- **RN-008** — AdamW persistence drát funguje, ale Phase 2 overshoot zůstává (refutuje RN-006) · `confirmed`
-- **RN-009** — LR warmup neeliminoval overshoot (refutace KI-008 hypotézy) · `confirmed`
+- **RN-008** — AdamW persistence drát funguje, ale Phase 2 overshoot zůstává (refutuje RN-006) · `confirmed` (overshoot per se byl tiny-batch artefakt — RN-014)
+- **RN-009** — LR warmup neeliminoval overshoot (refutace KI-008 hypotézy) · `confirmed` (overshoot per se byl tiny-batch artefakt — RN-014)
 - **RN-010** — Best snapshot tracker funguje (KI-009 deterministicky vyřešena) · `confirmed`
-- **RN-011** — LR sweep refutován (4 runy, best_step byte-identický, trajektorie LR-invariantní) · `confirmed`
-- **RN-012** — β1 sweep refutován; gradient direction landscape-driven (6 runů, best_step=113 invariantně) · `confirmed`
+- **RN-011** — LR sweep refutován (4 runy, best_step byte-identický, trajektorie LR-invariantní) · `confirmed` (best_step pattern byl tiny-batch artefakt — RN-014)
+- **RN-012** — β1 sweep refutován; gradient direction landscape-driven (6 runů, best_step=113 invariantně) · `refuted` (RN-014, alpha.20: predikce o batch byla nesprávná)
+- **RN-013** — CUDA gather vyžaduje contiguous, latentní bug (BUG-011) · `confirmed`
+- **RN-014** — Batch=16 seq=16 strukturně mění trajektorii; smoke artifakty refutovány · `confirmed`

@@ -14,6 +14,23 @@ Formát: `BUG-NNN` s verzí nálezu, závažností (P1–P4), reprodukcí a stav
 
 ## Vyřešené
 
+### BUG-011 — CUDA gather vyžaduje contiguous v cross_entropy_next_token ✓
+- **Nalezeno:** v0.5.0-alpha.20 (první cloud GPU production run)
+- **Závažnost:** P1 (training crash na CUDA s batch>1)
+- **Reprodukce:** `train-core-memory --batch-size 16 --seq-len 16 --cuda`
+  na A100. Lokální RTX 4050 + CPU smoke testy (batch=1, seq=4 / batch=1
+  seq=16) nikdy neselhaly — shape pattern asi vyhnul.
+- **Chyba:** `cross_entropy: gather only supports contiguous tensors`
+- **Příčina:** `cross_entropy_next_token` v `training/loss.rs` používá
+  `narrow` + `unsqueeze` chain pro přípravu `targets_idx`, který
+  produkuje non-contiguous view tensor. CPU `gather` je tolerantní
+  k non-contiguous, **CUDA gather je striktní**.
+- **Řešení:** explicit `.contiguous()` na `log_probs` (po `log_softmax`)
+  a `targets_idx` (po unsqueeze). Drobný overhead na CPU (no-op pokud
+  už contiguous), bezpečný na CUDA.
+- **Opraveno:** v0.5.0-alpha.20 (commit `d8871fe`)
+- **Ref:** RN-013 v RESEARCH-NOTES.md
+
 ### BUG-010 — Inter-layer backward amplifikuje gradient do NaN ✓
 - **Nalezeno:** v0.5.0-alpha.4 | **Závažnost:** P2 (blokoval Core Memory
   training přes více vrstev)

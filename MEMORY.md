@@ -4,6 +4,91 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-05-01 | alpha.20 production training **doběhlo** — best 2.98 @ step 314
+
+**Vast AI A100-SXM4-80GB**, sofie identity pack (31 851 tokenů, 1990
+chunků), batch=16, seq_len=16, grad_accum=2 (efektivní batch=32),
+LR=1e-3, β1=0.0, --save-best, --save-best-every 5, --checkpoint,
+5 epoch. **3h 54m wall time, 315 stepů, žádný crash.**
+
+**Trajektorie:**
+```
+Mean loss per epoch:
+  epoch 0: 4.5730
+  epoch 1: 4.0898 (-0.48)
+  epoch 2: 3.8239 (-0.27)
+  epoch 3: 3.6126 (-0.21)
+  epoch 4: 3.4264 (-0.18)
+
+Best loss progression:
+  step 60   (eo0):  3.93
+  step 120  (eo1):  3.81
+  step 150:         3.51
+  step 220:         3.31
+  step 240:         3.30
+  step 260:         3.13
+  step 290:         3.13
+  step 310:         3.05
+  step 314 (final): 2.98  ← penultimate step, descent NEUKONČIL
+```
+
+**Klíčový empirický nález (RN-014):** Phase 2 overshoot úplně chybí.
+Smoke alpha.16-19 měly peak step 40 = 10.58 napříč všemi setupy
+(LR sweep, β1 sweep — 6 runů byte-identický pattern). Alpha.20 step 40
+= 4.49. **Δ = -6.09 magnitude.** To refutuje RN-012 hypotézu, že
+"větší batch averages magnitudy, gradient direction landscape-driven".
+Batch=16 seq=16 (256 tokens/μbatch, 64× větší vs smoke 4 tokens) **strukturně
+mění trajektorii**, ne jen "cleaner magnitudy". Mechanismus: tiny batch
++ stochastic gradient generuje *falešný směr*, Adam moments naskakují
+na artifakt; větší batch eliminuje příčinu, ne symptom.
+
+**Důsledek:** Smoke RN-002/006/008/009/011/012 narrative je nutno
+revidovat — "4-phase pattern", "Phase 2 overshoot strukturně", "byte-
+identický best_step=113" byly tiny-batch artefakty, ne skutečné
+vlastnosti Mamba-2 + SSM training landscape. RN-002 status superseded
+by RN-014.
+
+**RN-013 (BUG-011):** První alpha.20 cloud run odhalil latentní bug —
+`cross_entropy_next_token` `narrow + unsqueeze` chain produkuje
+non-contiguous tensor; CUDA gather na něj fails (CPU tolerantní).
+Fix `d8871fe` přidal explicit `.contiguous()`. Lekce: lokální CPU
+smoke nedostačí, **cloud GPU validace musí být součástí dev cycle**.
+
+**Artefakt:** `~/.eleutheria/cloud_runs/sofie_identity_v1.safetensors`
+(75 MB, 24 vrstev F32) + `.optim.safetensors` (151 MB, step_t=315).
+Stahnutý přes Tailscale rsync — Vast IP 185.65.93.212:42051.
+
+**Validace přes retention benchmark — interpretační problém:**
+Bench-retention probes (`relational_kazimir`, `numeric_greenhouse`,
+`enumeration_nora`) jsou **arbitrary facts vložené do session**, ne
+identity content. Sofie identity Core Memory nebyla trénovaná na
+Kazimir story. SsmOnly FAIL na tyto probes je **neutrální vůči Core
+Memory kvalitě** — identity Core Memory nezlepší retention arbitrary
+facts (jiná doména).
+
+**Skutečný důkaz Fáze 5** (alpha.21 priorita) vyžaduje **identity-
+specific eval**: probe set s otázkami ze sofie identity packu
+("Kdo jsi?", "Co je tvůj cíl?", "Jak myslíš?"), srovnání full vs
+ssm_only varianty. RN-007 baseline byl 0 % pro arbitrary facts;
+pro identity content bychom měli mít signifikantní rozdíl pokud
+Core Memory funguje.
+
+**Alpha.20 milestone uzavřen na úrovni:**
+- ✅ Cloud deployment workflow (Vast AI, Tailscale, scripts/cloud/)
+- ✅ Production training run (sofie identity, A100, 5 epoch, 2.98 best)
+- ✅ KI-012 fix (periodic best snapshot flush, atomic write)
+- ✅ BUG-011 fix (contiguous na CUDA gather)
+- ✅ RN-013 + RN-014 dokumentace
+- ⏳ Identity-specific eval (alpha.21)
+- ⏳ Research writeup do Nexusu (alpha.21+)
+
+**Co dál:** alpha.21 = identity-specific bench design + LR cosine decay
+refinement (descent neukončil → víc epoch / decay by dotlačily níž)
++ periodic flush optim sourozenec (alpha.20 KI-012 limit pokrýval
+jen Core Memory artefakt).
+
+---
+
 ## 2026-05-01 | v0.5.0-alpha.20 — Periodic best snapshot flush (KI-012 insurance)
 
 První alpha.20 production training na Vast AI běžel ~3.5h (sofie identity

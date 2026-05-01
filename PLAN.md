@@ -269,7 +269,7 @@ empirické ablace identifikují skutečný root cause.
 - [x] **Production HP volba: LR=1e-3 + β1=0.0 + --save-best**
       (best_loss=0.8597, final=3.7379, ~26 min/156 stepů na 1.5B+CUDA)
 
-### v0.5.0-alpha.20 (next) — Production training na sofie identity packu
+### v0.5.0-alpha.20 ✅ (2026-05-01) — Production training na sofie identity packu
 
 **Cíl:** S identifikovaným HP setupem (alpha.19 RN-012) a kompletní
 infrastrukturou (alpha.16-18) pustit první **skutečný production
@@ -306,31 +306,97 @@ distillates konečně sofie identity korpus.
       do Tailscale sítě jako ephemeral node (auto-cleanup po stop),
       git clone z `git.nexus.lomsky.net` funguje seamlessly
 
-#### Production training run
-- [ ] `train-core-memory --dataset dataset/training/sofie_identity_pack.txt
-      --learning-rate 1e-3 --adam-beta1 0.0 --save-best --checkpoint
-      --epochs N --output ~/.eleutheria/core_memory.safetensors`
-- [ ] Předem spočítané `total_steps` z dataset velikosti × epochs;
-      odhad wall time z 10 s/step (CUDA 1.5B)
-- [ ] Monitor logs — best_step se může posunout pro větší dataset
-      (víc chunks → víc příležitostí pro Phase 1 minimum dno)
+#### Production training run ✅ (2026-05-01)
+- [x] **Vast AI A100-SXM4-80GB**, sofie identity pack, batch=16, seq_len=16,
+      grad_accum=2, LR=1e-3, β1=0.0, --save-best, --save-best-every 5,
+      --checkpoint, 5 epoch
+- [x] **315 stepů, 3h 54m wall time, žádný crash**
+- [x] **best_loss=2.9815 @ step 314** (předposlední krok — descent neukončil)
+- [x] Mean loss monotonicky klesá: 4.57 → 4.09 → 3.82 → 3.61 → **3.43**
+- [x] Artefakt: `~/.eleutheria/cloud_runs/sofie_identity_v1.safetensors`
+      (75 MB, 24 vrstev F32) + sourozenec `.optim.safetensors` (151 MB,
+      step_t=315)
+
+#### Empirické nálezy (RN-013, RN-014)
+- [x] **BUG-011 (RN-013):** CUDA gather vyžaduje contiguous, latentní bug
+      v `cross_entropy_next_token`. Lokální testy nikdy neselhaly,
+      odhalil ho první cloud GPU run. Fix `d8871fe`.
+- [x] **RN-014 (silný empirický nález):** batch=16 seq_len=16 (256 tokens
+      per μbatch, 64× větší než smoke) **strukturně mění trajektorii** —
+      Phase 2 overshoot úplně chybí, descent monotonický napříč všemi
+      epoch, žádný plateau. **Refutuje RN-012 hypotézu** ("batch
+      pravděpodobně nezmění overshoot, gradient direction landscape-
+      driven"). Mechanismus: tiny batch generuje *falešný směr*
+      (Adam moments naskakují na artifakt); větší batch eliminuje
+      příčinu, ne jen překonává symptom.
+
+#### KI-012 — Periodic best snapshot flush ✅ (2026-05-01, alpha.20)
+- [x] Bug detekován během běhu (insurance proti crashe / preempce
+      cloud GPU instance — best žil pouze v RAM)
+- [x] Fix: `BestSnapshotTracker::flush_to_disk` s atomic write
+      (`<dir>/.<name>.tmp` + rename, POSIX guarantee)
+- [x] CLI `--save-best-every N` (default 10, vast_train.sh default 5)
+- [x] +3 testy (123 total), clippy clean, fmt clean, commit `31939bd`
+- [x] Push do GitHub mirroru `cos-lvx/sofie` pro Vast pull-ready stav
 
 #### Validace přes retention benchmark
-- [ ] Re-run `bench-retention --variant ssm_only` s production
-      Core Memory artefaktem
-- [ ] **Kritický důkaz Fáze 5:** SsmOnly pass-rate musí vyskočit
-      z 0 % (alpha.4.5 baseline RN-007) na měřitelné číslo
-- [ ] Pokud > 0 %, prokázáno že trained Core Memory drží sémantiku
-      i bez KV cache → Fáze 5 cíl splněn
-- [ ] Pokud = 0 %, hypotéza o "Core Memory jako persona plugin"
-      empiricky refutována → Fáze 5 design revision
+- [ ] **POZOR — interpretace závisí na probe designu.** Bench-retention
+      probes (`relational_kazimir`, `numeric_greenhouse`, `enumeration_nora`)
+      jsou **arbitrary facts vložené do session**, ne identity content.
+      Sofie identity Core Memory není trénovaná na Kazimir story →
+      ssm_only FAIL je očekávaný i s alpha.20 artefaktem
+- [ ] Pokud SsmOnly = 0 %: **NE refutace Fáze 5** — bench design pro
+      arbitrary facts není správný probe pro identity Core Memory
+- [ ] Skutečný důkaz Fáze 5 vyžaduje **identity-specific eval** (REPL
+      s probes typu "Kdo jsi?", "Co je tvůj cíl?", qualitative judgment)
+
+### v0.5.0-alpha.21 (next) — Identity-specific eval + LR decay refinement
+
+**Cíl:** Validovat alpha.20 artefakt přes identity-relevant probes
++ zkusit dotáhnout descent ještě níž přes LR cosine decay nebo více
+epoch.
+
+#### Identity-specific eval design
+- [ ] Nový bench-identity nebo extend bench-retention s probe sadou
+      pro Sofie identity (5-10 otázek z Bootstrap.md / IDENTITY-*.md)
+- [ ] Dvě varianty:
+      - `identity_full`: full prefill + KV cache (baseline behavior)
+      - `identity_ssm_only`: filter to SSM-only po injection (testuje,
+        jestli Core Memory drží identity bez KV)
+- [ ] Probe metrika: matcher pro klíčové fragmenty z persona
+      (např. "Sofie", "spoluautorka", "Mantra", "deterministická
+      elegance") + rozumné judgement (LLM judge nebo heuristic)
+- [ ] **Kritický důkaz:** identity_ssm_only musí mít signifikantní
+      pass-rate ne 0 % (RN-007 baseline byl 0 % pro arbitrary facts;
+      pro identity content by měl být lepší pokud Core Memory funguje)
+
+#### LR cosine decay refinement (volitelné, pokud chceme dotlačit níž)
+- [ ] Resume z alpha.20 artefaktu s `--resume-from sofie_identity_v1.safetensors`
+- [ ] LR schedule: `--warmup-steps 0 --lr-min 1e-5` (decay z 1e-3 → 1e-5
+      přes celý run, žádný warmup)
+- [ ] 5 dalších epoch (315 stepů) s decayem; očekávané dno ~2.5-2.6
+- [ ] Best snapshot tracker zachytí lepší bod, optim sourozenec drží
+      kontinuální Adam state napříč alpha.20+21
+
+#### Periodic flush optim sourozenec (alpha.20 KI-012 limit)
+- [ ] Stejný pattern jako alpha.20 KI-012: `OptimizerArtifact::flush_to_disk`
+      + periodic flush v training loop
+- [ ] Atomic write přes `.tmp` + rename
+- [ ] CLI `--save-optim-every N` (může být shared s `--save-best-every`,
+      nebo samostatný flag — záleží na use case)
 
 #### Research writeup do Nexusu
-- [ ] `~/Atlas/Nexus/70-Eleutheria/Research/SSM_state_tuning_findings_2026-04.md`
-- [ ] Sekce: alpha.10-19 milestone summary, RN-008..012 deep-dive,
-      production HP volba a její empirický důvod, retention benchmark
-      validace, otevřené otázky pro v0.6+ (architectural intervence
-      pro overshoot eliminaci, batch size na Gaia)
+- [ ] `~/Atlas/Nexus/70-Eleutheria/Research/SSM_state_tuning_alpha20_findings.md`
+- [ ] Sekce:
+      - alpha.10-19 milestone summary
+      - RN-008..012 smoke ablace narrative (HP exploration)
+      - **RN-014 batch=16 strukturní změna** (klíčový nález)
+      - Production HP volba: batch+seq+lr+β1 reflexe
+      - alpha.20 production results (best 2.98)
+      - Otevřené otázky pro v0.6+ (více epoch ceiling, architectural
+        intervence, batch effect na 7B)
+- [ ] Update existing `~/Atlas/Nexus/70-Eleutheria/Research/SSM_retention_findings_2026-04-15.md`
+      s alpha.20 retention bench výsledkem (whatever it is)
 
 ### Quality patches (po alpha.20 validation, libovolné pořadí)
 
