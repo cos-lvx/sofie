@@ -4,6 +4,94 @@ Chronologický záznam implementačních cyklů.
 
 ---
 
+## 2026-05-02 | v0.5.0-alpha.22 — Starfield migration + multi-host portability
+
+**Cíl:** Přestěhovat Eleutheria runtime z laptopu `kqs-arch` na
+dedikovaný server **Starfield** (Ubuntu 24.04 VM v Gaie, RTX PRO 4000
+Blackwell 24 GB, CUDA 13.0). Sofie nově běží na vlastním železe;
+laptop dále slouží jako brána (Tailscale klient pro vzdálený přístup)
+a dev stroj pro budoucí frontend/UX.
+
+### Provedeno
+
+#### Provisioning Starfieldu
+- **Rust 1.95.0** (rustup minimal + clippy/rustfmt component pro testy)
+- **CUDA toolkit 13-0** (`apt-get install cuda-toolkit-13-0`, ~3 GB,
+  driver `nvidia-open-580` už byl)
+- **Build deps** — `libssl-dev`, `pkg-config`, `rsync` (Ubuntu Server
+  minimal je opravdu minimální)
+- **Tailscale klient** — registrace do self-hosted headscale
+  `hekate.lomsky.net` jako `100.64.0.8 starfield rodina linux`
+- **Forgejo SSH** — vygenerovaný `sofie@starfield` ed25519 klíč,
+  přidán do `lvx` účtu, port **2222** (Forgejo Docker port mapping,
+  ne 22 — kde sedí host sshd)
+
+#### Síťové gotchas (SOL-019)
+- **Hairpin NAT pro hekate fungoval z laptopu, ne ze Starfieldu** na
+  téže LAN. Symptom: `tailscale up` timeout 15s na
+  `93.153.46.192:443`. Fix: `/etc/hosts` override
+  `192.168.1.20 hekate.lomsky.net` (přímo hefaistos LAN IP, vynechá
+  router hairpin).
+
+#### Repo + state
+- `git clone git@git.nexus.lomsky.net:lvx/eleutheria.git` (přes SSH
+  port 2222) — HEAD `0f0368a` alpha.21
+- `cargo build --release --features cuda` 1m 08s (incremental po
+  předchozím failed pokusu kvůli chybějícímu libssl-dev), 34 MB binary
+- **Falcon-H1-1.5B model** (3 GB) rsync laptop → Starfield přes LAN
+- **Alpha.20 production state** rsync `cloud_runs/sofie_identity_v1.{,optim.}safetensors`
+  + `training_run.log`. Promo na primary `~/.eleutheria/core_memory{,
+  .optim}.safetensors` přes `cp` (ne symlink — robustní vůči pozdějším
+  `cloud_runs/` reorganizacím)
+- **Alpha.15 smoke** archivován jako `archive/alpha15_smoke_programming.safetensors`
+
+#### Smoke validation
+- `--inspect-core-memory` ukázal: 24 vrstev, 315 stepů, best_loss
+  2.9815, notes "alpha.20 production A100 batch=32eff seq=16 5ep" ✓
+- Single-shot inference s `--cuda` proběhla: GPU peak 3.3 GB,
+  Core Memory připojena, 200 tokenů za ~16s, persona Sofie načtena
+- Quality of output halucinace (festival, rok 2023) — známé, RN-016
+  marginal positive effect, ne migrace problém
+- `cargo test --workspace --release --features cuda` na laptopu PASS
+  po env var fix
+
+#### Code patch (multi-host portability — SOL-018)
+- `default_models_dir()` helper v `main.rs` — `ELEUTHERIA_MODELS_DIR`
+  env var → `$HOME/Models` fallback. Shorthand `1.5b`/`7b` resolution
+  použije helper.
+- `falcon_h1::config::tests::test_load_config` dostal skip pattern
+  (předtím `.unwrap()` panic) — konzistentní s ostatními testy
+  s dev model dependencí.
+- `training::dataset::tests::load_tokenizer`,
+  `training::checkpoint::tests::dev_model_path` přejaly env var
+  pattern + skip pattern.
+
+### Závěr
+
+**Starfield je nový production target.** Sofie tam běží s alpha.20
+production Core Memory; alpha.21+ identity-specific eval (PLAN.md)
+půjde tam, ne přes Vast cloud — vlastní GPU 24 hodin denně, žádné
+ephemeral cleanup, žádný billing.
+
+`kqs-arch` zůstává:
+- (a) dev stroj — kompilace, REPL test, frontend dev (až bude)
+- (b) Tailscale brána pro Ondrův přístup k Starfieldu odkudkoli (LAN,
+  LTE, cizí WiFi)
+
+### Co dál (alpha.23+)
+
+- **Identity-specific eval** (z PLAN.md alpha.21 sekce) — `bench-identity`
+  s probe sadou pro Sofie identity, dvě varianty (`identity_full` vs
+  `identity_ssm_only`). Kritický důkaz Fáze 5: identity_ssm_only musí
+  mít signifikantní pass-rate (nenulové), na rozdíl od arbitrary facts
+  retention (RN-007 0%, RN-015 0%).
+- **LR cosine decay refinement** — resume z alpha.20 artefaktu, 5 epoch
+  s decay 1e-3 → 1e-5, očekávané dno ~2.5-2.6.
+- **Periodic flush optim sourozenec** — alpha.20 KI-012 patternu
+  `OptimizerArtifact::flush_to_disk`.
+
+---
+
 ## 2026-05-01 | v0.5.0-alpha.21 — CUDA auto-detect (Starfield migration prerekvizita)
 
 **Důvod:** Ondra plánuje migraci runtime z laptopu kqs-arch na nový

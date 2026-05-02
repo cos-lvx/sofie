@@ -387,7 +387,9 @@ mod tests {
     use std::path::PathBuf;
 
     fn dev_model_path() -> Option<PathBuf> {
-        let p = PathBuf::from("/home/lvx/Models/falcon-h1-1.5b-instruct");
+        let base = std::env::var("ELEUTHERIA_MODELS_DIR")
+            .unwrap_or_else(|_| "/home/lvx/Models".to_string());
+        let p = PathBuf::from(base).join("falcon-h1-1.5b-instruct");
         if p.exists() { Some(p) } else { None }
     }
 

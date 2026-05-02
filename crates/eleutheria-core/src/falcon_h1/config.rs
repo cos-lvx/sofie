@@ -121,10 +121,19 @@ fn default_max_position_embeddings() -> usize {
 mod tests {
     use super::*;
 
+    /// Načte reálný 7B config z dev modelu. Test se přeskočí,
+    /// pokud není dostupný (CI bez modelu, hosty bez 7B varianty).
     #[test]
     fn test_load_config() {
-        let json =
-            std::fs::read_to_string("/home/lvx/Models/falcon-h1-7b-instruct/config.json").unwrap();
+        let path = std::path::PathBuf::from(
+            std::env::var("ELEUTHERIA_MODELS_DIR")
+                .unwrap_or_else(|_| "/home/lvx/Models".to_string()),
+        )
+        .join("falcon-h1-7b-instruct/config.json");
+        if !path.exists() {
+            return; // skip pokud model není
+        }
+        let json = std::fs::read_to_string(&path).unwrap();
         let config: FalconH1Config = serde_json::from_str(&json).unwrap();
 
         assert_eq!(config.hidden_size, 3072);

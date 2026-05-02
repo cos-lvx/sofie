@@ -7,6 +7,59 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.22] — 2026-05-02
+
+### Přidáno — Multi-host portability (Starfield migration)
+
+Eleutheria runtime přestěhovaná z `kqs-arch` (Arch laptop) na **Starfield**
+(Ubuntu 24.04 VM v Gaie, RTX PRO 4000 Blackwell 24 GB, CUDA 13.0). Při
+prvním smoke spuštění na novém hostu vyšlo najevo, že shorthand
+`-m 1.5b` / `-m 7b` měl hardcoded `/home/lvx/Models/...` cestu — funkční
+jen na laptopu.
+
+#### Změna
+
+- **`default_models_dir()`** v `main.rs` — nový helper, kořenový adresář
+  s modely. Override přes `ELEUTHERIA_MODELS_DIR` env var, jinak
+  `$HOME/Models`. Konzistentní s `default_session_path()` /
+  `default_core_memory_path()` patterny.
+- **Shorthand resolution** — `1.5b` / `7b` se resolvuje relativně:
+  `default_models_dir().join("falcon-h1-1.5b-instruct")`.
+- **Test fallbacks** — `falcon_h1::config::tests::test_load_config`,
+  `training::dataset::tests::load_tokenizer`,
+  `training::checkpoint::tests::dev_model_path` všechny respektují
+  `ELEUTHERIA_MODELS_DIR` a skipují (return early), pokud cesta
+  neexistuje. Konzistentní pattern napříč třemi testy.
+- **`falcon_h1::config::test_load_config`** dostal skip pattern (dříve
+  `.unwrap()` panic bez modelu) — chování konzistentní s ostatními
+  testy s dev model dependencií.
+
+#### Co tahle změna **neřeší**
+
+- Hardcoded `/home/lvx/Models` zůstává jako `unwrap_or_else` fallback
+  v testech (nikoli runtime). Důvod: pokud na CI nebo test hostu není
+  ani `$HOME/Models` ani `ELEUTHERIA_MODELS_DIR`, dev fallback umožní
+  testy alespoň elegantně skipnout (`path.exists()` vrátí false). Tohle
+  je acceptable pro test contexty, runtime je čistý.
+
+#### Migrace runtime na Starfield
+
+Detaily v `SOLUTIONS.md` SOL-NNN. Klíčové:
+- Tailscale klient + headscale registrace (preauth `rodina` user)
+- `/etc/hosts` override `192.168.1.20 hekate.lomsky.net` (hairpin NAT
+  hekate selhal pro Starfield, laptop fungoval — symetrie LAN, asymetrie
+  hairpin chování na routeru)
+- SSH klíč pro `sofie@starfield` přidán do Forgejo `lvx` účtu (port
+  2222, ne 22 — Forgejo Docker mapping)
+- Rust 1.95.0 + CUDA toolkit 13-0 + libssl-dev + pkg-config + rsync
+- Falcon-H1-1.5B model (3 GB) + alpha.20 production state (217 MB
+  cloud_runs/ + 73 MB archive alpha.15) rsync přes LAN
+- `cargo build --release --features cuda` 1m 08s, 34 MB binary
+- Smoke inference: GPU peak 3.3 GB, Core Memory připojena (315 stepů,
+  best=2.9815) — engine žije na Starfieldu
+
+---
+
 ## [0.5.0-alpha.21] — 2026-05-01
 
 ### Přidáno — CUDA auto-detect infrastruktura (Starfield migration prerekvizita)

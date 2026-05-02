@@ -367,6 +367,17 @@ fn default_core_memory_path() -> PathBuf {
         .join("core_memory.safetensors")
 }
 
+/// Default kořenový adresář s Falcon-H1 modely. Override přes
+/// `ELEUTHERIA_MODELS_DIR`, jinak `$HOME/Models`. Multi-host portable —
+/// shorthand `1.5b` / `7b` resolve relativně k tomuto kořenu.
+fn default_models_dir() -> PathBuf {
+    if let Ok(v) = std::env::var("ELEUTHERIA_MODELS_DIR") {
+        return PathBuf::from(v);
+    }
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+    PathBuf::from(home).join("Models")
+}
+
 /// Zajisti existenci adresáře pro session.
 fn ensure_session_dir() -> Result<PathBuf> {
     let path = default_session_path();
@@ -441,8 +452,8 @@ fn main() -> Result<()> {
     // Načti model
     println!("Eleutheria se probouzí...");
     let model_dir = match args.model.as_str() {
-        "1.5b" => PathBuf::from("/home/lvx/Models/falcon-h1-1.5b-instruct"),
-        "7b" => PathBuf::from("/home/lvx/Models/falcon-h1-7b-instruct"),
+        "1.5b" => default_models_dir().join("falcon-h1-1.5b-instruct"),
+        "7b" => default_models_dir().join("falcon-h1-7b-instruct"),
         other => PathBuf::from(other),
     };
 

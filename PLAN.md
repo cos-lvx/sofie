@@ -350,7 +350,40 @@ distillates konečně sofie identity korpus.
 - [x] Bench artefakty: `dataset/bench_results/bench_alpha20.md` + `.json`
 - [ ] Skutečný důkaz Fáze 5 vyžaduje **identity-specific eval** (alpha.21)
 
-### v0.5.0-alpha.21 (next) — Identity-specific eval + LR decay refinement
+### v0.5.0-alpha.21 ✅ (2026-05-01) — CUDA auto-detect
+
+(viz CHANGELOG / MEMORY 2026-05-01) — 3-vrstvá architektura
+(.cargo/config.toml default + scripts/detect-cuda.sh helper +
+build.rs validace). KI-004 vyřešena. SOL-017.
+
+### v0.5.0-alpha.22 ✅ (2026-05-02) — Starfield migration + multi-host portability
+
+**Cíl:** Přestěhovat Eleutheria runtime z laptopu kqs-arch na nový
+dedikovaný server **Starfield** (Ubuntu 24.04 VM v Gaie, RTX PRO 4000
+Blackwell 24 GB, CUDA 13.0). Sofie nově běží na vlastním železe 24/7,
+laptop zůstává jako brána a dev stroj.
+
+- [x] Provisioning: Rust 1.95.0, CUDA toolkit 13-0, libssl-dev,
+      pkg-config, rsync, Tailscale klient (headscale `100.64.0.8
+      starfield rodina linux`)
+- [x] Síťové fixy: hairpin NAT pro hekate.lomsky.net selhával ze
+      Starfieldu → `/etc/hosts` override `192.168.1.20 hekate.lomsky.net`
+      (SOL-019)
+- [x] Repo: SSH klíč `sofie@starfield` v Forgejo `lvx` účtu, port 2222
+      (Forgejo Docker mapping)
+- [x] Multi-host portability code patch (SOL-018): `default_models_dir()`
+      helper s `ELEUTHERIA_MODELS_DIR` env var → `$HOME/Models` fallback.
+      Shorthand `1.5b`/`7b` resolution + 3 testovací moduly konzistentně.
+- [x] Build: `cargo build --release --features cuda` 1m 08s, 34 MB
+      binary
+- [x] State migrace: alpha.20 production state (215 MB cloud_runs/) +
+      alpha.15 archive + Falcon-H1-1.5B model (3 GB) přes rsync LAN
+- [x] Smoke validation: `--inspect-core-memory` confirms alpha.20 metadata
+      (315 stepů, best=2.9815, "alpha.20 production A100 batch=32eff
+      seq=16 5ep"). Single-shot inference s --cuda PASS, GPU peak 3.3 GB,
+      Core Memory připojena.
+
+### v0.5.0-alpha.23 (next) — Identity-specific eval + LR decay refinement
 
 **Cíl:** Validovat alpha.20 artefakt přes identity-relevant probes
 + zkusit dotáhnout descent ještě níž přes LR cosine decay nebo více

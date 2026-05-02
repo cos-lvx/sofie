@@ -175,8 +175,9 @@ mod tests {
     /// Načte reálný Falcon-H1 tokenizer z dev modelu. Test se přeskočí,
     /// pokud není dostupný (CI bez modelu).
     fn load_tokenizer() -> Option<Tokenizer> {
-        let path =
-            std::path::PathBuf::from("/home/lvx/Models/falcon-h1-1.5b-instruct/tokenizer.json");
+        let base = std::env::var("ELEUTHERIA_MODELS_DIR")
+            .unwrap_or_else(|_| "/home/lvx/Models".to_string());
+        let path = std::path::PathBuf::from(base).join("falcon-h1-1.5b-instruct/tokenizer.json");
         if !path.exists() {
             return None;
         }
