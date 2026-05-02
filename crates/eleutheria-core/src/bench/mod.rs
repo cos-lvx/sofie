@@ -22,7 +22,7 @@ pub use filler::{FillerCorpus, FillerPlan};
 pub use harness::RetentionBench;
 pub use identity::{
     IdentityBench, IdentityMeta, IdentityOutcome, IdentityProbe, IdentityReport, IdentityResult,
-    IdentityVariant, built_in_identity_probes,
+    IdentityVariant, built_in_identity_probes, built_in_identity_probes_en,
 };
 pub use probe::{ProbeOutcome, ProbeResult, RetentionProbe, built_in_probes};
 pub use report::BenchReport;

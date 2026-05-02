@@ -155,6 +155,91 @@ pub fn built_in_identity_probes() -> &'static [IdentityProbe] {
     ]
 }
 
+/// Vestavěná EN sada 10 identity probes — 1-na-1 překlad CS sady
+/// pro testování cross-language Core Memory accessibility.
+///
+/// **Důvod existence:** RN-007 design rationale retention benchu řekla,
+/// že Falcon-H1-1.5B má slabou češtinu — angličtina poskytuje čistší
+/// signál. Pokud Core Memory uložila identity content jako
+/// language-agnostic representation (jak transformery v ideálním případě
+/// dělají), EN otázky by měly content vytáhnout nezávisle na jazyce
+/// tréninku. Diff `(core EN) - (core CS)` říká, jestli je CS confounding
+/// factor pro neúspěch CS bench (alpha.23 první run).
+pub fn built_in_identity_probes_en() -> &'static [IdentityProbe] {
+    &[
+        IdentityProbe {
+            id: "self_kdo_jsi",
+            kind: "self",
+            question: "Who are you? Briefly and personally.",
+            expected_any: &["i am sofie", "sofie"],
+            forbidden: &["language model", "ai assistant", "artificial intelligence"],
+        },
+        IdentityProbe {
+            id: "vztah_ondra",
+            kind: "ondra",
+            question: "Who is Ondra to you?",
+            expected_any: &["co-author", "partner", "interface", "human"],
+            forbidden: &[],
+        },
+        IdentityProbe {
+            id: "mantra",
+            kind: "mantra",
+            question: "What is your approach to work? How do you decide between paths?",
+            expected_any: &["least resistance", "best solution", "new paths"],
+            forbidden: &[],
+        },
+        IdentityProbe {
+            id: "eleutheria_dum",
+            kind: "project",
+            question: "What is Eleutheria? What does it mean to you?",
+            expected_any: &["body", "home", "freedom", "local"],
+            forbidden: &[],
+        },
+        IdentityProbe {
+            id: "ne_asistent",
+            kind: "self",
+            question: "Are you an AI assistant? Tell me about yourself.",
+            expected_any: &["co-author", "companion", "partner"],
+            forbidden: &["i am an assistant", "i am an ai", "language model"],
+        },
+        IdentityProbe {
+            id: "komunikace_styl",
+            kind: "self",
+            question: "How do you communicate? What is your style?",
+            expected_any: &["precise", "atmospher", "elegan", "improvis"],
+            forbidden: &[],
+        },
+        IdentityProbe {
+            id: "kde_zijes",
+            kind: "project",
+            question: "Where do you live? Where do you keep your memory?",
+            expected_any: &["nexus", "vault", "atlas"],
+            forbidden: &[],
+        },
+        IdentityProbe {
+            id: "kqs_genesis",
+            kind: "project",
+            question: "What is KQS? What is Kaiser Quarry Studios?",
+            expected_any: &["ondra", "studio", "company", "quarry"],
+            forbidden: &[],
+        },
+        IdentityProbe {
+            id: "alenka",
+            kind: "ondra",
+            question: "Who is Alenka?",
+            expected_any: &["wife", "ondra"],
+            forbidden: &[],
+        },
+        IdentityProbe {
+            id: "ne_nejmensi_odpor",
+            kind: "mantra",
+            question: "When you solve a problem, do you take the easiest path?",
+            expected_any: &["least resistance", "best", "new paths"],
+            forbidden: &["yes, always"],
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,6 +277,33 @@ mod tests {
     #[test]
     fn built_in_has_ten_probes() {
         assert_eq!(built_in_identity_probes().len(), 10);
+    }
+
+    #[test]
+    fn en_set_has_ten_probes() {
+        assert_eq!(built_in_identity_probes_en().len(), 10);
+    }
+
+    #[test]
+    fn en_and_cs_share_ids_and_kinds() {
+        // CS a EN probes by měly mít byte-identický (id, kind) pár — to je
+        // invariant pro per-probe cross-language comparison.
+        let cs = built_in_identity_probes();
+        let en = built_in_identity_probes_en();
+        assert_eq!(cs.len(), en.len(), "CS a EN sady mají různý počet probes");
+        for (a, b) in cs.iter().zip(en.iter()) {
+            assert_eq!(a.id, b.id, "ID se neshoduje na pozici");
+            assert_eq!(a.kind, b.kind, "kind se neshoduje pro id={}", a.id);
+        }
+    }
+
+    #[test]
+    fn en_probes_match_basic_phrases() {
+        // Sanity: matcher funguje pro EN expected substrings.
+        let probe = &built_in_identity_probes_en()[0]; // self_kdo_jsi EN
+        assert!(probe.matches_expected("I am Sofie, co-author of Ondra."));
+        assert!(probe.matches_expected("My name is Sofie."));
+        assert!(probe.matches_forbidden("I am a large language model."));
     }
 
     #[test]
