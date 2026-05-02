@@ -2,7 +2,8 @@
 use anyhow::{Result, anyhow};
 use clap::{Args as ClapArgs, Parser, Subcommand};
 use eleutheria_core::bench::{
-    BenchVariant, RetentionBench, built_in_probes, harness::DEFAULT_DISTANCES,
+    BenchVariant, IdentityBench, IdentityOutcome, IdentityVariant, RetentionBench,
+    built_in_identity_probes, built_in_probes, harness::DEFAULT_DISTANCES,
 };
 use eleutheria_core::falcon_h1::layer::LayerStop;
 use eleutheria_core::training::trace;
@@ -85,6 +86,12 @@ struct Args {
 enum Command {
     /// Retention benchmark — měří SSM state retenci na různých vzdálenostech.
     BenchRetention(BenchRetentionArgs),
+    /// Identity benchmark (Fáze 5 alpha.23+) — testuje, zda Core Memory drží
+    /// identity content z trénovaného korpusu (sofie identity pack). Tři
+    /// varianty: cold (žádná persona, žádná Core Memory) / core (Core Memory
+    /// bez persony) / full (default runtime). Diff (core - cold) izoluje
+    /// samostatný efekt trénovaného SSM state.
+    BenchIdentity(BenchIdentityArgs),
     /// Core Memory autograd smoke test (Fáze 5 alpha) — ověří, že gradient
     /// teče od loss zpět k trainable initial SSM state jedné vrstvy.
     TrainCoreMemorySmoke(TrainCoreMemorySmokeArgs),
@@ -134,6 +141,31 @@ struct BenchRetentionArgs {
     ///   měření krátkých vzdáleností
     #[arg(long)]
     with_persona: bool,
+}
+
+/// Argumenty pro `bench-identity` subkomand (Fáze 5 alpha.23+).
+///
+/// Identity bench testuje, zda Core Memory drží identity content
+/// z trénovaného korpusu. Loaduje **dva enginy** (clean a persona) pro
+/// per-variant comparison; `--cuda` na 1.5B znamená ~6 GB VRAM.
+#[derive(ClapArgs, Debug)]
+struct BenchIdentityArgs {
+    /// Varianta benchmarku: cold | core | full | all (default).
+    #[arg(long, default_value = "all")]
+    variant: String,
+
+    /// Cesta k Core Memory artefaktu. Pokud neuvedeno, auto-discovery
+    /// `~/.eleutheria/core_memory.safetensors`.
+    #[arg(long)]
+    core_memory: Option<PathBuf>,
+
+    /// Base path pro výstup (bez přípony — doplní se `.json` a `.md`).
+    #[arg(long, default_value = "/tmp/eleutheria_identity_bench")]
+    output: String,
+
+    /// Volitelná poznámka — zapíše se do `meta.notes`.
+    #[arg(long)]
+    notes: Option<String>,
 }
 
 /// Argumenty pro `train-core-memory-smoke` subkomand.
@@ -449,6 +481,12 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Identity bench má vlastní entry — loaduje 2 enginy (clean + persona)
+    // místo sdíleného `sofie` instance, takže běžný flow ho nestačí pokrýt.
+    if let Some(Command::BenchIdentity(ba)) = &args.command {
+        return run_bench_identity(&args, ba);
+    }
+
     // Načti model
     println!("Eleutheria se probouzí...");
     let model_dir = match args.model.as_str() {
@@ -513,6 +551,7 @@ fn main() -> Result<()> {
     if let Some(cmd) = &args.command {
         match cmd {
             Command::BenchRetention(ba) => run_bench_retention(&sofie, &args, ba),
+            Command::BenchIdentity(_) => unreachable!("BenchIdentity má early dispatch v main()"),
             Command::TrainCoreMemorySmoke(ta) => run_train_smoke(&sofie, ta),
             Command::TrainCoreMemoryMulti(ta) => run_train_multi(&sofie, ta),
             Command::TrainCoreMemory(ta) => run_train(&sofie, ta),
@@ -1114,6 +1153,114 @@ fn run_bench_retention(sofie: &Sofie, args: &Args, ba: &BenchRetentionArgs) -> R
     let report = report
         .with_model_name(&args.model)
         .with_device(device_label);
+    let report = if let Some(n) = &ba.notes {
+        report.with_notes(n.clone())
+    } else {
+        report
+    };
+
+    let base = PathBuf::from(&ba.output);
+    let (json_path, md_path) = report.write_to(&base)?;
+    println!("\nReport zapsán:");
+    println!("  JSON:     {}", json_path.display());
+    println!("  Markdown: {}", md_path.display());
+
+    Ok(())
+}
+
+/// Identity benchmark — vlastní entry point, loaduje 2 enginy (clean a persona)
+/// pro per-variant comparison Cold / Core / Full.
+fn run_bench_identity(args: &Args, ba: &BenchIdentityArgs) -> Result<()> {
+    let variants: Vec<IdentityVariant> = if ba.variant == "all" {
+        IdentityVariant::all().to_vec()
+    } else {
+        vec![IdentityVariant::from_str(&ba.variant).map_err(|e| anyhow!(e))?]
+    };
+
+    // Resolve model path (stejná logika jako main flow)
+    let model_dir = match args.model.as_str() {
+        "1.5b" => default_models_dir().join("falcon-h1-1.5b-instruct"),
+        "7b" => default_models_dir().join("falcon-h1-7b-instruct"),
+        other => PathBuf::from(other),
+    };
+
+    // Resolve Core Memory path
+    let cm_path = ba
+        .core_memory
+        .clone()
+        .unwrap_or_else(default_core_memory_path);
+    if !cm_path.exists() {
+        return Err(anyhow!(
+            "Core Memory artefakt nenalezen: {} (uveď --core-memory <path>)",
+            cm_path.display()
+        ));
+    }
+
+    let device_label = if args.cuda { "CUDA" } else { "CPU" };
+    println!("Eleutheria identity bench se probouzí...");
+    println!("Model:        {} ({})", args.model, model_dir.display());
+    println!("Device:       {}", device_label);
+    println!("Core Memory:  {}", cm_path.display());
+    println!(
+        "Variants:     {}",
+        variants
+            .iter()
+            .map(|v| v.label())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+
+    // Načti Core Memory artefakt — clone se předá do attach_core_memory
+    // per varianta (Tensor je Arc-counted, clone je cheap).
+    let core_memory = CoreMemoryArtifact::load(&cm_path)?;
+    let cm_meta = core_memory.meta();
+    let cm_steps = cm_meta.training_steps;
+    let cm_best_loss = cm_meta.best_loss;
+    println!(
+        "  steps={:?}, best_loss={:?}, timestamp={}",
+        cm_steps, cm_best_loss, cm_meta.timestamp
+    );
+
+    // Dva enginy: clean (bez persony) pro Cold/Core, persona pro Full.
+    let persona_path = PathBuf::from(&args.persona);
+    println!("\nNačítám engine_clean (persona: none)...");
+    let mut engine_clean = Sofie::load(&model_dir, args.cuda, None)?;
+    println!(
+        "Načítám engine_persona (persona: {})...",
+        persona_path.display()
+    );
+    let mut engine_persona = Sofie::load(&model_dir, args.cuda, Some(&persona_path))?;
+
+    let probes = built_in_identity_probes();
+    println!("\nProbes: {}\n", probes.len());
+
+    let report = IdentityBench::run(
+        &mut engine_clean,
+        &mut engine_persona,
+        &core_memory,
+        probes,
+        &variants,
+        |r| {
+            let mark = match r.outcome {
+                IdentityOutcome::Pass => "PASS",
+                IdentityOutcome::Fail => "FAIL",
+            };
+            let fh = if r.forbidden_hit { " [FORBIDDEN]" } else { "" };
+            println!(
+                "  [{}]{} {} variant={}: {}",
+                mark,
+                fh,
+                r.probe_id,
+                r.variant,
+                truncate(&r.response, 100)
+            );
+        },
+    )?;
+
+    let report = report
+        .with_model_name(&args.model)
+        .with_device(device_label)
+        .with_core_memory(cm_path.display().to_string(), cm_steps, cm_best_loss);
     let report = if let Some(n) = &ba.notes {
         report.with_notes(n.clone())
     } else {

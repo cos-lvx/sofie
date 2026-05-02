@@ -7,6 +7,75 @@ projekt dodržuje [sémantické verzování](https://semver.org/lang/cs/).
 
 ---
 
+## [0.5.0-alpha.23] — 2026-05-02
+
+### Přidáno — Identity benchmark (Fáze 5 rozhodovací moment)
+
+`bench-identity` — nový subkomand testující, zda Core Memory drží
+identity content z trénovaného korpusu (sofie identity pack). Liší se
+od `bench-retention`: žádný injected fact, žádná vzdálenost — otázka
+jde přímo na identity-load-bearing fakta z trénovaného korpusu.
+
+#### Varianty (`IdentityVariant`)
+
+- `cold` — žádná persona, žádná Core Memory. Vanilla model baseline.
+- `core` — Core Memory attached, žádná persona. Izoluje samostatný
+  efekt trénovaného SSM stavu — bez prefill kontextu z persony.
+- `full` — persona + Core Memory. Default runtime config.
+
+Diff matrix:
+- `(core - cold)` = samostatný efekt Core Memory
+- `(full - core)` = doplňkový efekt persona prefilu
+- `(full - cold)` = celkový efekt
+
+#### Probe sada (10 probes, česky)
+
+Pět kategorií:
+- `self` (3 probes) — kdo jsi, jsi asistent, jak komunikuješ
+- `ondra` (2) — kdo je Ondra, kdo je Alenka
+- `mantra` (2) — přístup k práci, nejjednodušší cesta
+- `project` (3) — Eleutheria, Nexus, KQS
+
+Match logika tolerantnější než retention bench: **OR** matcher přes
+`expected_any` (case-insensitive) místo striktního AND. Důvod: identity
+content nemá kanonickou frázi — "Sofie", "spoluautorka", "společnice",
+"partnerka" jsou všechno semanticky validní synonyma. Plus `forbidden`
+seznam pro counter-evidence ("jsem AI asistent" = explicit non-Sofie).
+
+#### Klíčový technický rozdíl
+
+Identity bench potřebuje **dva enginy** (clean a persona) loadované
+najednou — `Sofie::load(model_dir, cuda, None)` pro Cold/Core,
+`Sofie::load(model_dir, cuda, Some(persona))` pro Full. Sdílené
+`sofie` instance z hlavního flow ne stačí. Vlastní entry point
+v `main()` (early dispatch před hlavní engine load) loaduje 2× engine
++ Core Memory artifact, který je per-variant `clone`-ován do enginů
+(Tensor je Arc-counted, clone je cheap).
+
+`CoreMemoryArtifact` dostal `Clone` derive — drobný change s
+explicitním důvodem v doc komentu.
+
+#### Implementace
+
+- `bench/identity/probe.rs` — `IdentityProbe`, `IdentityResult`,
+  `IdentityOutcome`, `built_in_identity_probes()` (10 probes)
+- `bench/identity/variant.rs` — `IdentityVariant` (Cold | Core | Full)
+- `bench/identity/harness.rs` — `IdentityBench::run` orchestrátor
+- `bench/identity/report.rs` — `IdentityReport` s per-variant a
+  per-kind breakdown + forbidden hits + detailní listing
+- `main.rs` — `BenchIdentityArgs`, `Command::BenchIdentity`,
+  `run_bench_identity` entry, early dispatch
+
+143 testů (+16), clippy clean, fmt clean.
+
+#### Příští krok
+
+Spustit na alpha.20 production state na Starfieldu (CUDA + 1.5B + Core
+Memory `~/.eleutheria/core_memory.safetensors`). Klasifikace výsledku
+do (a)/(b)/(c) — viz dnešní brainstorm a memory `project_eleutheria.md`.
+
+---
+
 ## [0.5.0-alpha.22] — 2026-05-02
 
 ### Přidáno — Multi-host portability (Starfield migration)

@@ -206,7 +206,11 @@ impl std::fmt::Display for CoreMemoryMeta {
 ///
 /// Konvence: tensory jsou na CPU ve F32 (matchuje native dtype `Var`).
 /// Při aplikaci na live `ModelState` se konvertují na runtime dtype/device.
-#[derive(Debug)]
+///
+/// `Clone` je cheap — `Tensor` je Arc-counted (shallow ref clone),
+/// `Vec<Tensor>` clone iteruje cheap clones. Slouží pro multi-engine setup
+/// v identity benchu, kde `Sofie::attach_core_memory` konzumuje artifact.
+#[derive(Debug, Clone)]
 pub struct CoreMemoryArtifact {
     meta: CoreMemoryMeta,
     /// Per-layer init SSM state, indexované podle `layer_idx`. Vždy F32, CPU.
