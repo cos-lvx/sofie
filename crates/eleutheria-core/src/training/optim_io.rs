@@ -287,7 +287,7 @@ impl OptimizerArtifact {
 
         let moments: Vec<(Tensor, Tensor)> = m_slots
             .into_iter()
-            .zip(v_slots.into_iter())
+            .zip(v_slots)
             .enumerate()
             .map(|(i, (m, v))| {
                 let m = m.ok_or_else(|| {
