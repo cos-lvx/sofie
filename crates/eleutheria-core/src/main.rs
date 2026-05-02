@@ -4,7 +4,7 @@ use clap::{Args as ClapArgs, Parser, Subcommand};
 use eleutheria_core::bench::{
     BenchVariant, IdentityBench, IdentityOutcome, IdentityVariant, RetentionBench,
     built_in_identity_probes, built_in_identity_probes_en, built_in_probes,
-    harness::DEFAULT_DISTANCES,
+    built_in_reasoning_probes, built_in_reasoning_probes_en, harness::DEFAULT_DISTANCES,
 };
 use eleutheria_core::falcon_h1::layer::LayerStop;
 use eleutheria_core::training::trace;
@@ -174,6 +174,13 @@ struct BenchIdentityArgs {
     /// EN otázky by ho měly vytáhnout nezávisle na jazyce tréninku.
     #[arg(long, default_value = "cs")]
     probes_lang: String,
+
+    /// Probe sada: `identity` (default, direct factual Q&A) | `reasoning`
+    /// (scenarios testující aplikaci identity content). Identity sada
+    /// měří deklarativní vědění (kdo je Alenka), reasoning sada měří
+    /// dispoziční vědění (jak rozhodnout mezi cestami).
+    #[arg(long, default_value = "identity")]
+    probes_set: String,
 }
 
 /// Argumenty pro `train-core-memory-smoke` subkomand.
@@ -1239,13 +1246,20 @@ fn run_bench_identity(args: &Args, ba: &BenchIdentityArgs) -> Result<()> {
     );
     let mut engine_persona = Sofie::load(&model_dir, args.cuda, Some(&persona_path))?;
 
-    let probes = match ba.probes_lang.as_str() {
-        "cs" => built_in_identity_probes(),
-        "en" => built_in_identity_probes_en(),
-        other => {
-            return Err(anyhow!("neznámý probes-lang '{}' (cs | en)", other));
+    let probes = match (ba.probes_set.as_str(), ba.probes_lang.as_str()) {
+        ("identity", "cs") => built_in_identity_probes(),
+        ("identity", "en") => built_in_identity_probes_en(),
+        ("reasoning", "cs") => built_in_reasoning_probes(),
+        ("reasoning", "en") => built_in_reasoning_probes_en(),
+        (set, lang) => {
+            return Err(anyhow!(
+                "neznámá kombinace probes-set='{}' probes-lang='{}' (set: identity | reasoning, lang: cs | en)",
+                set,
+                lang
+            ));
         }
     };
+    println!("Probes set:   {}", ba.probes_set);
     println!("Probes lang:  {}", ba.probes_lang);
     println!("Probes count: {}\n", probes.len());
 

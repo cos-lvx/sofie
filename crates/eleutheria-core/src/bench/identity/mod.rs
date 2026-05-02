@@ -22,7 +22,7 @@ pub mod variant;
 pub use harness::{DEFAULT_ANSWER_TOKENS, IdentityBench};
 pub use probe::{
     IdentityOutcome, IdentityProbe, IdentityResult, built_in_identity_probes,
-    built_in_identity_probes_en,
+    built_in_identity_probes_en, built_in_reasoning_probes, built_in_reasoning_probes_en,
 };
 pub use report::{IdentityMeta, IdentityReport};
 pub use variant::IdentityVariant;
