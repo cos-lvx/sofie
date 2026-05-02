@@ -1,6 +1,6 @@
 # Roadmap — Eleutheria
 
-> Poslední aktualizace: 2026-05-01 (alpha.21)
+> Poslední aktualizace: 2026-05-02 (alpha.22 — Starfield migration hotová)
 
 ## Filozofie
 
